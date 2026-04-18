@@ -1,6 +1,7 @@
 <script lang="ts">
   import { goto } from "$app/navigation";
   import { open } from "@tauri-apps/plugin-dialog";
+  import { openUrl } from "@tauri-apps/plugin-opener";
   import Spinner from "$lib/components/Spinner.svelte";
   import {
     createWorkspace,
@@ -20,10 +21,14 @@
   };
 
   const KNOWN_PROJECTS_KEY = "sproutgit.knownProjects";
+  const PROJECTS_FOLDER_KEY = "sproutgit.projectsFolder";
 
+  let gitChecked = $state(false);
   let git = $state<GitInfo>({ installed: false, version: null });
-  let workspacePath = $state("");
+  let projectsFolder = $state(localStorage.getItem(PROJECTS_FOLDER_KEY) ?? "");
   let cloneUrl = $state("");
+  let folderName = $state("");
+  let folderNameManual = $state(false);
   let openWorkspacePath = $state("");
   let creating = $state(false);
   let opening = $state(false);
@@ -34,6 +39,36 @@
   let clonePercent = $state<number | null>(null);
   let clonePhase = $state("");
   let progressEl = $state<HTMLDivElement | null>(null);
+
+  let workspacePath = $derived(
+    projectsFolder && folderName ? `${projectsFolder}/${folderName}` : ""
+  );
+
+  function repoNameFromUrl(url: string): string {
+    const trimmed = url.trim().replace(/\/+$/, "");
+    // Handle .git suffix
+    const withoutGit = trimmed.replace(/\.git$/, "");
+    // Get last path segment
+    const lastSlash = withoutGit.lastIndexOf("/");
+    const lastColon = withoutGit.lastIndexOf(":");
+    const sep = Math.max(lastSlash, lastColon);
+    if (sep === -1) return "";
+    return withoutGit.slice(sep + 1);
+  }
+
+  function handleUrlInput() {
+    if (!folderNameManual) {
+      folderName = repoNameFromUrl(cloneUrl);
+    }
+  }
+
+  function handleFolderNameInput() {
+    folderNameManual = folderName !== "" && folderName !== repoNameFromUrl(cloneUrl);
+  }
+
+  function saveProjectsFolder() {
+    localStorage.setItem(PROJECTS_FOLDER_KEY, projectsFolder);
+  }
 
   function loadKnownProjects() {
     const raw = localStorage.getItem(KNOWN_PROJECTS_KEY);
@@ -64,6 +99,21 @@
   async function startNewProject(event: Event) {
     event.preventDefault();
     error = "";
+
+    if (!projectsFolder.trim()) {
+      error = "Projects folder is required";
+      return;
+    }
+    if (!cloneUrl.trim()) {
+      error = "Repository URL is required";
+      return;
+    }
+    if (!folderName.trim()) {
+      error = "Folder name is required";
+      return;
+    }
+
+    saveProjectsFolder();
     cloneProgress = [];
     clonePercent = null;
     clonePhase = "";
@@ -102,6 +152,11 @@
     }
   }
 
+  function removeKnownProject(workspacePath: string) {
+    knownProjects = knownProjects.filter((p) => p.workspacePath !== workspacePath);
+    localStorage.setItem(KNOWN_PROJECTS_KEY, JSON.stringify(knownProjects));
+  }
+
   async function openKnownWorkspace(path: string) {
     error = "";
     opening = true;
@@ -114,7 +169,13 @@
       saveKnownProject(status);
       await goto(`/workspace?workspace=${encodeURIComponent(status.workspacePath)}`);
     } catch (err) {
-      error = String(err);
+      const msg = String(err);
+      if (msg.includes("does not exist") || msg.includes("No such file") || msg.includes("not found") || msg.includes("not a SproutGit project")) {
+        removeKnownProject(path);
+        toast.error(`Project removed — path no longer exists: ${path.split("/").pop()}`);
+      } else {
+        error = msg;
+      }
     } finally {
       opening = false;
     }
@@ -126,17 +187,57 @@
       error = "Workspace path is required";
       return;
     }
-    await openKnownWorkspace(openWorkspacePath);
+    error = "";
+    opening = true;
+
+    try {
+      const status = await inspectWorkspace(openWorkspacePath);
+      if (!status.isSproutgitProject) {
+        toast.error("Selected path is not a SproutGit workspace");
+        return;
+      }
+      saveKnownProject(status);
+      await goto(`/workspace?workspace=${encodeURIComponent(status.workspacePath)}`);
+    } catch (err) {
+      toast.error(String(err));
+    } finally {
+      opening = false;
+    }
   }
 
-  getGitInfo().then((info) => (git = info));
+  getGitInfo().then((info) => {
+    git = info;
+    gitChecked = true;
+  });
   loadKnownProjects();
 </script>
 
+{#if !gitChecked}
+  <main class="flex h-screen items-center justify-center bg-[var(--sg-bg)]">
+    <Spinner size="md" label="Checking git…" />
+  </main>
+{:else if !git.installed}
+  <main class="flex h-screen flex-col items-center justify-center gap-6 bg-[var(--sg-bg)] px-8 text-center">
+    <div class="text-5xl">🌱</div>
+    <h1 class="text-xl font-semibold text-[var(--sg-text)]">Git is not installed</h1>
+    <p class="max-w-sm text-sm text-[var(--sg-text-dim)]">
+      SproutGit requires Git to manage repositories and worktrees. Please install Git and relaunch the app.
+    </p>
+    <button
+      class="rounded-md bg-[var(--sg-primary)] px-5 py-2 text-sm font-medium text-white hover:bg-[var(--sg-primary-hover)] transition-colors"
+      onclick={() => openUrl('https://git-scm.com/downloads')}
+    >
+      Download Git
+    </button>
+  </main>
+{:else}
 <main class="flex h-screen flex-col">
   <!-- Title bar area -->
   <header class="flex shrink-0 items-center justify-between border-b border-[var(--sg-border)] bg-[var(--sg-surface)] px-4 py-2">
-    <span class="text-sm font-semibold text-[var(--sg-text)]">SproutGit</span>
+    <span class="flex items-center gap-1.5 text-sm font-semibold text-[var(--sg-text)]">
+      <img src="/logo.svg" alt="" class="h-5 w-5" />
+      SproutGit
+    </span>
     <span class="rounded px-2 py-0.5 text-xs text-[var(--sg-text-faint)]">
       git {git.version ?? "not found"}
     </span>
@@ -151,17 +252,18 @@
 
       <form onsubmit={startNewProject} class="flex flex-col gap-3 overflow-auto p-4">
         <div>
-          <label for="workspace-path" class="mb-1 block text-xs text-[var(--sg-text-dim)]">Workspace folder</label>
+          <label for="projects-folder" class="mb-1 block text-xs text-[var(--sg-text-dim)]">Projects folder</label>
           <div class="flex gap-1.5">
             <input
-              id="workspace-path"
-              bind:value={workspacePath}
+              id="projects-folder"
+              bind:value={projectsFolder}
+              oninput={saveProjectsFolder}
               class="min-w-0 flex-1 rounded border border-[var(--sg-input-border)] bg-[var(--sg-input-bg)] px-2.5 py-1.5 text-xs text-[var(--sg-text)] placeholder-[var(--sg-text-faint)] outline-none focus:border-[var(--sg-input-focus)]"
-              placeholder="~/Projects/my-product"
+              placeholder="~/Projects"
             />
             <button
               type="button"
-              onclick={async () => { const dir = await open({ directory: true, title: "Choose workspace folder" }); if (dir) workspacePath = dir; }}
+              onclick={async () => { const dir = await open({ directory: true, title: "Choose projects folder" }); if (dir) { projectsFolder = dir; saveProjectsFolder(); } }}
               class="shrink-0 rounded border border-[var(--sg-border)] bg-[var(--sg-surface-raised)] px-2.5 py-1.5 text-xs text-[var(--sg-text-dim)] hover:bg-[var(--sg-border)] hover:text-[var(--sg-text)]"
             >Browse</button>
           </div>
@@ -172,14 +274,29 @@
           <input
             id="repo-url"
             bind:value={cloneUrl}
+            oninput={handleUrlInput}
             class="w-full rounded border border-[var(--sg-input-border)] bg-[var(--sg-input-bg)] px-2.5 py-1.5 text-xs text-[var(--sg-text)] placeholder-[var(--sg-text-faint)] outline-none focus:border-[var(--sg-input-focus)]"
             placeholder="https://github.com/org/repo.git"
           />
         </div>
 
+        <div>
+          <label for="folder-name" class="mb-1 block text-xs text-[var(--sg-text-dim)]">Folder name</label>
+          <input
+            id="folder-name"
+            bind:value={folderName}
+            oninput={handleFolderNameInput}
+            class="w-full rounded border border-[var(--sg-input-border)] bg-[var(--sg-input-bg)] px-2.5 py-1.5 text-xs text-[var(--sg-text)] placeholder-[var(--sg-text-faint)] outline-none focus:border-[var(--sg-input-focus)]"
+            placeholder="my-repo"
+          />
+          {#if workspacePath}
+            <p class="mt-1 truncate text-[10px] text-[var(--sg-text-faint)]">{workspacePath}</p>
+          {/if}
+        </div>
+
         <button
           type="submit"
-          disabled={creating || !git.installed}
+          disabled={creating || !git.installed || !workspacePath}
           class="mt-1 rounded bg-[var(--sg-primary)] px-3 py-1.5 text-xs font-semibold text-[var(--sg-bg)] hover:bg-[var(--sg-primary-hover)] disabled:cursor-not-allowed disabled:opacity-40"
         >
           {#if creating}<Spinner size="sm" />&nbsp;Cloning…{:else}Clone + create workspace{/if}
@@ -261,20 +378,29 @@
         {:else}
           <div class="space-y-1">
             {#each knownProjects as project}
-              <button
-                class="flex w-full items-center gap-3 rounded px-3 py-2 text-left hover:bg-[var(--sg-surface-raised)]"
-                onclick={() => openKnownWorkspace(project.workspacePath)}
-                disabled={opening}
-              >
-                <div class="flex h-8 w-8 shrink-0 items-center justify-center rounded bg-[var(--sg-surface-raised)] text-sm text-[var(--sg-primary)]">
-                  {project.workspacePath.split("/").pop()?.charAt(0).toUpperCase() ?? "?"}
-                </div>
-                <div class="min-w-0 flex-1">
-                  <p class="truncate text-sm font-medium text-[var(--sg-text)]">{project.workspacePath.split("/").pop()}</p>
-                  <p class="truncate text-xs text-[var(--sg-text-faint)]">{project.workspacePath}</p>
-                </div>
-                <span class="shrink-0 text-xs text-[var(--sg-text-faint)]">&rarr;</span>
-              </button>
+              <div class="group flex items-center gap-0 rounded hover:bg-[var(--sg-surface-raised)]">
+                <button
+                  class="flex min-w-0 flex-1 items-center gap-3 rounded px-3 py-2 text-left"
+                  onclick={() => openKnownWorkspace(project.workspacePath)}
+                  disabled={opening}
+                >
+                  <div class="flex h-8 w-8 shrink-0 items-center justify-center rounded bg-[var(--sg-surface-raised)] text-sm text-[var(--sg-primary)]">
+                    {project.workspacePath.split("/").pop()?.charAt(0).toUpperCase() ?? "?"}
+                  </div>
+                  <div class="min-w-0 flex-1">
+                    <p class="truncate text-sm font-medium text-[var(--sg-text)]">{project.workspacePath.split("/").pop()}</p>
+                    <p class="truncate text-xs text-[var(--sg-text-faint)]">{project.workspacePath}</p>
+                  </div>
+                  <span class="shrink-0 text-xs text-[var(--sg-text-faint)]">&rarr;</span>
+                </button>
+                <button
+                  class="shrink-0 rounded p-1.5 mr-2 text-[var(--sg-text-faint)] opacity-0 transition-opacity hover:text-[var(--sg-danger)] group-hover:opacity-100"
+                  title="Remove from recent projects"
+                  onclick={(e) => { e.stopPropagation(); removeKnownProject(project.workspacePath); toast.info(`Removed ${project.workspacePath.split("/").pop()} from recent projects`); }}
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                </button>
+              </div>
             {/each}
           </div>
         {/if}
@@ -282,3 +408,4 @@
     </section>
   </div>
 </main>
+{/if}
