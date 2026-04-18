@@ -1,0 +1,25 @@
+@import "tailwindcss";
+
+:root {
+  --sprout-bg: #f3eee4;
+  --sprout-surface: #fffdf8;
+  --sprout-ink: #1d2920;
+  --sprout-muted: #5f6f60;
+  --sprout-border: #d8cfbd;
+  --sprout-primary: #2f6b3c;
+  --sprout-accent: #7a4f2c;
+}
+
+html,
+body {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  color: var(--sprout-ink);
+  background:
+    radial-gradient(circle at top right, #e9ddc6 0%, transparent 38%),
+    linear-gradient(170deg, #f6f1e7 0%, #efe6d7 100%);
+  font-family: "IBM Plex Sans", "Segoe UI", sans-serif;
+}

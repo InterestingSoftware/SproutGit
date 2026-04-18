@@ -1,0 +1,39 @@
+# macOS / OS files
+.DS_Store
+Thumbs.db
+
+# Node / package manager
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Environment files
+.env
+.env.*
+!.env.example
+
+# SvelteKit / Vite outputs
+.svelte-kit/
+build/
+package/
+dist/
+vite.config.js.timestamp-*
+vite.config.ts.timestamp-*
+
+# Tauri / Rust
+src-tauri/target/
+src-tauri/gen/
+
+# IDE/editor
+.idea/
+.fleet/
+.history/
+.vscode/*
+!.vscode/extensions.json
+
+# Temporary files
+*.swp
+*.swo
+*~
