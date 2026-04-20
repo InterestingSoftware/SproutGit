@@ -3,13 +3,15 @@ mod git;
 mod github;
 mod workspace;
 
-use tauri::menu::{MenuBuilder, SubmenuBuilder};
 
 #[tauri::command]
 fn get_home_dir() -> Result<String, String> {
-    std::env::var("HOME")
+    let home = std::env::var("HOME")
         .or_else(|_| std::env::var("USERPROFILE"))
-        .map_err(|_| "Cannot determine home directory".to_string())
+        .map_err(|_| "Cannot determine home directory".to_string())?;
+    // Normalize to forward slashes so the frontend can safely join paths
+    // with '/' on all platforms (Windows accepts forward slashes too).
+    Ok(home.replace('\\', "/"))
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -18,36 +20,14 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
-        .setup(|app| {
-            let app_submenu = SubmenuBuilder::new(app, "SproutGit")
-                .about(None)
-                .separator()
-                .hide()
-                .hide_others()
-                .show_all()
-                .separator()
-                .quit()
-                .build()?;
-
-            let edit_submenu = SubmenuBuilder::new(app, "Edit")
-                .cut()
-                .copy()
-                .paste()
-                .select_all()
-                .build()?;
-
-            let window_submenu = SubmenuBuilder::new(app, "Window")
-                .minimize()
-                .close_window()
-                .build()?;
-
-            let menu = MenuBuilder::new(app)
-                .item(&app_submenu)
-                .item(&edit_submenu)
-                .item(&window_submenu)
-                .build()?;
-
-            app.set_menu(menu)?;
+        .setup(|_app| {
+            #[cfg(target_os = "windows")]
+            {
+                use tauri::Manager;
+                if let Some(window) = _app.get_webview_window("main") {
+                    let _ = window.set_decorations(false);
+                }
+            }
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![

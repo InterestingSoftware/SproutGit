@@ -29,6 +29,7 @@ serde_json = "1"
 rusqlite = { version = "0.32", features = ["bundled"] }
 tauri-plugin-dialog = "2.7.0"
 reqwest = { version = "0.12", features = ["json"] }
+dunce = "1"
 
 [lints.clippy]
 # Security and common mistakes
@@ -51,4 +52,3 @@ trivially_copy_pass_by_ref = "warn"
 [lints.rust]
 # Warn on unsafe code
 unsafe_code = "warn"  # Pragmatic for internal code
-

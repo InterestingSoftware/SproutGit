@@ -1,5 +1,6 @@
 use serde::Serialize;
 use serde_json::json;
+use std::collections::VecDeque;
 use std::fs;
 use std::io::{BufReader, Read};
 use std::process::Stdio;
@@ -9,6 +10,11 @@ use crate::git::helpers::{
     normalize_or_create_dir, now_epoch_seconds, validate_repo_url, GitAction,
 };
 use crate::github::git_auth_env;
+
+fn is_git_error_line(line: &str) -> bool {
+    line.get(..6)
+        .is_some_and(|prefix| prefix.eq_ignore_ascii_case("fatal:") || prefix.eq_ignore_ascii_case("error:"))
+}
 
 // ── Structs ──
 
@@ -109,6 +115,9 @@ pub async fn create_sproutgit_workspace(
         .spawn()
         .map_err(|e| format!("Failed to run git clone: {e}"))?;
 
+        const MAX_STDERR_LINES: usize = 100;
+        let mut stderr_lines: VecDeque<String> = VecDeque::with_capacity(MAX_STDERR_LINES);
+        let mut latest_error_line: Option<String> = None;
         if let Some(stderr) = child.stderr.take() {
             let reader = BufReader::new(stderr);
             let mut line_buf = String::new();
@@ -118,6 +127,13 @@ pub async fn create_sproutgit_workspace(
                         let trimmed = line_buf.trim().to_string();
                         if !trimmed.is_empty() {
                             let _ = app_handle.emit("clone-progress", &trimmed);
+                            if is_git_error_line(&trimmed) {
+                                latest_error_line = Some(trimmed.clone());
+                            }
+                            if stderr_lines.len() == MAX_STDERR_LINES {
+                                stderr_lines.pop_front();
+                            }
+                            stderr_lines.push_back(trimmed);
                         }
                         line_buf.clear();
                     },
@@ -128,6 +144,13 @@ pub async fn create_sproutgit_workspace(
             let trimmed = line_buf.trim().to_string();
             if !trimmed.is_empty() {
                 let _ = app_handle.emit("clone-progress", &trimmed);
+                if is_git_error_line(&trimmed) {
+                    latest_error_line = Some(trimmed.clone());
+                }
+                if stderr_lines.len() == MAX_STDERR_LINES {
+                    stderr_lines.pop_front();
+                }
+                stderr_lines.push_back(trimmed);
             }
         }
 
@@ -137,7 +160,23 @@ pub async fn create_sproutgit_workspace(
 
         if !status.success() {
             let _ = app_handle.emit("clone-progress", "Clone failed");
-            return Err("git clone failed".to_string());
+            // Find the most relevant error line from git's stderr output.
+            // Git prefixes errors with "fatal:" or "error:"; prefer those.
+            let error_detail = latest_error_line.or_else(|| stderr_lines.back().cloned());
+            let msg = match error_detail {
+                Some(detail) => {
+                    // Provide a friendlier hint for authentication failures.
+                    if detail.to_lowercase().contains("authentication") ||
+                       detail.to_lowercase().contains("could not read username") ||
+                       detail.to_lowercase().contains("repository not found") {
+                        format!("Authentication failed — check your credentials or repo URL. ({})", detail)
+                    } else {
+                        format!("git clone failed: {}", detail)
+                    }
+                }
+                None => "git clone failed".to_string(),
+            };
+            return Err(msg);
         }
 
         let _ = app_handle.emit("clone-progress", "Done");
