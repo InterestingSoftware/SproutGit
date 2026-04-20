@@ -19,13 +19,13 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/liamcottle/sproutgit/actions/workflows/ci.yml">
-    <img src="https://github.com/liamcottle/sproutgit/actions/workflows/ci.yml/badge.svg" alt="CI Status" />
+  <a href="https://github.com/Shutter-Share/SproutGit/actions/workflows/ci.yml">
+    <img src="https://github.com/Shutter-Share/SproutGit/actions/workflows/ci.yml/badge.svg" alt="CI Status" />
   </a>
-  <a href="https://codecov.io/gh/liamcottle/sproutgit">
-    <img src="https://codecov.io/gh/liamcottle/sproutgit/graph/badge.svg" alt="Code Coverage" />
+  <a href="https://codecov.io/gh/Shutter-Share/SproutGit">
+    <img src="https://codecov.io/gh/Shutter-Share/SproutGit/graph/badge.svg" alt="Code Coverage" />
   </a>
-  <a href="https://github.com/liamcottle/sproutgit/blob/main/LICENSE">
+  <a href="https://github.com/Shutter-Share/SproutGit/blob/main/LICENSE">
     <img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="License: MIT" />
   </a>
   <img src="https://img.shields.io/badge/status-early%20prototype-red.svg" alt="Status: Early Prototype" />
