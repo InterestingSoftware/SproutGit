@@ -222,7 +222,7 @@ jobs:
               exit 1
             fi
 
-            artifact_path=$(find "$artifact_dir" -name "$pattern" ! -name "*.sig" | head -n 1)
+            artifact_path=$(find "$artifact_dir" -type f -name "$pattern" | head -n 1)
 
             if [[ -z "$artifact_path" ]]; then
               echo "::error::Missing ${label} artifact. Expected '${pattern}' under '${artifact_dir}'."
