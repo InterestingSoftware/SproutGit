@@ -336,11 +336,11 @@ fn load_worktree_git_context(worktree_path: &Path) -> WorktreeGitContext {
         &["-C", &wt_str, "branch", "--show-current"],
     );
     let head_full = git_capture_trimmed(
-        GitAction::CurrentBranch,
+        GitAction::RevParse,
         &["-C", &wt_str, "rev-parse", "HEAD"],
     );
     let head_short = git_capture_trimmed(
-        GitAction::CurrentBranch,
+        GitAction::RevParse,
         &["-C", &wt_str, "rev-parse", "--short", "HEAD"],
     );
 
@@ -386,6 +386,10 @@ where
     let mut buffer = [0_u8; 8192];
 
     loop {
+        if bytes.len() >= max_bytes {
+            break;
+        }
+
         match reader.read(&mut buffer).await {
             Ok(0) => break,
             Ok(read_count) => {

@@ -478,7 +478,7 @@ pub async fn checkout_worktree(
 
     // Get current branch before checkout
     let current_output = run_git(
-        GitAction::CurrentBranch,
+        GitAction::RevParse,
         &["-C", &wt_str, "rev-parse", "--abbrev-ref", "HEAD"],
     )?;
     let previous_branch = if current_output.status.success() {
