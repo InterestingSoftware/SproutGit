@@ -48,10 +48,12 @@ export function validateBranchName(name: string): string | null {
   }
 
   // ASCII control characters (0x00-0x1F, 0x7F), space, tilde, caret, colon
+  // eslint-disable-next-line no-control-regex
   if (/[\x00-\x1f\x7f ~^:]/.test(trimmed)) {
     return "Cannot contain spaces or special characters (~, ^, :, control chars).";
   }
 
+  // eslint-disable-next-line no-useless-escape
   if (/[?*\[]/.test(trimmed)) {
     return "Cannot contain glob characters (?, *, [).";
   }

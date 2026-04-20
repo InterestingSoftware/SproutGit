@@ -1,8 +1,10 @@
 use serde::Serialize;
 use std::path::Path;
-use std::process::{Command, Stdio};
 
-use crate::helpers::{augmented_path, normalize_existing_path, run_git};
+use crate::git::helpers::{
+    command_exists, normalize_existing_path, run_git, system_command, validate_git_config_key,
+    validate_no_control_chars, validate_non_option_value, GitAction, SystemAction,
+};
 
 // ── Structs ──
 
@@ -27,28 +29,73 @@ struct EditorCandidate {
 
 fn known_editors() -> Vec<EditorCandidate> {
     vec![
-        EditorCandidate { id: "vscode",  name: "VS Code",      command: "code",    mac_bundle_bin: Some("/Applications/Visual Studio Code.app/Contents/Resources/app/bin/code") },
-        EditorCandidate { id: "cursor",  name: "Cursor",       command: "cursor",  mac_bundle_bin: Some("/Applications/Cursor.app/Contents/Resources/app/bin/cursor") },
-        EditorCandidate { id: "windsurf", name: "Windsurf",    command: "windsurf", mac_bundle_bin: Some("/Applications/Windsurf.app/Contents/Resources/app/bin/windsurf") },
-        EditorCandidate { id: "kiro",    name: "Kiro",         command: "kiro",    mac_bundle_bin: None },
-        EditorCandidate { id: "zed",     name: "Zed",          command: "zed",     mac_bundle_bin: Some("/Applications/Zed.app/Contents/MacOS/cli") },
-        EditorCandidate { id: "sublime", name: "Sublime Text", command: "subl",    mac_bundle_bin: Some("/Applications/Sublime Text.app/Contents/SharedSupport/bin/subl") },
-        EditorCandidate { id: "vim",     name: "Vim",          command: "vim",     mac_bundle_bin: None },
-        EditorCandidate { id: "neovim",  name: "Neovim",       command: "nvim",    mac_bundle_bin: None },
-        EditorCandidate { id: "emacs",   name: "Emacs",        command: "emacs",   mac_bundle_bin: None },
-        EditorCandidate { id: "nano",    name: "nano",         command: "nano",    mac_bundle_bin: None },
+        EditorCandidate {
+            id: "vscode",
+            name: "VS Code",
+            command: "code",
+            mac_bundle_bin: Some(
+                "/Applications/Visual Studio Code.app/Contents/Resources/app/bin/code",
+            ),
+        },
+        EditorCandidate {
+            id: "cursor",
+            name: "Cursor",
+            command: "cursor",
+            mac_bundle_bin: Some("/Applications/Cursor.app/Contents/Resources/app/bin/cursor"),
+        },
+        EditorCandidate {
+            id: "windsurf",
+            name: "Windsurf",
+            command: "windsurf",
+            mac_bundle_bin: Some("/Applications/Windsurf.app/Contents/Resources/app/bin/windsurf"),
+        },
+        EditorCandidate {
+            id: "kiro",
+            name: "Kiro",
+            command: "kiro",
+            mac_bundle_bin: None,
+        },
+        EditorCandidate {
+            id: "zed",
+            name: "Zed",
+            command: "zed",
+            mac_bundle_bin: Some("/Applications/Zed.app/Contents/MacOS/cli"),
+        },
+        EditorCandidate {
+            id: "sublime",
+            name: "Sublime Text",
+            command: "subl",
+            mac_bundle_bin: Some("/Applications/Sublime Text.app/Contents/SharedSupport/bin/subl"),
+        },
+        EditorCandidate {
+            id: "vim",
+            name: "Vim",
+            command: "vim",
+            mac_bundle_bin: None,
+        },
+        EditorCandidate {
+            id: "neovim",
+            name: "Neovim",
+            command: "nvim",
+            mac_bundle_bin: None,
+        },
+        EditorCandidate {
+            id: "emacs",
+            name: "Emacs",
+            command: "emacs",
+            mac_bundle_bin: None,
+        },
+        EditorCandidate {
+            id: "nano",
+            name: "nano",
+            command: "nano",
+            mac_bundle_bin: None,
+        },
     ]
 }
 
 fn is_command_available(cmd: &str) -> bool {
-    Command::new("which")
-        .arg(cmd)
-        .env("PATH", augmented_path())
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .status()
-        .map(|s| s.success())
-        .unwrap_or(false)
+    command_exists(cmd)
 }
 
 /// Resolve the actual executable path for an editor, checking the CLI
@@ -78,18 +125,18 @@ fn parse_editor_command(editor: &str) -> Vec<String> {
         match ch {
             '\'' if !in_double => {
                 in_single = !in_single;
-            }
+            },
             '"' if !in_single => {
                 in_double = !in_double;
-            }
+            },
             ' ' | '\t' if !in_single && !in_double => {
                 if !current.is_empty() {
                     parts.push(std::mem::take(&mut current));
                 }
-            }
+            },
             _ => {
                 current.push(ch);
-            }
+            },
         }
     }
     if !current.is_empty() {
@@ -122,11 +169,14 @@ pub async fn open_in_editor(worktree_path: String) -> Result<String, String> {
     let editor = std::env::var("GIT_EDITOR")
         .ok()
         .or_else(|| {
-            run_git(&["config", "core.editor"])
-                .ok()
-                .filter(|o| o.status.success())
-                .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
-                .filter(|s| !s.is_empty())
+            run_git(
+                GitAction::ReadGitConfig,
+                &["config", "--global", "--", "core.editor"],
+            )
+            .ok()
+            .filter(|o| o.status.success())
+            .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
+            .filter(|s| !s.is_empty())
         })
         .or_else(|| std::env::var("VISUAL").ok())
         .or_else(|| std::env::var("EDITOR").ok())
@@ -145,14 +195,17 @@ pub async fn open_in_editor(worktree_path: String) -> Result<String, String> {
         return Err("No editor configured".to_string());
     }
 
-    let mut cmd = Command::new(&parts[0]);
-    for arg in &parts[1..] {
-        if arg != "--wait" && arg != "-w" {
-            cmd.arg(arg);
-        }
-    }
-    cmd.arg(&wt_str);
-    cmd.env("PATH", augmented_path());
+    validate_non_option_value(&parts[0], "Editor command")?;
+    validate_no_control_chars(&wt_str, "Worktree path")?;
+
+    let mut args: Vec<&str> = parts[1..]
+        .iter()
+        .map(|s| s.as_str())
+        .filter(|arg| *arg != "--wait" && *arg != "-w")
+        .collect();
+    args.push(&wt_str);
+
+    let mut cmd = system_command(SystemAction::OpenEditor, &parts[0], &args);
 
     cmd.spawn()
         .map_err(|e| format!("Failed to open editor '{}': {e}", parts[0]))?;
@@ -169,7 +222,9 @@ pub fn detect_editors() -> Vec<EditorInfo> {
             EditorInfo {
                 id: editor.id.to_string(),
                 name: editor.name.to_string(),
-                command: resolved.clone().unwrap_or_else(|| editor.command.to_string()),
+                command: resolved
+                    .clone()
+                    .unwrap_or_else(|| editor.command.to_string()),
                 installed: resolved.is_some(),
             }
         })
@@ -178,8 +233,12 @@ pub fn detect_editors() -> Vec<EditorInfo> {
 
 #[tauri::command]
 pub fn get_git_config(key: String) -> Result<String, String> {
-    let output = run_git(&["config", "--global", &key])
-        .map_err(|e| format!("Failed to read git config: {e}"))?;
+    let key = validate_git_config_key(&key)?;
+    let output = run_git(
+        GitAction::ReadGitConfig,
+        &["config", "--global", "--", &key],
+    )
+    .map_err(|e| format!("Failed to read git config: {e}"))?;
     if output.status.success() {
         Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
     } else {
@@ -189,12 +248,21 @@ pub fn get_git_config(key: String) -> Result<String, String> {
 
 #[tauri::command]
 pub fn set_git_config(key: String, value: String) -> Result<(), String> {
+    let key = validate_git_config_key(&key)?;
+    validate_no_control_chars(value.trim(), "Git config value")?;
+
     if value.is_empty() {
-        let _ = run_git(&["config", "--global", "--unset", &key]);
+        let _ = run_git(
+            GitAction::UnsetGitConfig,
+            &["config", "--global", "--unset", "--", &key],
+        );
         Ok(())
     } else {
-        let output = run_git(&["config", "--global", &key, &value])
-            .map_err(|e| format!("Failed to set git config: {e}"))?;
+        let output = run_git(
+            GitAction::SetGitConfig,
+            &["config", "--global", "--", &key, value.trim()],
+        )
+        .map_err(|e| format!("Failed to set git config: {e}"))?;
         if output.status.success() {
             Ok(())
         } else {

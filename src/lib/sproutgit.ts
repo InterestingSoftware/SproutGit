@@ -57,6 +57,7 @@ export type CommitEntry = {
   shortHash: string;
   parents: string[];
   authorName: string;
+  authorEmail: string;
   authorDate: string;
   subject: string;
   refs: string[];

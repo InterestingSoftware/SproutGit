@@ -36,13 +36,11 @@ fn read_auth_data() -> AuthData {
 fn write_auth_data(data: &AuthData) -> Result<(), String> {
     let path = auth_file_path()?;
     if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent)
-            .map_err(|e| format!("Failed to create auth directory: {e}"))?;
+        fs::create_dir_all(parent).map_err(|e| format!("Failed to create auth directory: {e}"))?;
     }
     let json = serde_json::to_string_pretty(data)
         .map_err(|e| format!("Failed to serialize auth data: {e}"))?;
-    fs::write(&path, json)
-        .map_err(|e| format!("Failed to write auth file: {e}"))?;
+    fs::write(&path, json).map_err(|e| format!("Failed to write auth file: {e}"))?;
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
@@ -64,8 +62,7 @@ fn store_token(token: &str) -> Result<(), String> {
 fn delete_token() -> Result<(), String> {
     let path = auth_file_path()?;
     if path.exists() {
-        fs::remove_file(&path)
-            .map_err(|e| format!("Failed to remove auth file: {e}"))?;
+        fs::remove_file(&path).map_err(|e| format!("Failed to remove auth file: {e}"))?;
     }
     Ok(())
 }
@@ -87,11 +84,17 @@ pub fn git_auth_env() -> Vec<(String, String)> {
     let mut envs = Vec::new();
     if let Some(token) = get_stored_token() {
         envs.push(("GIT_CONFIG_COUNT".to_string(), "1".to_string()));
-        envs.push(("GIT_CONFIG_KEY_0".to_string(), "credential.helper".to_string()));
+        envs.push((
+            "GIT_CONFIG_KEY_0".to_string(),
+            "credential.helper".to_string(),
+        ));
         #[cfg(unix)]
         envs.push((
             "GIT_CONFIG_VALUE_0".to_string(),
-            format!("!f() {{ echo \"username=x-access-token\"; echo \"password={}\"; }}; f", token.replace('"', "\\\"")),
+            format!(
+                "!f() {{ echo \"username=x-access-token\"; echo \"password={}\"; }}; f",
+                token.replace('"', "\\\"")
+            ),
         ));
         #[cfg(not(unix))]
         envs.push((
@@ -167,10 +170,7 @@ pub async fn github_device_flow_start() -> Result<DeviceCodeResponse, String> {
     let resp = client
         .post("https://github.com/login/device/code")
         .header("Accept", "application/json")
-        .form(&[
-            ("client_id", GITHUB_CLIENT_ID),
-            ("scope", "repo"),
-        ])
+        .form(&[("client_id", GITHUB_CLIENT_ID), ("scope", "repo")])
         .send()
         .await
         .map_err(|e| format!("Failed to start device flow: {e}"))?;
@@ -301,7 +301,7 @@ pub async fn get_github_auth_status() -> GitHubAuthStatus {
                     username: None,
                     provider: "github".to_string(),
                 };
-            }
+            },
             Ok(resp) if resp.status().is_success() => {
                 // Token valid — refresh username if it changed
                 if let Ok(body) = resp.json::<serde_json::Value>().await {
@@ -316,10 +316,10 @@ pub async fn get_github_auth_status() -> GitHubAuthStatus {
                         }
                     }
                 }
-            }
+            },
             _ => {
                 // Network error — trust stored data
-            }
+            },
         }
     }
 
@@ -357,7 +357,12 @@ pub async fn list_github_repos() -> Result<Vec<GitHubRepo>, String> {
             .header("Authorization", format!("Bearer {token}"))
             .header("User-Agent", "SproutGit")
             .header("Accept", "application/json")
-            .query(&[("per_page", "100"), ("page", &page.to_string()), ("sort", "pushed"), ("direction", "desc")])
+            .query(&[
+                ("per_page", "100"),
+                ("page", &page.to_string()),
+                ("sort", "pushed"),
+                ("direction", "desc"),
+            ])
             .send()
             .await
             .map_err(|e| format!("Failed to fetch repos: {e}"))?;

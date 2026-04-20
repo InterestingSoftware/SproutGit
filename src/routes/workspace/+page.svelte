@@ -627,15 +627,22 @@
           </div>
 
           <div class="flex flex-1 flex-col overflow-hidden bg-[var(--sg-bg)]">
-            <CommitGraph
-              commits={graph?.commits ?? []}
-              worktrees={worktrees}
-              activeWorktree={selectedWorktree && activeWorktreePath !== workspace?.rootPath ? selectedWorktree : null}
-              oncreateworktree={handleCreateWorktreeFromGraph}
-              oncheckout={handleGraphCheckout}
-              onreset={handleGraphReset}
-              onselect={handleCommitSelect}
-            />
+            {#if loading}
+              <div class="flex flex-1 items-center justify-center gap-2" style="animation: sg-fade-in 0.3s ease-out">
+                <Spinner size="md" />
+                <p class="text-xs text-[var(--sg-text-faint)]">Loading commit history…</p>
+              </div>
+            {:else}
+              <CommitGraph
+                commits={graph?.commits ?? []}
+                worktrees={worktrees}
+                activeWorktree={selectedWorktree && activeWorktreePath !== workspace?.rootPath ? selectedWorktree : null}
+                oncreateworktree={handleCreateWorktreeFromGraph}
+                oncheckout={handleGraphCheckout}
+                onreset={handleGraphReset}
+                onselect={handleCommitSelect}
+              />
+            {/if}
           </div>
         </div>
 

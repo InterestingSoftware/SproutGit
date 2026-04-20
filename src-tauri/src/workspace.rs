@@ -3,13 +3,13 @@ use serde_json::json;
 use std::collections::VecDeque;
 use std::fs;
 use std::io::{BufReader, Read};
-use std::process::{Command, Stdio};
+use std::process::Stdio;
 
-use crate::github::git_auth_env;
-use crate::helpers::{
-    augmented_path, ensure_directory, initialize_state_db, normalize_existing_path,
-    normalize_or_create_dir, now_epoch_seconds,
+use crate::git::helpers::{
+    ensure_directory, git_command, initialize_state_db, normalize_existing_path,
+    normalize_or_create_dir, now_epoch_seconds, validate_repo_url, GitAction,
 };
+use crate::github::git_auth_env;
 
 fn is_git_error_line(line: &str) -> bool {
     line.get(..6)
@@ -75,8 +75,8 @@ pub async fn create_sproutgit_workspace(
             "stateDbPath": state_db_path.to_string_lossy(),
         });
 
-        let marker_pretty =
-            serde_json::to_string_pretty(&marker).map_err(|e| format!("Failed to serialize project marker: {e}"))?;
+        let marker_pretty = serde_json::to_string_pretty(&marker)
+            .map_err(|e| format!("Failed to serialize project marker: {e}"))?;
         fs::write(&project_marker_path, marker_pretty)
             .map_err(|e| format!("Failed to write project marker: {e}"))?;
     }
@@ -90,6 +90,7 @@ pub async fn create_sproutgit_workspace(
     let mut cloned = false;
 
     if let Some(url) = repo_url {
+        let url = validate_repo_url(&url)?;
         let root_has_content = fs::read_dir(&root_path)
             .map_err(|e| format!("Failed to inspect root directory: {e}"))?
             .next()
@@ -103,18 +104,16 @@ pub async fn create_sproutgit_workspace(
 
         let _ = app_handle.emit("clone-progress", "Connecting...");
 
-        let mut child = Command::new("git")
-            .arg("clone")
-            .arg("--progress")
-            .arg(&url)
-            .arg(&root_path)
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .env("GIT_TERMINAL_PROMPT", "0")
-            .env("PATH", augmented_path())
-            .envs(git_auth_env())
-            .spawn()
-            .map_err(|e| format!("Failed to run git clone: {e}"))?;
+        let root_path_string = root_path.to_string_lossy().to_string();
+        let mut child = git_command(
+            GitAction::Clone,
+            &["clone", "--progress", &url, &root_path_string],
+        )
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .envs(git_auth_env())
+        .spawn()
+        .map_err(|e| format!("Failed to run git clone: {e}"))?;
 
         const MAX_STDERR_LINES: usize = 100;
         let mut stderr_lines: VecDeque<String> = VecDeque::with_capacity(MAX_STDERR_LINES);
@@ -137,7 +136,7 @@ pub async fn create_sproutgit_workspace(
                             stderr_lines.push_back(trimmed);
                         }
                         line_buf.clear();
-                    }
+                    },
                     Ok(b) => line_buf.push(b as char),
                     Err(_) => break,
                 }
@@ -155,7 +154,9 @@ pub async fn create_sproutgit_workspace(
             }
         }
 
-        let status = child.wait().map_err(|e| format!("Failed to wait for git clone: {e}"))?;
+        let status = child
+            .wait()
+            .map_err(|e| format!("Failed to wait for git clone: {e}"))?;
 
         if !status.success() {
             let _ = app_handle.emit("clone-progress", "Clone failed");
@@ -181,16 +182,15 @@ pub async fn create_sproutgit_workspace(
         let _ = app_handle.emit("clone-progress", "Done");
         cloned = true;
     } else if !root_path.join(".git").exists() {
-        let init_output = Command::new("git")
-            .arg("-C")
-            .arg(&root_path)
-            .arg("init")
-            .env("PATH", augmented_path())
+        let root_path_string = root_path.to_string_lossy().to_string();
+        let init_output = git_command(GitAction::Init, &["-C", &root_path_string, "init"])
             .output()
             .map_err(|e| format!("Failed to initialize git repository: {e}"))?;
 
         if !init_output.status.success() {
-            let stderr = String::from_utf8_lossy(&init_output.stderr).trim().to_string();
+            let stderr = String::from_utf8_lossy(&init_output.stderr)
+                .trim()
+                .to_string();
             if stderr.is_empty() {
                 return Err("git init failed".to_string());
             }
@@ -209,7 +209,9 @@ pub async fn create_sproutgit_workspace(
 }
 
 #[tauri::command]
-pub async fn inspect_sproutgit_workspace(workspace_path: String) -> Result<WorkspaceStatus, String> {
+pub async fn inspect_sproutgit_workspace(
+    workspace_path: String,
+) -> Result<WorkspaceStatus, String> {
     let workspace = normalize_existing_path(&workspace_path)?;
 
     let root_path = workspace.join("root");

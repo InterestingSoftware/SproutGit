@@ -60,6 +60,31 @@ jobs:
         working-directory: src-tauri
         run: cargo check
 
+      - name: Cargo test
+        working-directory: src-tauri
+        run: cargo test --all-targets --verbose
+
+      - name: Install cargo-tarpaulin
+        if: runner.os == 'Linux'
+        run: cargo install cargo-tarpaulin
+
+      - name: Generate coverage (Linux only)
+        if: runner.os == 'Linux'
+        working-directory: src-tauri
+        run: |
+          cargo tarpaulin --out Xml --output-dir coverage --timeout 300 --all-targets
+
+      - name: Upload coverage to Codecov (Linux only)
+        if: runner.os == 'Linux'
+        uses: codecov/codecov-action@v4
+        with:
+          directory: ./src-tauri/coverage
+          flags: rust-backend
+          os: ${{ matrix.os }}
+          files: ./src-tauri/coverage/cobertura.xml
+          fail_ci_if_error: false
+          verbose: true
+
       - name: Cargo clippy
         working-directory: src-tauri
         run: cargo clippy -- -D warnings

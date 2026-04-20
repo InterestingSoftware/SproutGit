@@ -1,8 +1,8 @@
 use serde::Serialize;
-use std::process::Command;
 
-use crate::helpers::{
-    augmented_path, ensure_git_success, normalize_existing_path, run_git, slugify_for_path,
+use crate::git::helpers::{
+    ensure_git_success, git_command, normalize_existing_path, run_git, slugify_for_path,
+    validate_non_option_value, GitAction,
 };
 
 // ── Structs ──
@@ -60,6 +60,7 @@ pub struct CommitEntry {
     pub short_hash: String,
     pub parents: Vec<String>,
     pub author_name: String,
+    pub author_email: String,
     pub author_date: String,
     pub subject: String,
     pub refs: Vec<String>,
@@ -86,18 +87,14 @@ pub struct CheckoutResult {
 
 #[tauri::command]
 pub async fn git_info() -> GitInfo {
-    match Command::new("git")
-        .arg("--version")
-        .env("PATH", augmented_path())
-        .output()
-    {
+    match git_command(GitAction::GitInfo, &["--version"]).output() {
         Ok(output) if output.status.success() => {
             let version = String::from_utf8_lossy(&output.stdout).trim().to_string();
             GitInfo {
                 installed: true,
                 version: Some(version),
             }
-        }
+        },
         _ => GitInfo {
             installed: false,
             version: None,
@@ -109,14 +106,13 @@ pub async fn git_info() -> GitInfo {
 pub async fn list_worktrees(repo_path: String) -> Result<WorktreeListResult, String> {
     let canonical = normalize_existing_path(&repo_path)?;
 
-    let output = Command::new("git")
-        .arg("-C")
-        .arg(&canonical)
-        .arg("worktree")
-        .arg("list")
-        .arg("--porcelain")
-        .output()
-        .map_err(|e| format!("Failed to run git worktree list: {e}"))?;
+    let canonical_string = canonical.to_string_lossy().to_string();
+    let output = git_command(
+        GitAction::WorktreeList,
+        &["-C", &canonical_string, "worktree", "list", "--porcelain"],
+    )
+    .output()
+    .map_err(|e| format!("Failed to run git worktree list: {e}"))?;
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
@@ -176,15 +172,18 @@ pub async fn list_worktrees(repo_path: String) -> Result<WorktreeListResult, Str
 pub async fn list_refs(repo_path: String) -> Result<RefsResult, String> {
     let canonical = normalize_existing_path(&repo_path)?;
 
-    let output = run_git(&[
-        "-C",
-        &canonical.to_string_lossy(),
-        "for-each-ref",
-        "--sort=-committerdate",
-        "--format=%(refname)|%(refname:short)|%(objectname)",
-        "refs/heads",
-        "refs/tags",
-    ])?;
+    let output = run_git(
+        GitAction::ListRefs,
+        &[
+            "-C",
+            &canonical.to_string_lossy(),
+            "for-each-ref",
+            "--sort=-committerdate",
+            "--format=%(refname)|%(refname:short)|%(objectname)",
+            "refs/heads",
+            "refs/tags",
+        ],
+    )?;
 
     let output = ensure_git_success(output, "Failed to list refs")?;
     let stdout = String::from_utf8_lossy(&output.stdout);
@@ -219,23 +218,29 @@ pub async fn list_refs(repo_path: String) -> Result<RefsResult, String> {
 }
 
 #[tauri::command]
-pub async fn get_commit_graph(repo_path: String, limit: Option<usize>) -> Result<CommitGraphResult, String> {
+pub async fn get_commit_graph(
+    repo_path: String,
+    limit: Option<usize>,
+) -> Result<CommitGraphResult, String> {
     let canonical = normalize_existing_path(&repo_path)?;
     let max = limit.unwrap_or(120).clamp(20, 400).to_string();
 
     let sep = "\x1e";
-    let format_str = ["%H", "%h", "%P", "%an", "%ar", "%s", "%D"].join(sep);
+    let format_str = ["%H", "%h", "%P", "%an", "%ae", "%ar", "%s", "%D"].join(sep);
 
-    let output = run_git(&[
-        "-C",
-        &canonical.to_string_lossy(),
-        "log",
-        "--all",
-        "--topo-order",
-        &format!("--format={format_str}"),
-        "-n",
-        &max,
-    ])?;
+    let output = run_git(
+        GitAction::CommitGraph,
+        &[
+            "-C",
+            &canonical.to_string_lossy(),
+            "log",
+            "--all",
+            "--topo-order",
+            &format!("--format={format_str}"),
+            "-n",
+            &max,
+        ],
+    )?;
 
     let output = ensure_git_success(output, "Failed to read commit history")?;
     let stdout = String::from_utf8_lossy(&output.stdout);
@@ -245,17 +250,14 @@ pub async fn get_commit_graph(repo_path: String, limit: Option<usize>) -> Result
         .filter(|line| !line.is_empty())
         .filter_map(|line| {
             let parts: Vec<&str> = line.split(sep).collect();
-            if parts.len() < 7 {
+            if parts.len() < 8 {
                 return None;
             }
 
-            let refs_list: Vec<String> = if parts[6].is_empty() {
+            let refs_list: Vec<String> = if parts[7].is_empty() {
                 vec![]
             } else {
-                parts[6]
-                    .split(", ")
-                    .map(|r| r.trim().to_string())
-                    .collect()
+                parts[7].split(", ").map(|r| r.trim().to_string()).collect()
             };
 
             Some(CommitEntry {
@@ -267,8 +269,9 @@ pub async fn get_commit_graph(repo_path: String, limit: Option<usize>) -> Result
                     parts[2].split(' ').map(|p| p.to_string()).collect()
                 },
                 author_name: parts[3].to_string(),
-                author_date: parts[4].to_string(),
-                subject: parts[5].to_string(),
+                author_email: parts[4].to_string(),
+                author_date: parts[5].to_string(),
+                subject: parts[6].to_string(),
                 refs: refs_list,
             })
         })
@@ -291,16 +294,12 @@ pub async fn create_managed_worktree(
     let worktrees_dir = normalize_existing_path(&managed_worktrees_path)?;
 
     let branch = new_branch.trim();
-    if branch.is_empty() {
-        return Err("New branch is required".to_string());
-    }
+    let branch = validate_non_option_value(branch, "New branch")?;
 
     let ref_name = from_ref.trim();
-    if ref_name.is_empty() {
-        return Err("Source ref is required".to_string());
-    }
+    let ref_name = validate_non_option_value(ref_name, "Source ref")?;
 
-    let slug = slugify_for_path(branch);
+    let slug = slugify_for_path(&branch);
     if slug.is_empty() {
         return Err("Branch name must include letters or numbers".to_string());
     }
@@ -313,23 +312,26 @@ pub async fn create_managed_worktree(
         ));
     }
 
-    let output = run_git(&[
-        "-C",
-        &root_repo.to_string_lossy(),
-        "worktree",
-        "add",
-        "-b",
-        branch,
-        &target_worktree.to_string_lossy(),
-        ref_name,
-    ])?;
+    let output = run_git(
+        GitAction::CreateManagedWorktree,
+        &[
+            "-C",
+            &root_repo.to_string_lossy(),
+            "worktree",
+            "add",
+            "-b",
+            &branch,
+            &target_worktree.to_string_lossy(),
+            &ref_name,
+        ],
+    )?;
 
     ensure_git_success(output, "Failed to create managed worktree")?;
 
     Ok(CreateWorktreeResult {
         worktree_path: target_worktree.to_string_lossy().to_string(),
-        branch: branch.to_string(),
-        from_ref: ref_name.to_string(),
+        branch,
+        from_ref: ref_name,
     })
 }
 
@@ -342,23 +344,24 @@ pub async fn delete_managed_worktree(
     let root_repo = normalize_existing_path(&root_repo_path)?;
     let wt_path = normalize_existing_path(&worktree_path)?;
 
-    let output = run_git(&[
-        "-C",
-        &root_repo.to_string_lossy(),
-        "worktree",
-        "remove",
-        &wt_path.to_string_lossy(),
-        "--force",
-    ])?;
-    ensure_git_success(output, "Failed to remove worktree")?;
-
-    if delete_branch {
-        let output = run_git(&[
+    let output = run_git(
+        GitAction::DeleteManagedWorktree,
+        &[
             "-C",
             &root_repo.to_string_lossy(),
             "worktree",
-            "prune",
-        ])?;
+            "remove",
+            &wt_path.to_string_lossy(),
+            "--force",
+        ],
+    )?;
+    ensure_git_success(output, "Failed to remove worktree")?;
+
+    if delete_branch {
+        let output = run_git(
+            GitAction::PruneWorktrees,
+            &["-C", &root_repo.to_string_lossy(), "worktree", "prune"],
+        )?;
         let _ = ensure_git_success(output, "Failed to prune worktrees");
     }
 
@@ -373,24 +376,35 @@ pub async fn checkout_worktree(
 ) -> Result<CheckoutResult, String> {
     let wt_path = normalize_existing_path(&worktree_path)?;
     let wt_str = wt_path.to_string_lossy();
-    let target = target_ref.trim();
-    if target.is_empty() {
-        return Err("Target ref is required".to_string());
-    }
+    let target = validate_non_option_value(target_ref.trim(), "Target ref")?;
 
     // Get current branch before checkout
-    let current_output = run_git(&["-C", &wt_str, "rev-parse", "--abbrev-ref", "HEAD"])?;
+    let current_output = run_git(
+        GitAction::CurrentBranch,
+        &["-C", &wt_str, "rev-parse", "--abbrev-ref", "HEAD"],
+    )?;
     let previous_branch = if current_output.status.success() {
-        let b = String::from_utf8_lossy(&current_output.stdout).trim().to_string();
-        if b == "HEAD" { None } else { Some(b) }
+        let b = String::from_utf8_lossy(&current_output.stdout)
+            .trim()
+            .to_string();
+        if b == "HEAD" {
+            None
+        } else {
+            Some(b)
+        }
     } else {
         None
     };
 
     // Check for uncommitted changes
-    let status_output = run_git(&["-C", &wt_str, "status", "--porcelain"])?;
+    let status_output = run_git(
+        GitAction::StatusPorcelain,
+        &["-C", &wt_str, "status", "--porcelain"],
+    )?;
     let has_changes = if status_output.status.success() {
-        !String::from_utf8_lossy(&status_output.stdout).trim().is_empty()
+        !String::from_utf8_lossy(&status_output.stdout)
+            .trim()
+            .is_empty()
     } else {
         false
     };
@@ -399,31 +413,43 @@ pub async fn checkout_worktree(
 
     if has_changes {
         if !auto_stash {
-            return Err("Worktree has uncommitted changes. Enable auto-stash or commit/discard them first.".to_string());
+            return Err(
+                "Worktree has uncommitted changes. Enable auto-stash or commit/discard them first."
+                    .to_string(),
+            );
         }
-        let stash_output = run_git(&["-C", &wt_str, "stash", "push", "-m", "sproutgit-auto-stash"])?;
+        let stash_output = run_git(
+            GitAction::StashPush,
+            &["-C", &wt_str, "stash", "push", "-m", "sproutgit-auto-stash"],
+        )?;
         ensure_git_success(stash_output, "Failed to stash changes")?;
         stashed = true;
     }
 
     // Perform checkout
-    let checkout_output = run_git(&["-C", &wt_str, "checkout", target])?;
+    let checkout_output = run_git(GitAction::Checkout, &["-C", &wt_str, "checkout", &target])?;
     if !checkout_output.status.success() {
         if stashed {
-            let _ = run_git(&["-C", &wt_str, "stash", "pop"]);
+            let _ = run_git(GitAction::StashPop, &["-C", &wt_str, "stash", "pop"]);
         }
-        let stderr = String::from_utf8_lossy(&checkout_output.stderr).trim().to_string();
-        return Err(if stderr.is_empty() { "Checkout failed".to_string() } else { stderr });
+        let stderr = String::from_utf8_lossy(&checkout_output.stderr)
+            .trim()
+            .to_string();
+        return Err(if stderr.is_empty() {
+            "Checkout failed".to_string()
+        } else {
+            stderr
+        });
     }
 
     // Pop stash back on the new branch
     if stashed {
-        let pop_output = run_git(&["-C", &wt_str, "stash", "pop"])?;
+        let pop_output = run_git(GitAction::StashPop, &["-C", &wt_str, "stash", "pop"])?;
         if !pop_output.status.success() {
             return Ok(CheckoutResult {
                 worktree_path: wt_str.to_string(),
                 previous_branch,
-                new_branch: target.to_string(),
+                new_branch: target,
                 stashed: true,
             });
         }
@@ -432,7 +458,7 @@ pub async fn checkout_worktree(
     Ok(CheckoutResult {
         worktree_path: wt_str.to_string(),
         previous_branch,
-        new_branch: target.to_string(),
+        new_branch: target,
         stashed,
     })
 }
@@ -445,20 +471,80 @@ pub async fn reset_worktree_branch(
 ) -> Result<String, String> {
     let wt_path = normalize_existing_path(&worktree_path)?;
     let wt_str = wt_path.to_string_lossy();
-    let target = target_ref.trim();
-    if target.is_empty() {
-        return Err("Target ref is required".to_string());
-    }
+    let target = validate_non_option_value(target_ref.trim(), "Target ref")?;
 
     let reset_mode = match mode.as_str() {
         "soft" => "--soft",
         "mixed" => "--mixed",
         "hard" => "--hard",
-        _ => return Err(format!("Invalid reset mode: {mode}. Use soft, mixed, or hard.")),
+        _ => {
+            return Err(format!(
+                "Invalid reset mode: {mode}. Use soft, mixed, or hard."
+            ))
+        },
     };
 
-    let output = run_git(&["-C", &wt_str, "reset", reset_mode, target])?;
+    let output = run_git(
+        GitAction::Reset,
+        &["-C", &wt_str, "reset", reset_mode, &target],
+    )?;
     ensure_git_success(output, "Failed to reset branch")?;
 
     Ok(format!("Reset to {target} ({mode})"))
+}
+
+// ── Tier 2: Semantic High-Level Operations ──
+
+/// Create a feature worktree from a source ref with explicit branching.
+/// Convenience wrapper over create_managed_worktree for clarity.
+#[allow(dead_code)]
+pub async fn create_feature_worktree(
+    root_path: String,
+    worktrees_path: String,
+    source_ref: String,
+    feature_name: String,
+) -> Result<CreateWorktreeResult, String> {
+    // Validate inputs
+    let _root = normalize_existing_path(&root_path)?;
+    let _worktrees = normalize_existing_path(&worktrees_path)?;
+    let source = validate_non_option_value(&source_ref, "Source ref")?;
+    let feature = validate_non_option_value(&feature_name, "Feature name")?;
+
+    // Use existing create_managed_worktree under the hood
+    create_managed_worktree(root_path, worktrees_path, source, feature).await
+}
+
+/// Checkout a worktree to a target ref with automatic stash.
+/// Semantic alias for clarity (what we're actually doing: switching branches).
+#[allow(dead_code)]
+pub async fn switch_worktree_branch(
+    worktree_path: String,
+    target_ref: String,
+    auto_stash: bool,
+) -> Result<CheckoutResult, String> {
+    checkout_worktree(worktree_path, target_ref, auto_stash).await
+}
+
+/// Cleanup and reset a worktree to a clean state.
+/// Hard-resets the worktree and cleans untracked files.
+#[allow(dead_code)]
+pub async fn reset_worktree_to_ref(
+    worktree_path: String,
+    target_ref: String,
+) -> Result<String, String> {
+    // First hard reset to the target
+    reset_worktree_branch(
+        worktree_path.clone(),
+        target_ref.clone(),
+        "hard".to_string(),
+    )
+    .await?;
+
+    // Then clean untracked files
+    let wt_path = normalize_existing_path(&worktree_path)?;
+    let wt_str = wt_path.to_string_lossy();
+    let clean_output = run_git(GitAction::Reset, &["-C", &wt_str, "clean", "-fd"])?;
+    ensure_git_success(clean_output, "Failed to clean worktree")?;
+
+    Ok(format!("Worktree reset to {target_ref} and cleaned"))
 }

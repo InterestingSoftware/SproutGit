@@ -1,0 +1,21 @@
+{
+  "env": {
+    "browser": true,
+    "es2021": true,
+    "node": true
+  },
+  "globals": {
+    "window": "readonly",
+    "document": "readonly",
+    "navigator": "readonly",
+    "fetch": "readonly"
+  },
+  "rules": {
+    "no-console": ["warn", { "allow": ["warn", "error"] }],
+    "no-debugger": "warn",
+    "no-eval": "error",
+    "no-implied-eval": "error",
+    "no-unused-vars": "off",
+    "prefer-const": "warn"
+  }
+}

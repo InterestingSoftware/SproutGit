@@ -1,0 +1,11 @@
+# Cargo configuration with lint policy
+# Clippy lint levels enforce code quality while remaining pragmatic
+
+[build]
+# Use all available CPU cores for faster builds
+jobs = -1
+
+[alias]
+# Convenient cross-platform lint commands
+lint = "clippy --all-targets --all-features -- -D warnings"
+fmt-check = "fmt -- --check"
