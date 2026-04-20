@@ -20,6 +20,11 @@
     "test:tauri": "npm run test:tauri:prepare && npm run test:tauri:driver"
   },
   "license": "MIT",
+  "pnpm": {
+    "overrides": {
+      "cookie": "0.7.2"
+    }
+  },
   "dependencies": {
     "@tauri-apps/api": "^2",
     "@tauri-apps/plugin-dialog": "^2.7.0",
