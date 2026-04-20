@@ -1,3 +1,4 @@
+use dunce;
 use rusqlite::{params, Connection};
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -39,7 +40,7 @@ pub fn normalize_existing_path(input: &str) -> Result<PathBuf, String> {
         return Err("Repository path must be a directory".to_string());
     }
 
-    path.canonicalize()
+    dunce::canonicalize(path)
         .map_err(|_| "Failed to resolve repository path".to_string())
 }
 
@@ -58,7 +59,7 @@ pub fn normalize_or_create_dir(input: &str) -> Result<PathBuf, String> {
         fs::create_dir_all(path).map_err(|e| format!("Failed to create workspace directory: {e}"))?;
     }
 
-    path.canonicalize()
+    dunce::canonicalize(path)
         .map_err(|_| "Failed to resolve workspace path".to_string())
 }
 
