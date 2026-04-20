@@ -10,7 +10,7 @@ use crate::git::helpers::{
     ensure_directory, git_command, normalize_existing_path, normalize_or_create_dir,
     now_epoch_seconds, validate_repo_url, GitAction,
 };
-use crate::github::git_auth_env;
+use crate::github::git_clone_auth_context;
 
 fn write_project_marker(
     project_marker_path: &std::path::Path,
@@ -168,15 +168,22 @@ pub async fn create_sproutgit_workspace(
         let _ = app_handle.emit("clone-progress", "Connecting...");
 
         let root_path_string = root_path.to_string_lossy().to_string();
-        let mut child = git_command(
+        let clone_auth = git_clone_auth_context()?;
+
+        let mut clone_command = git_command(
             GitAction::Clone,
             &["clone", "--progress", &url, &root_path_string],
-        )
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .envs(git_auth_env())
-        .spawn()
-        .map_err(|e| format!("Failed to run git clone: {e}"))?;
+        );
+        clone_command.stdout(Stdio::piped());
+        clone_command.stderr(Stdio::piped());
+
+        if let Some(auth) = clone_auth.as_ref() {
+            clone_command.envs(auth.envs.iter().map(|(key, value)| (key, value)));
+        }
+
+        let mut child = clone_command
+            .spawn()
+            .map_err(|e| format!("Failed to run git clone: {e}"))?;
 
         const MAX_STDERR_LINES: usize = 100;
         let mut stderr_lines: VecDeque<String> = VecDeque::with_capacity(MAX_STDERR_LINES);

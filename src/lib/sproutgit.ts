@@ -176,6 +176,13 @@ export type GitHubAuthStatus = {
   provider: string;
 };
 
+export type GitHubAuthStorageMigration = {
+  migrated: boolean;
+  storageBackend: 'keychain' | 'file' | 'none';
+  hadLegacyFileToken: boolean;
+  error?: string | null;
+};
+
 export type GitHubRepo = {
   fullName: string;
   cloneUrl: string;
@@ -343,6 +350,9 @@ export const githubDeviceFlowStart = () => invoke<DeviceCodeResponse>('github_de
 
 export const githubDeviceFlowPoll = (deviceCode: string) =>
   invoke<GitHubPollResult>('github_device_flow_poll', { deviceCode });
+
+export const migrateGithubAuthStorage = () =>
+  invoke<GitHubAuthStorageMigration>('migrate_github_auth_storage');
 
 export const getGithubAuthStatus = () => invoke<GitHubAuthStatus>('get_github_auth_status');
 

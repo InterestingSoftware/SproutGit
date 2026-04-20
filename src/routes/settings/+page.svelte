@@ -6,6 +6,7 @@
   import {
     getGitInfo,
     getGithubAuthStatus,
+    migrateGithubAuthStorage,
     githubDeviceFlowStart,
     githubDeviceFlowPoll,
     githubLogout,
@@ -43,7 +44,26 @@
 
   // Load initial state
   getGitInfo().then((info) => { gitInfo = info; });
-  getGithubAuthStatus().then((s) => { githubAuth = s; });
+  migrateGithubAuthStorage()
+    .then((migration) => {
+      if (migration.migrated && migration.hadLegacyFileToken) {
+        toast.success("Migrated GitHub token storage to OS keychain");
+      } else if (migration.storageBackend === "file" && migration.hadLegacyFileToken) {
+        toast.warning(
+          migration.error
+            ? `Secure token migration unavailable, using file fallback: ${migration.error}`
+            : "Secure token migration unavailable, using file fallback"
+        );
+      }
+    })
+    .catch(() => {
+      // Ignore migration errors here; auth status call below remains source of truth.
+    })
+    .finally(() => {
+      getGithubAuthStatus().then((s) => {
+        githubAuth = s;
+      });
+    });
 
   Promise.all([
     detectEditors(),
