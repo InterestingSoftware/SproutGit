@@ -83,6 +83,6 @@
 
 <style>
   .close-btn:hover {
-    background-color: #c42b1c;
+    background-color: var(--sg-danger);
   }
 </style>
