@@ -77,6 +77,7 @@ async fn ensure_workspace_schema(conn: &DatabaseConnection) -> Result<(), String
         CREATE TABLE IF NOT EXISTS hook_definitions (
             id TEXT PRIMARY KEY,
             name TEXT NOT NULL,
+            scope TEXT NOT NULL DEFAULT 'worktree',
             trigger TEXT NOT NULL,
             shell TEXT NOT NULL,
             script TEXT NOT NULL,
@@ -111,6 +112,9 @@ async fn ensure_workspace_schema(conn: &DatabaseConnection) -> Result<(), String
         CREATE INDEX IF NOT EXISTS idx_hook_definitions_trigger_enabled
             ON hook_definitions(trigger, enabled);
 
+        CREATE INDEX IF NOT EXISTS idx_hook_definitions_scope_trigger_enabled
+            ON hook_definitions(scope, trigger, enabled);
+
         CREATE INDEX IF NOT EXISTS idx_hook_dependencies_depends_on
             ON hook_dependencies(depends_on_hook_id);
 
@@ -123,6 +127,72 @@ async fn ensure_workspace_schema(conn: &DatabaseConnection) -> Result<(), String
     ))
     .await
     .map_err(|e| format!("Failed to initialize workspace schema: {e}"))?;
+
+    ensure_workspace_schema_migrations(conn).await
+}
+
+async fn sqlite_table_has_column(
+    conn: &DatabaseConnection,
+    table_name: &str,
+    column_name: &str,
+) -> Result<bool, String> {
+    let pragma = format!("PRAGMA table_info({table_name})");
+    let rows = conn
+        .query_all(Statement::from_string(
+            sea_orm::DatabaseBackend::Sqlite,
+            pragma,
+        ))
+        .await
+        .map_err(|e| format!("Failed to inspect sqlite table '{table_name}': {e}"))?;
+
+    for row in rows {
+        let name = row
+            .try_get::<String>("", "name")
+            .map_err(|e| format!("Failed to read sqlite column metadata: {e}"))?;
+        if name == column_name {
+            return Ok(true);
+        }
+    }
+
+    Ok(false)
+}
+
+async fn ensure_workspace_schema_migrations(conn: &DatabaseConnection) -> Result<(), String> {
+    if !sqlite_table_has_column(conn, "hook_definitions", "scope").await? {
+        conn.execute(Statement::from_string(
+            sea_orm::DatabaseBackend::Sqlite,
+            "
+            ALTER TABLE hook_definitions
+            ADD COLUMN scope TEXT NOT NULL DEFAULT 'worktree';
+            "
+            .to_string(),
+        ))
+        .await
+        .map_err(|e| format!("Failed to migrate hook_definitions scope column: {e}"))?;
+
+        conn.execute(Statement::from_string(
+            sea_orm::DatabaseBackend::Sqlite,
+            "
+            UPDATE hook_definitions
+            SET scope = 'worktree'
+            WHERE scope IS NULL OR TRIM(scope) = '';
+            "
+            .to_string(),
+        ))
+        .await
+        .map_err(|e| format!("Failed to backfill hook scope values: {e}"))?;
+    }
+
+    conn.execute(Statement::from_string(
+        sea_orm::DatabaseBackend::Sqlite,
+        "
+        CREATE INDEX IF NOT EXISTS idx_hook_definitions_scope_trigger_enabled
+            ON hook_definitions(scope, trigger, enabled);
+        "
+        .to_string(),
+    ))
+    .await
+    .map_err(|e| format!("Failed to ensure hook scope index: {e}"))?;
 
     Ok(())
 }

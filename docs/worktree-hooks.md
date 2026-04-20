@@ -98,6 +98,7 @@ Why:
 `hook_definitions`
 - `id` TEXT PRIMARY KEY
 - `name` TEXT NOT NULL
+- `scope` TEXT NOT NULL (`worktree` | `workspace`)
 - `trigger` TEXT NOT NULL
 - `shell` TEXT NOT NULL (`bash` | `zsh` | `pwsh`)
 - `script` TEXT NOT NULL
@@ -195,6 +196,7 @@ Provide minimal, explicit environment variables:
 - `SPROUTGIT_TRIGGER_ACTION`
 - `SPROUTGIT_HOOK_ID`
 - `SPROUTGIT_HOOK_NAME`
+- `SPROUTGIT_HOOK_SCOPE`
 - `SPROUTGIT_HOOK_SHELL`
 - `SPROUTGIT_HOOK_CRITICAL`
 - `SPROUTGIT_HOOK_TIMEOUT_SECONDS`

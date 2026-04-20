@@ -21,6 +21,7 @@ use crate::git::helpers::{
 pub struct WorkspaceHook {
     pub id: String,
     pub name: String,
+    pub scope: String,
     pub trigger: String,
     pub shell: String,
     pub script: String,
@@ -37,6 +38,7 @@ pub struct WorkspaceHook {
 pub struct WorkspaceHookWithDependencies {
     pub id: String,
     pub name: String,
+    pub scope: String,
     pub trigger: String,
     pub shell: String,
     pub script: String,
@@ -53,6 +55,7 @@ pub struct WorkspaceHookWithDependencies {
 #[serde(rename_all = "camelCase")]
 pub struct HookUpsertInput {
     pub name: String,
+    pub scope: String,
     pub trigger: String,
     pub shell: String,
     pub script: String,
@@ -67,6 +70,7 @@ pub struct HookUpsertInput {
 struct RuntimeHook {
     id: String,
     name: String,
+    scope: String,
     trigger: String,
     shell: String,
     script: String,
@@ -120,6 +124,8 @@ const ALLOWED_TRIGGERS: &[&str] = &[
     "before_worktree_switch",
     "after_worktree_switch",
 ];
+
+const ALLOWED_SCOPES: &[&str] = &["worktree", "workspace"];
 
 fn allowed_shells_for_current_os() -> &'static [&'static str] {
     if cfg!(target_os = "windows") {
@@ -180,6 +186,14 @@ fn validate_shell(shell: &str) -> Result<String, String> {
         ));
     }
     Ok(shell)
+}
+
+fn validate_scope(scope: &str) -> Result<String, String> {
+    let scope = normalize_non_empty(scope, "Scope")?;
+    if !ALLOWED_SCOPES.contains(&scope.as_str()) {
+        return Err(format!("Unsupported scope: {scope}"));
+    }
+    Ok(scope)
 }
 
 fn validate_timeout(timeout_seconds: u32) -> Result<u32, String> {
@@ -415,7 +429,7 @@ async fn load_hook_by_id(
     let statement = Statement::from_sql_and_values(
         DbBackend::Sqlite,
         "
-        SELECT id, name, trigger, shell, script, enabled, critical, parallel_group, timeout_seconds, created_at, updated_at
+        SELECT id, name, scope, trigger, shell, script, enabled, critical, parallel_group, timeout_seconds, created_at, updated_at
         FROM hook_definitions
         WHERE id = ?
         LIMIT 1
@@ -633,6 +647,7 @@ async fn execute_hook(
 
     base.env("SPROUTGIT_HOOK_ID", hook.id.clone());
     base.env("SPROUTGIT_HOOK_NAME", hook.name.clone());
+    base.env("SPROUTGIT_HOOK_SCOPE", hook.scope.clone());
     base.env("SPROUTGIT_HOOK_SHELL", hook.shell.clone());
     base.env(
         "SPROUTGIT_HOOK_CRITICAL",
@@ -822,7 +837,7 @@ pub async fn execute_workspace_hooks_for_trigger(
     let hook_statement = Statement::from_sql_and_values(
         DbBackend::Sqlite,
         "
-        SELECT id, name, trigger, shell, script, enabled, critical, parallel_group, timeout_seconds, created_at, updated_at
+        SELECT id, name, scope, trigger, shell, script, enabled, critical, parallel_group, timeout_seconds, created_at, updated_at
         FROM hook_definitions
         WHERE trigger = ? AND enabled = 1
         ORDER BY name ASC
@@ -849,6 +864,7 @@ pub async fn execute_workspace_hooks_for_trigger(
             RuntimeHook {
                 id: hook.id,
                 name: hook.name,
+                scope: hook.scope,
                 trigger: hook.trigger,
                 shell: hook.shell,
                 script: hook.script,
@@ -1126,7 +1142,7 @@ pub async fn list_workspace_hooks(
         Statement::from_sql_and_values(
             DbBackend::Sqlite,
             "
-            SELECT id, name, trigger, shell, script, enabled, critical, parallel_group, timeout_seconds, created_at, updated_at
+            SELECT id, name, scope, trigger, shell, script, enabled, critical, parallel_group, timeout_seconds, created_at, updated_at
             FROM hook_definitions
             WHERE trigger = ?
             ORDER BY name ASC
@@ -1137,7 +1153,7 @@ pub async fn list_workspace_hooks(
         Statement::from_string(
             DbBackend::Sqlite,
             "
-            SELECT id, name, trigger, shell, script, enabled, critical, parallel_group, timeout_seconds, created_at, updated_at
+            SELECT id, name, scope, trigger, shell, script, enabled, critical, parallel_group, timeout_seconds, created_at, updated_at
             FROM hook_definitions
             ORDER BY trigger ASC, name ASC
             "
@@ -1159,6 +1175,7 @@ pub async fn list_workspace_hooks(
         output.push(WorkspaceHookWithDependencies {
             id: hook.id,
             name: hook.name,
+            scope: hook.scope,
             trigger: hook.trigger,
             shell: hook.shell,
             script: hook.script,
@@ -1184,6 +1201,7 @@ pub async fn create_workspace_hook(
 
     let id = generate_hook_id();
     let name = normalize_non_empty(&input.name, "Hook name")?;
+    let scope = validate_scope(&input.scope)?;
     let trigger = validate_trigger(&input.trigger)?;
     let shell = validate_shell(&input.shell)?;
     let script = normalize_non_empty(&input.script, "Hook script")?;
@@ -1197,6 +1215,7 @@ pub async fn create_workspace_hook(
         INSERT INTO hook_definitions(
             id,
             name,
+            scope,
             trigger,
             shell,
             script,
@@ -1207,11 +1226,12 @@ pub async fn create_workspace_hook(
             created_at,
             updated_at
         )
-        VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ",
         vec![
             id.clone().into(),
             name.clone().into(),
+            scope.clone().into(),
             trigger.clone().into(),
             shell.clone().into(),
             script.clone().into(),
@@ -1243,6 +1263,7 @@ pub async fn create_workspace_hook(
     Ok(WorkspaceHookWithDependencies {
         id: hook.id,
         name: hook.name,
+        scope: hook.scope,
         trigger: hook.trigger,
         shell: hook.shell,
         script: hook.script,
@@ -1266,6 +1287,7 @@ pub async fn update_workspace_hook(
 
     let hook_id = normalize_non_empty(&hook_id, "Hook id")?;
     let name = normalize_non_empty(&input.name, "Hook name")?;
+    let scope = validate_scope(&input.scope)?;
     let trigger = validate_trigger(&input.trigger)?;
     let shell = validate_shell(&input.shell)?;
     let script = normalize_non_empty(&input.script, "Hook script")?;
@@ -1278,6 +1300,7 @@ pub async fn update_workspace_hook(
         "
         UPDATE hook_definitions
         SET name = ?,
+            scope = ?,
             trigger = ?,
             shell = ?,
             script = ?,
@@ -1290,6 +1313,7 @@ pub async fn update_workspace_hook(
         ",
         vec![
             name.clone().into(),
+            scope.clone().into(),
             trigger.clone().into(),
             shell.clone().into(),
             script.clone().into(),
@@ -1326,6 +1350,7 @@ pub async fn update_workspace_hook(
     Ok(WorkspaceHookWithDependencies {
         id: hook.id,
         name: hook.name,
+        scope: hook.scope,
         trigger: hook.trigger,
         shell: hook.shell,
         script: hook.script,

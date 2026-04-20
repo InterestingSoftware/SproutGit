@@ -84,6 +84,7 @@ Supported triggers:
 
 Hook capabilities:
 
+- **Scope classification**: mark hooks as `worktree` or `workspace` scoped depending on whether they primarily manage one worktree or shared workspace resources
 - **Cross-platform shell support**: `zsh` on macOS, `bash` on Linux, `pwsh` on Windows
 - **Dependency graph**: hooks can depend on other hooks by ID
 - **Parallel execution**: hooks in a named parallel group can run concurrently when dependencies are satisfied
@@ -110,6 +111,7 @@ SproutGit injects runtime context for each hook process:
 - `SPROUTGIT_TRIGGER_ACTION`
 - `SPROUTGIT_HOOK_ID`
 - `SPROUTGIT_HOOK_NAME`
+- `SPROUTGIT_HOOK_SCOPE`
 - `SPROUTGIT_HOOK_SHELL`
 - `SPROUTGIT_HOOK_CRITICAL`
 - `SPROUTGIT_HOOK_TIMEOUT_SECONDS`
