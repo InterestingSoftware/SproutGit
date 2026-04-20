@@ -94,9 +94,11 @@ input, select, textarea, button {
   background: var(--sg-text-faint);
 }
 
-/* Always-visible thin scrollbar for graph lane column */
+/* Styled thin scrollbar for graph lane column (visibility still OS/browser controlled) */
 .sg-scrollbar-visible {
   overflow-x: auto !important;
+  scrollbar-width: thin;
+  scrollbar-color: var(--sg-border) var(--sg-surface);
 }
 .sg-scrollbar-visible::-webkit-scrollbar {
   height: 5px;

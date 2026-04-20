@@ -90,9 +90,10 @@ pub(crate) fn clamp_graph_limit(limit: Option<usize>) -> usize {
     limit.unwrap_or(2000).clamp(20, 2000)
 }
 
-/// Clamp a skip value to at most 1,000,000.
+/// Clamp a skip value to at most 200,000.
 pub(crate) fn clamp_graph_skip(skip: Option<usize>) -> Option<usize> {
-    skip.map(|s| s.min(1_000_000))
+    const MAX_GRAPH_SKIP: usize = 200_000;
+    skip.map(|s| s.min(MAX_GRAPH_SKIP))
 }
 
 /// Parse a single record-separator-delimited commit line into a CommitEntry.
@@ -734,16 +735,16 @@ mod tests {
     }
 
     #[test]
-    fn skip_clamps_to_million() {
-        assert_eq!(clamp_graph_skip(Some(2_000_000)), Some(1_000_000));
-        assert_eq!(clamp_graph_skip(Some(usize::MAX)), Some(1_000_000));
+    fn skip_clamps_to_page_window() {
+        assert_eq!(clamp_graph_skip(Some(2_000_000)), Some(200_000));
+        assert_eq!(clamp_graph_skip(Some(usize::MAX)), Some(200_000));
     }
 
     #[test]
     fn skip_passes_through_valid_values() {
         assert_eq!(clamp_graph_skip(Some(0)), Some(0));
         assert_eq!(clamp_graph_skip(Some(500)), Some(500));
-        assert_eq!(clamp_graph_skip(Some(1_000_000)), Some(1_000_000));
+        assert_eq!(clamp_graph_skip(Some(200_000)), Some(200_000));
     }
 
     // ── parse_commit_line ──

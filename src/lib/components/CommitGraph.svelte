@@ -2,7 +2,7 @@
   import type { CommitEntry, WorktreeInfo } from "$lib/sproutgit";
   import ContextMenu, { type MenuItem } from "$lib/components/ContextMenu.svelte";
   import { toast } from "$lib/toast.svelte";
-  import { onMount } from "svelte";
+  import { onDestroy, onMount } from "svelte";
   import { Search, ChevronUp, ChevronDown, X, GitBranch } from "lucide-svelte";
 
   type Props = {
@@ -68,6 +68,8 @@
 
   // Track scroll position and visible height for sticky SVG column
   let graphScrollTop = $state(0);
+  let pendingGraphScrollTop = 0;
+  let graphScrollRaf = 0;
   let containerHeight = $state(0);
 
   $effect(() => {
@@ -177,7 +179,13 @@
 
   function handleGraphScroll() {
     if (!scrollContainer) return;
-    graphScrollTop = scrollContainer.scrollTop;
+    pendingGraphScrollTop = scrollContainer.scrollTop;
+    if (!graphScrollRaf) {
+      graphScrollRaf = requestAnimationFrame(() => {
+        graphScrollTop = pendingGraphScrollTop;
+        graphScrollRaf = 0;
+      });
+    }
 
     if (!hasmore || loadingmore || !onloadmore) return;
     const remaining =
@@ -186,6 +194,13 @@
       onloadmore();
     }
   }
+
+  onDestroy(() => {
+    if (graphScrollRaf) {
+      cancelAnimationFrame(graphScrollRaf);
+      graphScrollRaf = 0;
+    }
+  });
 
   function nextMatch() {
     if (matchingIndices.length === 0) return;

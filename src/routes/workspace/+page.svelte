@@ -60,6 +60,7 @@
   let graphHasMore = $state(false);
   let graphLoadingMore = $state(false);
   let graphSeenHashes = new Set<string>();
+  let graphGeneration = 0;
   let loading = $state(true);
   let creating = $state(false);
   let deleting = $state<string | null>(null);
@@ -391,6 +392,7 @@
   );
 
   function initializeGraphState(nextGraph: CommitGraphResult) {
+    graphGeneration += 1;
     graph = nextGraph;
     graphSkip = nextGraph.commits.length;
     graphHasMore = nextGraph.commits.length === GRAPH_PAGE_SIZE;
@@ -649,9 +651,13 @@
   async function loadMoreGraphCommits() {
     if (!workspace || graphLoadingMore || !graphHasMore) return;
 
+    const requestGeneration = graphGeneration;
     graphLoadingMore = true;
     try {
       const nextPage = await getCommitGraph(workspace.rootPath, GRAPH_PAGE_SIZE, graphSkip);
+      if (requestGeneration !== graphGeneration) {
+        return;
+      }
       if (!graph) {
         initializeGraphState(nextPage);
       } else {
@@ -663,7 +669,7 @@
           ...graph,
           commits: [...graph.commits, ...newCommits],
         };
-        graphSkip += newCommits.length;
+        graphSkip += nextPage.commits.length;
         graphHasMore = nextPage.commits.length === GRAPH_PAGE_SIZE;
       }
     } catch (err) {
