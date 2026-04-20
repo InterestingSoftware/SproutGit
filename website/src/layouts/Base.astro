@@ -1,0 +1,84 @@
+---
+export interface Props {
+  title?: string;
+  description?: string;
+}
+
+const {
+  title = 'SproutGit — Worktree-first Git client',
+  description = 'A fast, open-source, cross-platform Git desktop app built for parallel work. Worktrees are first-class — for developers and AI agent workflows alike.',
+} = Astro.props;
+
+const canonical = new URL(Astro.url.pathname, Astro.site);
+---
+
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>{title}</title>
+    <meta name="description" content={description} />
+    <link rel="canonical" href={canonical} />
+
+    <!-- Open Graph -->
+    <meta property="og:type" content="website" />
+    <meta property="og:url" content={canonical} />
+    <meta property="og:title" content={title} />
+    <meta property="og:description" content={description} />
+    <meta property="og:image" content="/og-image.png" />
+
+    <!-- Twitter -->
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content={title} />
+    <meta name="twitter:description" content={description} />
+    <meta name="twitter:image" content="/og-image.png" />
+
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+
+    <!-- Scroll animation observer -->
+    <script is:inline>
+      document.addEventListener('DOMContentLoaded', () => {
+        const observer = new IntersectionObserver(
+          (entries) => {
+            entries.forEach((e) => {
+              if (e.isIntersecting) {
+                e.target.classList.add('is-visible');
+                observer.unobserve(e.target);
+              }
+            });
+          },
+          { threshold: 0.12 }
+        );
+        document.querySelectorAll('[data-animate]').forEach((el) => observer.observe(el));
+
+        // Nav scroll state
+        const nav = document.getElementById('site-nav');
+        if (nav) {
+          const onScroll = () => nav.classList.toggle('scrolled', window.scrollY > 20);
+          window.addEventListener('scroll', onScroll, { passive: true });
+          onScroll();
+        }
+
+        // Graph animation trigger
+        const graphObserver = new IntersectionObserver(
+          (entries) => {
+            entries.forEach((e) => {
+              if (e.isIntersecting) {
+                e.target.querySelectorAll('.graph-path, .graph-node').forEach((el) =>
+                  el.classList.add('is-visible')
+                );
+                graphObserver.unobserve(e.target);
+              }
+            });
+          },
+          { threshold: 0.3 }
+        );
+        document.querySelectorAll('[data-graph]').forEach((el) => graphObserver.observe(el));
+      });
+    </script>
+  </head>
+  <body>
+    <slot />
+  </body>
+</html>

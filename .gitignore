@@ -19,6 +19,9 @@ pnpm-debug.log*
 build/
 package/
 dist/
+website/.astro/
+website/dist/
+website/node_modules/
 vite.config.js.timestamp-*
 vite.config.ts.timestamp-*
 
