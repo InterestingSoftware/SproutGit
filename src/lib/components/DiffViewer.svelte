@@ -198,7 +198,7 @@
       </p>
       {#if commits.length === 1}
         <p class="truncate text-[10px] text-[var(--sg-text-faint)]">
-          {commits[0].authorName} · {commits[0].authorDate}
+          {commits[0].authorName} &lt;{commits[0].authorEmail}&gt; · {commits[0].authorDate}
           {#if commits[0].subject}
             — {commits[0].subject}
           {/if}

@@ -1,0 +1,23 @@
+# Rust code formatting configuration
+# Enforces consistent style across the codebase
+
+edition = "2021"
+
+# Line length (balance readability and terminal width)
+max_width = 100
+
+# Organize imports: remove unused, group, and reorder
+reorder_imports = true
+reorder_modules = true
+
+# Function formatting
+fn_params_layout = "Tall"
+
+# Array/tuple formatting
+match_block_trailing_comma = true
+
+# Misc formatting rules
+force_explicit_abi = true
+hard_tabs = false
+tab_spaces = 4
+use_small_heuristics = "Default"

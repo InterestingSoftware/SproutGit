@@ -13,7 +13,7 @@ const APP_PATH = process.env.TAURI_APP_PATH || path.resolve("src-tauri/target/de
 function assertAppBinaryExists(appPath) {
   if (!fs.existsSync(appPath)) {
     throw new Error(
-      `Tauri app binary not found at ${appPath}. Run \"npm run test:tauri:prepare\" first or set TAURI_APP_PATH.`,
+      `Tauri app binary not found at ${appPath}. Run 'pnpm run test:tauri:prepare' first or set TAURI_APP_PATH.`,
     );
   }
 }

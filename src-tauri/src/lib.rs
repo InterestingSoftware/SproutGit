@@ -1,8 +1,6 @@
-mod diff;
 mod editor;
 mod git;
 mod github;
-mod helpers;
 mod workspace;
 
 use tauri::menu::{MenuBuilder, SubmenuBuilder};
@@ -15,6 +13,7 @@ fn get_home_dir() -> Result<String, String> {
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
+#[allow(clippy::expect_used)]
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
@@ -52,16 +51,16 @@ pub fn run() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
-            git::git_info,
-            git::list_worktrees,
-            git::list_refs,
-            git::get_commit_graph,
-            git::create_managed_worktree,
-            git::delete_managed_worktree,
-            git::checkout_worktree,
-            git::reset_worktree_branch,
-            diff::get_diff_files,
-            diff::get_diff_content,
+            git::operations::git_info,
+            git::operations::list_worktrees,
+            git::operations::list_refs,
+            git::operations::get_commit_graph,
+            git::operations::create_managed_worktree,
+            git::operations::delete_managed_worktree,
+            git::operations::checkout_worktree,
+            git::operations::reset_worktree_branch,
+            git::diff::get_diff_files,
+            git::diff::get_diff_content,
             editor::open_in_editor,
             editor::detect_editors,
             editor::get_git_config,
