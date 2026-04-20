@@ -5,7 +5,6 @@ mod github;
 mod helpers;
 mod workspace;
 
-use tauri::menu::{MenuBuilder, SubmenuBuilder};
 
 #[tauri::command]
 fn get_home_dir() -> Result<String, String> {
@@ -19,36 +18,7 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
-        .setup(|app| {
-            let app_submenu = SubmenuBuilder::new(app, "SproutGit")
-                .about(None)
-                .separator()
-                .hide()
-                .hide_others()
-                .show_all()
-                .separator()
-                .quit()
-                .build()?;
-
-            let edit_submenu = SubmenuBuilder::new(app, "Edit")
-                .cut()
-                .copy()
-                .paste()
-                .select_all()
-                .build()?;
-
-            let window_submenu = SubmenuBuilder::new(app, "Window")
-                .minimize()
-                .close_window()
-                .build()?;
-
-            let menu = MenuBuilder::new(app)
-                .item(&app_submenu)
-                .item(&edit_submenu)
-                .item(&window_submenu)
-                .build()?;
-
-            app.set_menu(menu)?;
+        .setup(|_app| {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
