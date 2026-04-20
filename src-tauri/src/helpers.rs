@@ -1,4 +1,3 @@
-use dunce;
 use rusqlite::{params, Connection};
 use std::fs;
 use std::path::{Path, PathBuf};
