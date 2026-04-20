@@ -9,6 +9,7 @@ Owner: SproutGit core
 Allow each SproutGit project to define local automation hooks that run on worktree lifecycle events.
 
 Examples:
+
 - Create config files
 - Install dependencies
 - Start/stop Docker services
@@ -58,14 +59,17 @@ Execution semantics:
 Use two SQLite databases, both managed through ORM repositories and migrations:
 
 1. User-profile config DB (global app state)
-  - Stores app-level settings like recent workspaces
-  - Suggested location:
-    - macOS: `~/Library/Application Support/SproutGit/config.db`
-    - Linux: `$XDG_CONFIG_HOME/SproutGit/config.db` (fallback `~/.config/SproutGit/config.db`)
-    - Windows: `%APPDATA%/SproutGit/config.db`
+
+- Stores app-level settings like recent workspaces
+- Suggested location:
+  - macOS: `~/Library/Application Support/SproutGit/config.db`
+  - Linux: `$XDG_CONFIG_HOME/SproutGit/config.db` (fallback `~/.config/SproutGit/config.db`)
+  - Windows: `%APPDATA%/SproutGit/config.db`
+
 2. Workspace DB (repo-scoped state)
-  - Existing location: `<workspace>/.sproutgit/state.db`
-  - Stores hook definitions, dependencies, and run history for that workspace
+
+- Existing location: `<workspace>/.sproutgit/state.db`
+- Stores hook definitions, dependencies, and run history for that workspace
 
 Decision: ORM is not limited to hooks. New and existing SQLite-backed features should move to ORM-backed repositories over time.
 
@@ -86,16 +90,19 @@ Why:
 ### User-profile tables
 
 `recent_workspaces`
+
 - `workspace_path` TEXT PRIMARY KEY
 - `last_opened_at` INTEGER NOT NULL
 
 `app_settings`
+
 - `key` TEXT PRIMARY KEY
 - `value` TEXT NOT NULL
 
 ### Workspace tables
 
 `hook_definitions`
+
 - `id` TEXT PRIMARY KEY
 - `name` TEXT NOT NULL
 - `scope` TEXT NOT NULL (`worktree` | `workspace`)
@@ -104,23 +111,25 @@ Why:
 - `script` TEXT NOT NULL
 - `enabled` INTEGER NOT NULL DEFAULT 1
 - `critical` INTEGER NOT NULL DEFAULT 0
-- `parallel_group` TEXT NULL
 - `timeout_seconds` INTEGER NOT NULL DEFAULT 600
 - `created_at` INTEGER NOT NULL
 - `updated_at` INTEGER NOT NULL
 
 `hook_dependencies`
+
 - `hook_id` TEXT NOT NULL
 - `depends_on_hook_id` TEXT NOT NULL
 - PRIMARY KEY (`hook_id`, `depends_on_hook_id`)
 
 `hook_dependency_closure` (optional cache table)
+
 - `hook_id` TEXT NOT NULL
 - `depends_on_hook_id` TEXT NOT NULL
 - `depth` INTEGER NOT NULL
 - PRIMARY KEY (`hook_id`, `depends_on_hook_id`)
 
 `hook_runs`
+
 - `id` TEXT PRIMARY KEY
 - `hook_id` TEXT NOT NULL
 - `trigger` TEXT NOT NULL
@@ -134,12 +143,14 @@ Why:
 - `error_message` TEXT NULL
 
 Indexes:
+
 - `idx_hook_definitions_trigger_enabled`
 - `idx_hook_dependencies_depends_on`
 - `idx_hook_runs_hook_started_at`
 - `idx_hook_runs_worktree_started_at`
 
 Notes:
+
 - `workspace_path` is not required in `hook_definitions` because this DB is already workspace-local.
 - Dependencies support multi-dependency AND semantics: a hook can run only after all listed dependencies succeed (or are skipped as allowed by policy).
 - Use recursive CTE queries for dependency traversal/cycle detection. No non-portable SQLite extensions are required for the base DAG model.
@@ -148,31 +159,34 @@ Notes:
 
 ### Runtime shell selection
 
-Use host OS to decide supported shell:
+Use host OS to decide supported shell. Hook contents are written to a temporary script file, and SproutGit executes that file with the selected shell:
 
-- Linux: execute with `bash -lc <script>`
-- macOS: execute with `zsh -lc <script>`
-- Windows: execute with `pwsh -NoLogo -NoProfile -NonInteractive -Command <script>`
+- Linux: execute with `bash <temp-script-file>`
+- macOS: execute with `zsh <temp-script-file>`
+- Windows: execute with `pwsh -NoLogo -NoProfile -NonInteractive -File <temp-script-file>`
+
+This is file-based execution, not inline `-c`/`-Command` execution, so hook authors should not rely on inline-shell quoting behavior. Relative paths should be evaluated based on the hook process working directory, not the temporary script file location.
 
 If shell executable is unavailable, fail with explicit remediation guidance.
 
 ### Parallelism and Dependency Tree
 
-Hooks sharing a `parallel_group` may run concurrently after dependency requirements are satisfied.
+Hooks run concurrently by default once dependency requirements are satisfied.
 
 Rules:
-- Different groups can run in parallel
-- Hooks without a group run sequentially
+
 - A hook is runnable only when all dependencies in `hook_dependencies` are completed successfully (AND semantics)
 - For non-critical dependencies that fail, downstream hooks are still allowed to run
 - Reject invalid dependency graphs (self-cycle or graph cycle)
 - Preserve deterministic ordering among currently-runnable hooks by `name ASC`
 
 Suggested behavior for `before_*` triggers:
+
 - Run all groups
 - If any critical hook fails, operation is rejected
 
 Suggested behavior for `after_*` triggers:
+
 - Run hooks and collect results
 - Always warning-only by default
 - Never mutate Git state to attempt rollback
@@ -212,12 +226,12 @@ Add a `Hooks` section in workspace settings:
 - Enable/disable toggles
 - Critical toggle
 - Timeout input
-- Parallel group input
 - Dependency editor (select one or more hook dependencies)
 - Test-run action
 - Last run status and logs
 
 Editor requirements:
+
 - Use Monaco editor with syntax highlighting based on shell (`shell` for bash/zsh, `powershell` for pwsh)
 - Show shell-specific script template snippets for quick start
 
@@ -226,6 +240,7 @@ Editor requirements:
 This feature executes user-defined scripts locally and is high risk by design.
 
 Guardrails:
+
 - Clear warning: hooks execute arbitrary code
 - Explicit per-hook confirmation for first run
 - Timeout enforcement with process kill
@@ -234,6 +249,7 @@ Guardrails:
 - Strict trigger payload validation (paths, trigger enum)
 
 Non-goals:
+
 - Sandboxing scripts in initial implementation
 
 ## Failure Policy (Decided)

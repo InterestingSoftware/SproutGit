@@ -11,11 +11,7 @@ fn sqlite_url_for_path(db_path: &Path) -> String {
         .replace(' ', "%20");
 
     // Windows drive-letter paths need an explicit extra slash.
-    if normalized
-        .as_bytes()
-        .get(1)
-        .is_some_and(|b| *b == b':')
-    {
+    if normalized.as_bytes().get(1).is_some_and(|b| *b == b':') {
         return format!("sqlite:///{}?mode=rwc", normalized);
     }
 
@@ -46,7 +42,8 @@ async fn ensure_config_schema(conn: &DatabaseConnection) -> Result<(), String> {
             workspace_path TEXT PRIMARY KEY,
             last_opened_at INTEGER NOT NULL
         );
-        ".to_string(),
+        "
+        .to_string(),
     ))
     .await
     .map_err(|e| format!("Failed to initialize config schema: {e}"))?;
@@ -83,7 +80,6 @@ async fn ensure_workspace_schema(conn: &DatabaseConnection) -> Result<(), String
             script TEXT NOT NULL,
             enabled INTEGER NOT NULL DEFAULT 1,
             critical INTEGER NOT NULL DEFAULT 0,
-            parallel_group TEXT NULL,
             timeout_seconds INTEGER NOT NULL DEFAULT 600,
             created_at INTEGER NOT NULL,
             updated_at INTEGER NOT NULL
@@ -123,7 +119,8 @@ async fn ensure_workspace_schema(conn: &DatabaseConnection) -> Result<(), String
 
         CREATE INDEX IF NOT EXISTS idx_hook_runs_worktree_started_at
             ON hook_runs(worktree_path, started_at);
-        ".to_string(),
+        "
+        .to_string(),
     ))
     .await
     .map_err(|e| format!("Failed to initialize workspace schema: {e}"))?;

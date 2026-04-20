@@ -63,7 +63,7 @@ No conflicts, no stash juggling, no waiting. Each agent works independently on i
 - **Interactive commit graph** — Lane-based SVG graph with search, selection, and context menus
 - **Diff viewer** — Single-commit and multi-commit range diffs with file list and unified diff display
 - **Branch management** — Checkout, reset (soft/mixed/hard), and create branches from any ref
-- **Workspace hooks** — Run before/after create, remove, and switch operations with dependency ordering, parallel groups, and per-hook output
+- **Workspace hooks** — Run before/after create, remove, and switch operations with dependency ordering and per-hook output
 - **Editor integration** — Open worktrees in your configured editor (respects `GIT_EDITOR`, `core.editor`, `VISUAL`, `EDITOR`)
 - **Dark mode** — Automatic light/dark theme via system preferences
 - **Cross-platform** — macOS, Windows, and Linux via Tauri v2
@@ -87,7 +87,7 @@ Hook capabilities:
 - **Scope classification**: mark hooks as `worktree` or `workspace` scoped depending on whether they primarily manage one worktree or shared workspace resources
 - **Cross-platform shell support**: `zsh` on macOS, `bash` on Linux, `pwsh` on Windows
 - **Dependency graph**: hooks can depend on other hooks by ID
-- **Parallel execution**: hooks in a named parallel group can run concurrently when dependencies are satisfied
+- **Parallel execution**: hooks run concurrently by default when dependencies are satisfied
 - **Critical vs non-critical behavior**: critical failures can block downstream/operation flow
 - **Timeouts and run logs**: stdout/stderr snippets, status, and error messages are recorded for each run
 - **Live operation tracking UI**: while an operation is locked, the modal shows per-hook pending/running/complete/error status and logs
@@ -122,7 +122,7 @@ SproutGit injects runtime context for each hook process:
 Not in this form. Git has native **hook scripts** (for example `pre-commit`, `post-checkout`, `post-merge`) and native **worktree** commands, but it does not provide:
 
 - a workspace-level hook registry in SQLite
-- dependency and parallel-group orchestration
+- dependency orchestration
 - critical/non-critical policy controls per hook
 - a GUI for lifecycle hooks tied to managed worktree operations
 - live per-hook progress/status/log rendering in a desktop app
@@ -241,27 +241,29 @@ SproutGit manages repos in a prescribed directory structure:
 
 ## Tech Stack
 
-| Layer | Technology |
-|-------|-----------|
-| Desktop shell | Tauri v2 (Rust) |
-| Frontend | SvelteKit + Svelte 5 |
-| Language | TypeScript + Rust |
-| Styling | Tailwind CSS v4 |
-| Icons | Lucide |
-| State | Svelte 5 runes + SQLite (rusqlite) |
-| Git | CLI via `std::process::Command` |
+| Layer         | Technology                         |
+| ------------- | ---------------------------------- |
+| Desktop shell | Tauri v2 (Rust)                    |
+| Frontend      | SvelteKit + Svelte 5               |
+| Language      | TypeScript + Rust                  |
+| Styling       | Tailwind CSS v4                    |
+| Icons         | Lucide                             |
+| State         | Svelte 5 runes + SQLite (rusqlite) |
+| Git           | CLI via `std::process::Command`    |
 
 ## Backend Architecture & Platform
 
 The Rust backend uses a **registered action pattern** for all git and system operations, designed for security, auditability, and testability.
 
 **Key design principles:**
+
 - ✅ **Secure-by-default**: Input validation, no shell interpolation, injection-safe
 - ✅ **Auditable**: Every git operation is explicitly registered and testable
 - ✅ **Cross-platform**: macOS, Linux, Windows with environment-aware setup
 - ⚠️ **Composability gap**: Currently single-step operations; multi-step workflows require client orchestration
 
 **For developers building on this platform:**
+
 - Read [docs/architecture.md](docs/architecture.md) for detailed design assessment, reusability analysis, and recommendations for adding transaction/composition support
 - All git/system interactions route through registered helpers in `src-tauri/src/git/helpers.rs`
 - Security-focused unit tests run in CI across all platforms (see `pnpm run test:security`)

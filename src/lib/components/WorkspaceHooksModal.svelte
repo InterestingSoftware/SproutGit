@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { fade, fly, scale } from 'svelte/transition';
+  import { fade, scale } from 'svelte/transition';
   import MonacoEditor from '$lib/components/MonacoEditor.svelte';
   import Spinner from '$lib/components/Spinner.svelte';
   import {
@@ -109,7 +109,6 @@
     script: defaultScript(),
     enabled: true,
     critical: false,
-    parallelGroup: null,
     timeoutSeconds: 600,
     dependencyIds: [],
   });
@@ -161,7 +160,6 @@
       script: defaultScript(),
       enabled: true,
       critical: false,
-      parallelGroup: null,
       timeoutSeconds: 600,
       dependencyIds: [],
     };
@@ -182,7 +180,6 @@
       script: hook.script,
       enabled: hook.enabled,
       critical: hook.critical,
-      parallelGroup: null,
       timeoutSeconds: hook.timeoutSeconds,
       dependencyIds: [...hook.dependencyIds],
     };
@@ -196,7 +193,6 @@
     const payload: HookUpsertInput = {
       ...form,
       shell: detectedShell,
-      parallelGroup: null,
     };
 
     try {
@@ -235,17 +231,13 @@
     if (!workspacePath) return;
 
     const next = !hook.enabled;
-    hooks = hooks.map((item) =>
-      item.id === hook.id ? { ...item, enabled: next } : item,
-    );
+    hooks = hooks.map(item => (item.id === hook.id ? { ...item, enabled: next } : item));
     togglingHookId = hook.id;
 
     try {
       await toggleWorkspaceHook(workspacePath, hook.id, next);
     } catch (err) {
-      hooks = hooks.map((item) =>
-        item.id === hook.id ? { ...item, enabled: hook.enabled } : item,
-      );
+      hooks = hooks.map(item => (item.id === hook.id ? { ...item, enabled: hook.enabled } : item));
       toast.error(String(err));
     } finally {
       togglingHookId = null;
@@ -266,7 +258,7 @@
   }
 
   let dependencyCandidates = $derived(
-    hooks.filter((hook) => hook.id !== editingHookId && hook.trigger === form.trigger),
+    hooks.filter(hook => hook.id !== editingHookId && hook.trigger === form.trigger)
   );
 
   $effect(() => {
@@ -293,22 +285,29 @@
       class="flex h-[min(78vh,760px)] w-[min(900px,96vw)] flex-col overflow-hidden rounded-xl border border-[var(--sg-border)] bg-[var(--sg-surface)] shadow-xl"
       transition:scale={{ duration: 220, start: 0.97 }}
     >
-      <div class="flex items-center justify-between border-b border-[var(--sg-border-subtle)] px-4 py-3">
+      <div
+        class="flex items-center justify-between border-b border-[var(--sg-border-subtle)] px-4 py-3"
+      >
         <div>
           <p class="text-sm font-semibold text-[var(--sg-text)]">Workspace Hooks</p>
-          <p class="text-xs text-[var(--sg-text-faint)]">Manage lifecycle hooks for this workspace.</p>
+          <p class="text-xs text-[var(--sg-text-faint)]">
+            Manage lifecycle hooks for this workspace.
+          </p>
         </div>
         <div class="flex items-center gap-2">
           <button
             onclick={openNewModal}
             class="rounded border border-[var(--sg-border)] bg-[var(--sg-surface-raised)] px-3 py-1.5 text-xs text-[var(--sg-text)] hover:bg-[var(--sg-border)]"
-          >New hook</button>
+            >New hook</button
+          >
           <button
             onclick={onClose}
             class="rounded p-1 text-[var(--sg-text-faint)] hover:bg-[var(--sg-surface-raised)] hover:text-[var(--sg-text)]"
             aria-label="Close"
           >
-            <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M18 6 6 18M6 6l12 12" stroke-width="2" stroke-linecap="round" /></svg>
+            <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"
+              ><path d="M18 6 6 18M6 6l12 12" stroke-width="2" stroke-linecap="round" /></svg
+            >
           </button>
         </div>
       </div>
@@ -320,7 +319,9 @@
             Loading hooks…
           </div>
         {:else if hooks.length === 0}
-          <div class="rounded-lg border border-[var(--sg-border)] bg-[var(--sg-surface-raised)] px-3 py-2 text-xs text-[var(--sg-text-dim)]">
+          <div
+            class="rounded-lg border border-[var(--sg-border)] bg-[var(--sg-surface-raised)] px-3 py-2 text-xs text-[var(--sg-text-dim)]"
+          >
             No hooks defined yet. Create one to automate workspace setup or cleanup.
           </div>
         {:else}
@@ -346,26 +347,45 @@
                       disabled={togglingHookId === hook.id}
                       onchange={() => toggleEnabled(hook)}
                     />
-                    <span class="inline-flex h-4 w-8 items-center rounded-full p-0.5 transition-all duration-500 ease-[cubic-bezier(0.22,1,0.36,1)] {hook.enabled ? 'bg-[var(--sg-primary)] shadow-[0_0_0_1px_color-mix(in_oklab,var(--sg-primary)_60%,black)]' : 'bg-[var(--sg-border)]'} {togglingHookId === hook.id ? 'opacity-80' : ''}">
+                    <span
+                      class="inline-flex h-4 w-8 items-center rounded-full p-0.5 transition-all duration-500 ease-[cubic-bezier(0.22,1,0.36,1)] {hook.enabled
+                        ? 'bg-[var(--sg-primary)] shadow-[0_0_0_1px_color-mix(in_oklab,var(--sg-primary)_60%,black)]'
+                        : 'bg-[var(--sg-border)]'} {togglingHookId === hook.id ? 'opacity-80' : ''}"
+                    >
                       <span
-                        class="h-3 w-3 rounded-full bg-white shadow-sm transform-gpu will-change-transform transition-all duration-500 ease-[cubic-bezier(0.22,1,0.36,1)] {hook.enabled ? 'scale-105' : 'scale-100'}"
+                        class="h-3 w-3 rounded-full bg-white shadow-sm transform-gpu will-change-transform transition-all duration-500 ease-[cubic-bezier(0.22,1,0.36,1)] {hook.enabled
+                          ? 'scale-105'
+                          : 'scale-100'}"
                         style="transform: translateX({hook.enabled ? '16px' : '0px'});"
                       ></span>
                     </span>
-                    <span class="text-xs text-[var(--sg-text-dim)] transition-opacity duration-300 {togglingHookId === hook.id ? 'opacity-60' : 'opacity-100'}">Enabled</span>
+                    <span
+                      class="text-xs text-[var(--sg-text-dim)] transition-opacity duration-300 {togglingHookId ===
+                      hook.id
+                        ? 'opacity-60'
+                        : 'opacity-100'}">Enabled</span
+                    >
                   </label>
                 </div>
 
                 <div class="mt-2 flex items-center justify-between gap-2">
                   <div class="flex items-center gap-2">
                     {#if hook.critical}
-                      <span class="rounded bg-[var(--sg-danger)]/15 px-2 py-0.5 text-[10px] font-medium text-[var(--sg-danger)]">Critical</span>
+                      <span
+                        class="rounded bg-[var(--sg-danger)]/15 px-2 py-0.5 text-[10px] font-medium text-[var(--sg-danger)]"
+                        >Critical</span
+                      >
                     {:else}
-                      <span class="rounded bg-[var(--sg-accent)]/15 px-2 py-0.5 text-[10px] font-medium text-[var(--sg-accent)]">Non-critical</span>
+                      <span
+                        class="rounded bg-[var(--sg-accent)]/15 px-2 py-0.5 text-[10px] font-medium text-[var(--sg-accent)]"
+                        >Non-critical</span
+                      >
                     {/if}
 
                     {#if hook.dependencyIds.length > 0}
-                      <span class="rounded bg-[var(--sg-surface)] px-2 py-0.5 text-[10px] text-[var(--sg-text-faint)]">
+                      <span
+                        class="rounded bg-[var(--sg-surface)] px-2 py-0.5 text-[10px] text-[var(--sg-text-faint)]"
+                      >
                         Depends on {hook.dependencyIds.length}
                       </span>
                     {/if}
@@ -375,12 +395,14 @@
                     <button
                       onclick={() => openEditModal(hook)}
                       class="rounded border border-[var(--sg-border)] px-2 py-1 text-[10px] text-[var(--sg-text-dim)] transition-all duration-200 hover:-translate-y-px hover:bg-[var(--sg-surface)] hover:text-[var(--sg-text)]"
-                    >Edit</button>
+                      >Edit</button
+                    >
                     <button
                       onclick={() => removeHook(hook.id)}
                       disabled={saving}
                       class="rounded border border-[var(--sg-border)] px-2 py-1 text-[10px] text-[var(--sg-danger)] transition-all duration-200 hover:-translate-y-px hover:bg-[var(--sg-danger)]/10 disabled:opacity-50"
-                    >Delete</button>
+                      >Delete</button
+                    >
                   </div>
                 </div>
               </div>
@@ -406,17 +428,25 @@
       class="flex h-[min(86vh,860px)] w-[min(980px,96vw)] flex-col overflow-hidden rounded-xl border border-[var(--sg-border)] bg-[var(--sg-surface)] shadow-2xl"
       transition:scale={{ duration: 220, start: 0.97 }}
     >
-      <div class="flex items-center justify-between border-b border-[var(--sg-border-subtle)] px-4 py-3">
+      <div
+        class="flex items-center justify-between border-b border-[var(--sg-border-subtle)] px-4 py-3"
+      >
         <div>
-          <p class="text-sm font-semibold text-[var(--sg-text)]">{editingHookId ? 'Edit hook' : 'New hook'}</p>
-          <p class="text-xs text-[var(--sg-text-faint)]">Shell is auto-detected for your platform: {detectedShellLabel}</p>
+          <p class="text-sm font-semibold text-[var(--sg-text)]">
+            {editingHookId ? 'Edit hook' : 'New hook'}
+          </p>
+          <p class="text-xs text-[var(--sg-text-faint)]">
+            Shell is auto-detected for your platform: {detectedShellLabel}
+          </p>
         </div>
         <button
           onclick={() => (editorOpen = false)}
           class="rounded p-1 text-[var(--sg-text-faint)] hover:bg-[var(--sg-surface-raised)] hover:text-[var(--sg-text)]"
           aria-label="Close"
         >
-          <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M18 6 6 18M6 6l12 12" stroke-width="2" stroke-linecap="round" /></svg>
+          <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"
+            ><path d="M18 6 6 18M6 6l12 12" stroke-width="2" stroke-linecap="round" /></svg
+          >
         </button>
       </div>
 
@@ -461,7 +491,18 @@
                     <option value={trigger}>{normalizeTriggerLabel(trigger)}</option>
                   {/each}
                 </select>
-                <svg class="pointer-events-none absolute right-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-[var(--sg-text-faint)]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" /></svg>
+                <svg
+                  class="pointer-events-none absolute right-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-[var(--sg-text-faint)]"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                  ><path
+                    d="m6 9 6 6 6-6"
+                    stroke-width="2"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                  /></svg
+                >
               </div>
             </label>
 
@@ -480,27 +521,61 @@
           <div class="grid grid-cols-1 gap-2 sm:grid-cols-2">
             <label class="inline-flex cursor-pointer items-start gap-2">
               <input type="checkbox" class="sr-only" bind:checked={form.enabled} />
-              <span class="mt-0.5 inline-flex h-4 w-4 items-center justify-center rounded border border-[var(--sg-input-border)] {form.enabled ? 'border-[var(--sg-primary)] bg-[var(--sg-primary)]' : 'bg-[var(--sg-input-bg)]'}">
+              <span
+                class="mt-0.5 inline-flex h-4 w-4 items-center justify-center rounded border border-[var(--sg-input-border)] {form.enabled
+                  ? 'border-[var(--sg-primary)] bg-[var(--sg-primary)]'
+                  : 'bg-[var(--sg-input-bg)]'}"
+              >
                 {#if form.enabled}
-                  <svg class="h-3 w-3 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="m5 13 4 4L19 7" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" /></svg>
+                  <svg
+                    class="h-3 w-3 text-white"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                    ><path
+                      d="m5 13 4 4L19 7"
+                      stroke-width="2"
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                    /></svg
+                  >
                 {/if}
               </span>
               <span>
                 <span class="block text-xs text-[var(--sg-text)]">Enabled</span>
-                <span class="block text-[10px] text-[var(--sg-text-faint)]">Disable to keep without running.</span>
+                <span class="block text-[10px] text-[var(--sg-text-faint)]"
+                  >Disable to keep without running.</span
+                >
               </span>
             </label>
 
             <label class="inline-flex cursor-pointer items-start gap-2">
               <input type="checkbox" class="sr-only" bind:checked={form.critical} />
-              <span class="mt-0.5 inline-flex h-4 w-4 items-center justify-center rounded border border-[var(--sg-input-border)] {form.critical ? 'border-[var(--sg-danger)] bg-[var(--sg-danger)]' : 'bg-[var(--sg-input-bg)]'}">
+              <span
+                class="mt-0.5 inline-flex h-4 w-4 items-center justify-center rounded border border-[var(--sg-input-border)] {form.critical
+                  ? 'border-[var(--sg-danger)] bg-[var(--sg-danger)]'
+                  : 'bg-[var(--sg-input-bg)]'}"
+              >
                 {#if form.critical}
-                  <svg class="h-3 w-3 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="m5 13 4 4L19 7" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" /></svg>
+                  <svg
+                    class="h-3 w-3 text-white"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                    ><path
+                      d="m5 13 4 4L19 7"
+                      stroke-width="2"
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                    /></svg
+                  >
                 {/if}
               </span>
               <span>
                 <span class="block text-xs text-[var(--sg-text)]">Critical</span>
-                <span class="block text-[10px] text-[var(--sg-text-faint)]">If this fails in a before_* trigger, the worktree operation is blocked.</span>
+                <span class="block text-[10px] text-[var(--sg-text-faint)]"
+                  >If this fails in a before_* trigger, the worktree operation is blocked.</span
+                >
               </span>
             </label>
           </div>
@@ -508,32 +583,60 @@
           <div>
             <p class="mb-1 text-xs text-[var(--sg-text-faint)]">Depends on</p>
             {#if dependencyCandidates.length === 0}
-              <div class="rounded border border-[var(--sg-border-subtle)] bg-[var(--sg-surface-raised)] px-2.5 py-2 text-xs text-[var(--sg-text-faint)]">
+              <div
+                class="rounded border border-[var(--sg-border-subtle)] bg-[var(--sg-surface-raised)] px-2.5 py-2 text-xs text-[var(--sg-text-faint)]"
+              >
                 No hooks available for this trigger yet.
               </div>
             {:else}
-              <div class="max-h-28 overflow-auto rounded border border-[var(--sg-border-subtle)] bg-[var(--sg-surface-raised)] p-2">
+              <div
+                class="max-h-28 overflow-auto rounded border border-[var(--sg-border-subtle)] bg-[var(--sg-surface-raised)] p-2"
+              >
                 {#each dependencyCandidates as candidate}
                   {@const isChecked = form.dependencyIds.includes(candidate.id)}
-                  <label class="mb-1.5 inline-flex w-full cursor-pointer items-center gap-2 rounded px-1 py-1 hover:bg-[var(--sg-surface)]">
+                  <label
+                    class="mb-1.5 inline-flex w-full cursor-pointer items-center gap-2 rounded px-1 py-1 hover:bg-[var(--sg-surface)]"
+                  >
                     <input
                       type="checkbox"
                       class="sr-only"
                       checked={isChecked}
-                      onchange={(event) =>
-                        toggleDependency(candidate.id, (event.currentTarget as HTMLInputElement).checked)}
+                      onchange={event =>
+                        toggleDependency(
+                          candidate.id,
+                          (event.currentTarget as HTMLInputElement).checked
+                        )}
                     />
-                    <span class="inline-flex h-4 w-4 items-center justify-center rounded border border-[var(--sg-input-border)] {isChecked ? 'border-[var(--sg-primary)] bg-[var(--sg-primary)]' : 'bg-[var(--sg-input-bg)]'}">
+                    <span
+                      class="inline-flex h-4 w-4 items-center justify-center rounded border border-[var(--sg-input-border)] {isChecked
+                        ? 'border-[var(--sg-primary)] bg-[var(--sg-primary)]'
+                        : 'bg-[var(--sg-input-bg)]'}"
+                    >
                       {#if isChecked}
-                        <svg class="h-3 w-3 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="m5 13 4 4L19 7" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" /></svg>
+                        <svg
+                          class="h-3 w-3 text-white"
+                          fill="none"
+                          stroke="currentColor"
+                          viewBox="0 0 24 24"
+                          ><path
+                            d="m5 13 4 4L19 7"
+                            stroke-width="2"
+                            stroke-linecap="round"
+                            stroke-linejoin="round"
+                          /></svg
+                        >
                       {/if}
                     </span>
-                    <span class="min-w-0 truncate text-xs text-[var(--sg-text-dim)]">{candidate.name}</span>
+                    <span class="min-w-0 truncate text-xs text-[var(--sg-text-dim)]"
+                      >{candidate.name}</span
+                    >
                   </label>
                 {/each}
               </div>
             {/if}
-            <p class="mt-1 text-[10px] text-[var(--sg-text-faint)]">This hook runs only after all selected dependencies complete.</p>
+            <p class="mt-1 text-[10px] text-[var(--sg-text-faint)]">
+              This hook runs only after all selected dependencies complete.
+            </p>
           </div>
 
           <div>
@@ -543,7 +646,7 @@
               language={detectedShell === 'pwsh' ? 'powershell' : 'shell'}
               theme="auto"
               height="360px"
-              onChange={(next) => {
+              onChange={next => {
                 form = { ...form, script: next };
               }}
             />
@@ -580,11 +683,14 @@
         </div>
       </div>
 
-      <div class="flex items-center justify-end gap-2 border-t border-[var(--sg-border-subtle)] px-4 py-3">
+      <div
+        class="flex items-center justify-end gap-2 border-t border-[var(--sg-border-subtle)] px-4 py-3"
+      >
         <button
           onclick={() => (editorOpen = false)}
           class="rounded border border-[var(--sg-border)] px-3 py-1.5 text-xs text-[var(--sg-text-dim)] hover:bg-[var(--sg-surface-raised)]"
-        >Cancel</button>
+          >Cancel</button
+        >
         <button
           onclick={saveHook}
           disabled={saving || !form.name.trim() || !form.script.trim()}

@@ -5,12 +5,12 @@ use std::fs;
 use std::io::{BufReader, Read};
 use std::process::Stdio;
 
+use crate::db::initialize_workspace_db;
 use crate::git::helpers::{
-    ensure_directory, git_command, normalize_existing_path,
-    normalize_or_create_dir, now_epoch_seconds, validate_repo_url, GitAction,
+    ensure_directory, git_command, normalize_existing_path, normalize_or_create_dir,
+    now_epoch_seconds, validate_repo_url, GitAction,
 };
 use crate::github::git_auth_env;
-use crate::db::initialize_workspace_db;
 
 fn write_project_marker(
     project_marker_path: &std::path::Path,
@@ -38,7 +38,7 @@ fn validate_clean_git_repo(repo_path: &std::path::Path) -> Result<(), String> {
     let repo_str = repo_path.to_string_lossy().to_string();
 
     let inside_output = git_command(
-        GitAction::StatusPorcelain,
+        GitAction::CurrentBranch,
         &["-C", &repo_str, "rev-parse", "--is-inside-work-tree"],
     )
     .output()
@@ -80,8 +80,9 @@ fn validate_clean_git_repo(repo_path: &std::path::Path) -> Result<(), String> {
 }
 
 fn is_git_error_line(line: &str) -> bool {
-    line.get(..6)
-        .is_some_and(|prefix| prefix.eq_ignore_ascii_case("fatal:") || prefix.eq_ignore_ascii_case("error:"))
+    line.get(..6).is_some_and(|prefix| {
+        prefix.eq_ignore_ascii_case("fatal:") || prefix.eq_ignore_ascii_case("error:")
+    })
 }
 
 // ── Structs ──
@@ -228,14 +229,18 @@ pub async fn create_sproutgit_workspace(
             let msg = match error_detail {
                 Some(detail) => {
                     // Provide a friendlier hint for authentication failures.
-                    if detail.to_lowercase().contains("authentication") ||
-                       detail.to_lowercase().contains("could not read username") ||
-                       detail.to_lowercase().contains("repository not found") {
-                        format!("Authentication failed — check your credentials or repo URL. ({})", detail)
+                    if detail.to_lowercase().contains("authentication")
+                        || detail.to_lowercase().contains("could not read username")
+                        || detail.to_lowercase().contains("repository not found")
+                    {
+                        format!(
+                            "Authentication failed — check your credentials or repo URL. ({})",
+                            detail
+                        )
                     } else {
                         format!("git clone failed: {}", detail)
                     }
-                }
+                },
                 None => "git clone failed".to_string(),
             };
             return Err(msg);
