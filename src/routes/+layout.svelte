@@ -1,15 +1,17 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
   import "../app.css";
   import ToastContainer from "$lib/components/ToastContainer.svelte";
 
-  onMount(() => {
+  if (typeof navigator !== 'undefined' && typeof document !== 'undefined') {
+    const root = document.documentElement;
+    root.classList.remove('platform-macos', 'platform-windows');
+
     if (navigator.platform.startsWith('Mac') || /Mac/.test(navigator.userAgent)) {
-      document.documentElement.classList.add('platform-macos');
+      root.classList.add('platform-macos');
     } else if (navigator.platform.startsWith('Win') || /Windows/.test(navigator.userAgent)) {
-      document.documentElement.classList.add('platform-windows');
+      root.classList.add('platform-windows');
     }
-  });
+  }
 </script>
 
 <slot />
