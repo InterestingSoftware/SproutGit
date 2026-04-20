@@ -103,6 +103,9 @@
     aria-controls="sg-autocomplete-list"
     aria-autocomplete="list"
     autocomplete="off"
+    spellcheck="false"
+    autocorrect="off"
+    autocapitalize="off"
   />
 
   {#if open && filtered.length > 0}
@@ -115,7 +118,7 @@
     >
       {#each filtered as item, i}
         <button
-          class="flex w-full items-center gap-2 px-2 py-1.5 text-left text-xs {i === highlightIdx ? 'bg-[var(--sg-surface-raised)] text-[var(--sg-text)]' : 'text-[var(--sg-text-dim)]'}"
+          class="flex w-full cursor-pointer items-center gap-2 px-2 py-1.5 text-left text-xs {i === highlightIdx ? 'bg-[var(--sg-surface-raised)] text-[var(--sg-text)]' : 'text-[var(--sg-text-dim)]'}"
           onmouseenter={() => (highlightIdx = i)}
           onclick={() => select(item)}
           role="option"

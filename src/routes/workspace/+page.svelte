@@ -378,7 +378,7 @@
     ];
     if (wt.branch && !wt.detached) {
       items.push({
-        label: "Switch branch…",
+        label: "Checkout…",
         icon: "⎋",
         action: () => {
           activeWorktreePath = wt.path;
@@ -400,7 +400,7 @@
 
 <main class="flex h-screen flex-col">
   <!-- Context header -->
-  <header class="flex shrink-0 items-center gap-3 border-b border-[var(--sg-border)] bg-[var(--sg-surface)] px-4 py-2">
+  <header data-tauri-drag-region class="flex shrink-0 items-center gap-3 border-b border-[var(--sg-border)] bg-[var(--sg-surface)] pt-1 pr-1 pb-1 pl-[76px]">
     <button onclick={() => goto("/")} class="rounded px-2 py-0.5 text-xs text-[var(--sg-text-dim)] hover:bg-[var(--sg-surface-raised)] hover:text-[var(--sg-text)]">
       &larr; Projects
     </button>
@@ -410,6 +410,15 @@
     <span class="text-xs text-[var(--sg-primary)]">
       {selectedWorktree?.branch ?? (selectedWorktree?.detached ? "detached" : "—")}
     </span>
+    <div class="ml-auto">
+      <button
+        onclick={() => goto("/settings")}
+        class="rounded p-1 text-[var(--sg-text-faint)] hover:bg-[var(--sg-surface-raised)] hover:text-[var(--sg-text)]"
+        title="Settings"
+      >
+        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+      </button>
+    </div>
   </header>
 
   {#if loading}
@@ -430,7 +439,10 @@
           <div class="flex items-center gap-1.5">
             <p class="text-[10px] font-semibold uppercase tracking-wider text-[var(--sg-text-faint)]">Root</p>
             {#if rootWorktree}
-              <span class="inline-flex items-center gap-0.5 rounded-full bg-[var(--sg-warning)]/15 px-1.5 py-px text-[9px] font-medium text-[var(--sg-warning)]">
+              <span
+                class="inline-flex items-center gap-0.5 rounded-full bg-[var(--sg-warning)]/15 px-1.5 py-px text-[9px] font-medium text-[var(--sg-warning)] cursor-help"
+                title="The root checkout is managed by SproutGit. Do not make changes or work directly in it — use worktrees instead."
+              >
                 <ShieldAlert class="h-2.5 w-2.5" />
                 Protected
               </span>
@@ -546,9 +558,16 @@
         <!-- Active worktree actions (simplified: one ref field) -->
         {#if selectedWorktree && activeWorktreePath !== workspace?.rootPath}
           <div class="border-t border-[var(--sg-border-subtle)] px-3 py-2" style="animation: sg-fade-in 0.15s ease-out">
-            <p class="mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-[var(--sg-text-faint)]">
-              {selectedWorktree.branch ?? "Worktree"} actions
+            <p class="mb-1 text-[10px] font-semibold uppercase tracking-wider text-[var(--sg-text-faint)]">
+              Worktree actions
             </p>
+            <div class="mb-1.5 rounded border border-[var(--sg-border-subtle)] bg-[var(--sg-surface)] px-2 py-1">
+              <span class="text-[9px] text-[var(--sg-text-faint)]">Branch</span>
+              <p class="truncate font-mono text-[11px] font-medium text-[var(--sg-text)]">{selectedWorktree.branch ?? "detached HEAD"}</p>
+              {#if selectedWorktree.head}
+                <span class="font-mono text-[9px] text-[var(--sg-text-faint)]">{selectedWorktree.head.slice(0, 8)}</span>
+              {/if}
+            </div>
             <label for="action-ref" class="mb-0.5 block text-[10px] text-[var(--sg-text-faint)]">Target ref</label>
             <div class="mb-1.5">
               <Autocomplete
@@ -563,15 +582,15 @@
                 onclick={() => { if (selectedWorktree && actionRef) handleCheckoutWorktree(selectedWorktree, actionRef); }}
                 disabled={!actionRef}
                 class="flex-1 rounded bg-[var(--sg-primary)] px-2 py-1 text-[10px] font-semibold text-[var(--sg-bg)] hover:bg-[var(--sg-primary-hover)] disabled:cursor-not-allowed disabled:opacity-40"
-                title="Switch branch (auto-stash enabled)"
+                title="Checkout: switch this worktree to the target ref (auto-stashes uncommitted changes)"
               >
-                Switch branch
+                Checkout
               </button>
               <button
                 onclick={() => { if (selectedWorktree && actionRef) handleResetWorktree(selectedWorktree, actionRef, "mixed"); }}
                 disabled={!actionRef}
                 class="rounded border border-[var(--sg-border)] px-2 py-1 text-[10px] text-[var(--sg-text-dim)] hover:bg-[var(--sg-surface-raised)] hover:text-[var(--sg-text)] disabled:cursor-not-allowed disabled:opacity-40"
-                title="Reset --mixed (keep changes unstaged)"
+                title="Reset --mixed: move branch pointer to target ref, keep changes as unstaged"
               >
                 Reset
               </button>
@@ -579,12 +598,12 @@
                 onclick={() => { if (selectedWorktree && actionRef) handleResetWorktree(selectedWorktree, actionRef, "hard"); }}
                 disabled={!actionRef}
                 class="rounded border border-[var(--sg-danger)]/30 px-2 py-1 text-[10px] text-[var(--sg-danger)] hover:bg-[var(--sg-danger)]/10 disabled:cursor-not-allowed disabled:opacity-40"
-                title="Reset --hard (discard all changes!)"
+                title="Reset --hard: move branch pointer to target ref and DISCARD all changes"
               >
-                Hard
+                Hard reset
               </button>
             </div>
-            <p class="mt-1 text-[9px] text-[var(--sg-text-faint)]">Tip: right-click a commit in the graph for quick actions</p>
+            <p class="mt-1 text-[9px] text-[var(--sg-text-faint)]">Right-click a commit in the graph for quick actions</p>
           </div>
         {/if}
       </aside>
@@ -627,6 +646,7 @@
               diff={diffContent}
               loading={diffLoading}
               commitLabel={diffCommitLabel}
+              commits={selectedCommits}
               onselectfile={handleDiffFileSelect}
               onclose={closeDiffViewer}
             />

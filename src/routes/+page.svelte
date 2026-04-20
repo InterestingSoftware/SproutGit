@@ -3,16 +3,23 @@
   import { open } from "@tauri-apps/plugin-dialog";
   import { openUrl } from "@tauri-apps/plugin-opener";
   import Spinner from "$lib/components/Spinner.svelte";
+  import Autocomplete from "$lib/components/Autocomplete.svelte";
   import {
     createWorkspace,
     getGitInfo,
     inspectWorkspace,
     onCloneProgress,
+    getGithubAuthStatus,
+    listGithubRepos,
+    getHomeDir,
     type GitInfo,
     type WorkspaceInitResult,
     type WorkspaceStatus,
+    type GitHubAuthStatus,
   } from "$lib/sproutgit";
   import { toast } from "$lib/toast.svelte";
+
+  type GitHubRepoItem = { label: string; value: string; detail?: string };
 
   type KnownProject = {
     workspacePath: string;
@@ -40,6 +47,12 @@
   let clonePhase = $state("");
   let progressEl = $state<HTMLDivElement | null>(null);
 
+  // GitHub auth state
+  let githubAuth = $state<GitHubAuthStatus | null>(null);
+  let githubRepos = $state<GitHubRepoItem[]>([]);
+  let reposFetched = $state(false);
+  let reposLoading = $state(false);
+
   let workspacePath = $derived(
     projectsFolder && folderName ? `${projectsFolder}/${folderName}` : ""
   );
@@ -59,6 +72,29 @@
   function handleUrlInput() {
     if (!folderNameManual) {
       folderName = repoNameFromUrl(cloneUrl);
+    }
+  }
+
+  function handleRepoSelect(value: string) {
+    cloneUrl = value;
+    handleUrlInput();
+  }
+
+  async function fetchGithubRepos() {
+    if (reposFetched || reposLoading || !githubAuth?.authenticated) return;
+    reposLoading = true;
+    try {
+      const repos = await listGithubRepos();
+      githubRepos = repos.map((r) => ({
+        label: r.fullName,
+        value: r.cloneUrl,
+        detail: r.private ? "private" : undefined,
+      }));
+      reposFetched = true;
+    } catch (err) {
+      toast.error(`Failed to load repos: ${err}`);
+    } finally {
+      reposLoading = false;
     }
   }
 
@@ -210,6 +246,18 @@
     gitChecked = true;
   });
   loadKnownProjects();
+  getGithubAuthStatus().then((s) => {
+    githubAuth = s;
+    if (s.authenticated) fetchGithubRepos();
+  });
+
+  // Default projects folder to ~/Projects on first use
+  if (!localStorage.getItem(PROJECTS_FOLDER_KEY)) {
+    getHomeDir().then((home) => {
+      projectsFolder = `${home}/Projects`;
+      saveProjectsFolder();
+    }).catch(() => {});
+  }
 </script>
 
 {#if !gitChecked}
@@ -233,14 +281,26 @@
 {:else}
 <main class="flex h-screen flex-col">
   <!-- Title bar area -->
-  <header class="flex shrink-0 items-center justify-between border-b border-[var(--sg-border)] bg-[var(--sg-surface)] px-4 py-2">
+  <header data-tauri-drag-region class="flex shrink-0 items-center justify-between border-b border-[var(--sg-border)] bg-[var(--sg-surface)] pt-1 pr-1 pb-1 pl-[76px]">
     <span class="flex items-center gap-1.5 text-sm font-semibold text-[var(--sg-text)]">
       <img src="/logo.svg" alt="" class="h-5 w-5" />
       SproutGit
     </span>
-    <span class="rounded px-2 py-0.5 text-xs text-[var(--sg-text-faint)]">
-      git {git.version ?? "not found"}
-    </span>
+    <div class="flex items-center gap-3">
+      {#if githubAuth?.authenticated}
+        <span class="flex items-center gap-1.5 text-xs text-[var(--sg-text-dim)]">
+          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0 0 24 12c0-6.63-5.37-12-12-12z"/></svg>
+          {githubAuth.username}
+        </span>
+      {/if}
+      <button
+        onclick={() => goto("/settings")}
+        class="rounded p-1 text-[var(--sg-text-faint)] hover:bg-[var(--sg-surface-raised)] hover:text-[var(--sg-text)]"
+        title="Settings"
+      >
+        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+      </button>
+    </div>
   </header>
 
   <div class="flex min-h-0 flex-1">
@@ -270,14 +330,32 @@
         </div>
 
         <div>
-          <label for="repo-url" class="mb-1 block text-xs text-[var(--sg-text-dim)]">Repository URL</label>
-          <input
-            id="repo-url"
-            bind:value={cloneUrl}
-            oninput={handleUrlInput}
-            class="w-full rounded border border-[var(--sg-input-border)] bg-[var(--sg-input-bg)] px-2.5 py-1.5 text-xs text-[var(--sg-text)] placeholder-[var(--sg-text-faint)] outline-none focus:border-[var(--sg-input-focus)]"
-            placeholder="https://github.com/org/repo.git"
-          />
+          <label for="repo-url" class="mb-1 flex items-center gap-1.5 text-xs text-[var(--sg-text-dim)]">
+            Repository URL
+            {#if reposLoading}
+              <Spinner size="sm" />
+            {/if}
+          </label>
+          {#if githubRepos.length > 0}
+            <Autocomplete
+              items={githubRepos}
+              bind:value={cloneUrl}
+              onselect={handleRepoSelect}
+              id="repo-url"
+              placeholder="Search repos or paste a URL"
+            />
+          {:else}
+            <input
+              id="repo-url"
+              bind:value={cloneUrl}
+              oninput={handleUrlInput}
+              class="w-full rounded border border-[var(--sg-input-border)] bg-[var(--sg-input-bg)] px-2.5 py-1.5 text-xs text-[var(--sg-text)] placeholder-[var(--sg-text-faint)] outline-none focus:border-[var(--sg-input-focus)]"
+              placeholder="https://github.com/org/repo.git"
+              spellcheck="false"
+              autocorrect="off"
+              autocapitalize="off"
+            />
+          {/if}
         </div>
 
         <div>

@@ -60,6 +60,13 @@ body {
   font-size: 13px;
   line-height: 1.5;
   -webkit-font-smoothing: antialiased;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+input, select, textarea {
+  -webkit-user-select: text;
+  user-select: text;
 }
 
 input, select, textarea, button {
@@ -79,6 +86,46 @@ input, select, textarea, button {
 }
 ::-webkit-scrollbar-thumb:hover {
   background: var(--sg-text-faint);
+}
+
+/* ── Syntax Highlighting (highlight.js) ── */
+.diff-hl, .diff-hl-add, .diff-hl-del {
+  color: var(--sg-text-dim);
+}
+.diff-hl-add { color: #4ade80; }
+.diff-hl-del { color: #f87171; }
+
+/* Light mode token colors */
+.hljs-keyword, .hljs-selector-tag, .hljs-built_in { color: #8250df; }
+.hljs-type, .hljs-class .hljs-title { color: #953800; }
+.hljs-string, .hljs-attr { color: #0a3069; }
+.hljs-number, .hljs-literal { color: #0550ae; }
+.hljs-comment { color: #6e7781; font-style: italic; }
+.hljs-function .hljs-title, .hljs-title.function_ { color: #6639ba; }
+.hljs-variable, .hljs-template-variable { color: #953800; }
+.hljs-params { color: inherit; }
+.hljs-meta, .hljs-meta .hljs-keyword { color: #cf222e; }
+.hljs-tag { color: #116329; }
+.hljs-name { color: #116329; }
+.hljs-attribute { color: #0550ae; }
+.hljs-selector-class, .hljs-selector-id { color: #6639ba; }
+.hljs-property { color: #0550ae; }
+
+/* Dark mode token colors */
+@media (prefers-color-scheme: dark) {
+  .hljs-keyword, .hljs-selector-tag, .hljs-built_in { color: #d2a8ff; }
+  .hljs-type, .hljs-class .hljs-title { color: #ffa657; }
+  .hljs-string, .hljs-attr { color: #a5d6ff; }
+  .hljs-number, .hljs-literal { color: #79c0ff; }
+  .hljs-comment { color: #8b949e; font-style: italic; }
+  .hljs-function .hljs-title, .hljs-title.function_ { color: #d2a8ff; }
+  .hljs-variable, .hljs-template-variable { color: #ffa657; }
+  .hljs-meta, .hljs-meta .hljs-keyword { color: #ff7b72; }
+  .hljs-tag { color: #7ee787; }
+  .hljs-name { color: #7ee787; }
+  .hljs-attribute { color: #79c0ff; }
+  .hljs-selector-class, .hljs-selector-id { color: #d2a8ff; }
+  .hljs-property { color: #79c0ff; }
 }
 
 /* ── Animations ── */

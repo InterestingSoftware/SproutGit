@@ -189,3 +189,68 @@ export const getDiffContent = (
 
 export const onCloneProgress = (callback: (message: string) => void): Promise<UnlistenFn> =>
   listen<string>("clone-progress", (event) => callback(event.payload));
+
+// ── GitHub Auth ──
+
+export type DeviceCodeResponse = {
+  deviceCode: string;
+  userCode: string;
+  verificationUri: string;
+  expiresIn: number;
+  interval: number;
+};
+
+export type GitHubPollResult = {
+  status: "pending" | "complete" | "expired" | "error";
+  username?: string | null;
+  error?: string | null;
+};
+
+export type GitHubAuthStatus = {
+  authenticated: boolean;
+  username?: string | null;
+  provider: string;
+};
+
+export const githubDeviceFlowStart = () =>
+  invoke<DeviceCodeResponse>("github_device_flow_start");
+
+export const githubDeviceFlowPoll = (deviceCode: string) =>
+  invoke<GitHubPollResult>("github_device_flow_poll", { deviceCode });
+
+export const getGithubAuthStatus = () =>
+  invoke<GitHubAuthStatus>("get_github_auth_status");
+
+export const githubLogout = () =>
+  invoke<void>("github_logout");
+
+export type GitHubRepo = {
+  fullName: string;
+  cloneUrl: string;
+  private: boolean;
+  description?: string | null;
+};
+
+export const listGithubRepos = () =>
+  invoke<GitHubRepo[]>("list_github_repos");
+
+export const getHomeDir = () =>
+  invoke<string>("get_home_dir");
+
+// ── Editor Detection & Config ──
+
+export type EditorInfo = {
+  id: string;
+  name: string;
+  command: string;
+  installed: boolean;
+};
+
+export const detectEditors = () =>
+  invoke<EditorInfo[]>("detect_editors");
+
+export const getGitConfig = (key: string) =>
+  invoke<string>("get_git_config", { key });
+
+export const setGitConfig = (key: string, value: string) =>
+  invoke<void>("set_git_config", { key, value });

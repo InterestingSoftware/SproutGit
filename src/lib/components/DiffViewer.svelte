@@ -1,6 +1,34 @@
 <script lang="ts">
-  import type { DiffFileEntry } from "$lib/sproutgit";
+  import type { CommitEntry, DiffFileEntry } from "$lib/sproutgit";
   import Spinner from "./Spinner.svelte";
+  import hljs from "highlight.js/lib/core";
+
+  // Register common languages
+  import typescript from "highlight.js/lib/languages/typescript";
+  import javascript from "highlight.js/lib/languages/javascript";
+  import rust from "highlight.js/lib/languages/rust";
+  import css from "highlight.js/lib/languages/css";
+  import json from "highlight.js/lib/languages/json";
+  import xml from "highlight.js/lib/languages/xml";
+  import bash from "highlight.js/lib/languages/bash";
+  import markdown from "highlight.js/lib/languages/markdown";
+  import yaml from "highlight.js/lib/languages/yaml";
+  import sql from "highlight.js/lib/languages/sql";
+  import python from "highlight.js/lib/languages/python";
+  import go from "highlight.js/lib/languages/go";
+
+  hljs.registerLanguage("typescript", typescript);
+  hljs.registerLanguage("javascript", javascript);
+  hljs.registerLanguage("rust", rust);
+  hljs.registerLanguage("css", css);
+  hljs.registerLanguage("json", json);
+  hljs.registerLanguage("xml", xml);
+  hljs.registerLanguage("bash", bash);
+  hljs.registerLanguage("markdown", markdown);
+  hljs.registerLanguage("yaml", yaml);
+  hljs.registerLanguage("sql", sql);
+  hljs.registerLanguage("python", python);
+  hljs.registerLanguage("go", go);
 
   type Props = {
     files: DiffFileEntry[];
@@ -8,6 +36,7 @@
     diff: string;
     loading: boolean;
     commitLabel: string;
+    commits: CommitEntry[];
     onselectfile: (path: string) => void;
     onclose: () => void;
   };
@@ -18,6 +47,7 @@
     diff,
     loading,
     commitLabel,
+    commits,
     onselectfile,
     onclose,
   }: Props = $props();
@@ -106,16 +136,75 @@
     if (parts.length <= 1) return "";
     return parts.slice(0, -1).join("/") + "/";
   }
+
+  const extToLang: Record<string, string> = {
+    ts: "typescript", tsx: "typescript", svelte: "xml",
+    js: "javascript", jsx: "javascript", mjs: "javascript", cjs: "javascript",
+    rs: "rust", css: "css", scss: "css", less: "css",
+    json: "json", html: "xml", svg: "xml",
+    sh: "bash", zsh: "bash", bash: "bash",
+    md: "markdown", yml: "yaml", yaml: "yaml",
+    sql: "sql", py: "python", go: "go", toml: "bash",
+  };
+
+  function langForFile(path: string | null): string | null {
+    if (!path) return null;
+    const ext = path.split(".").pop()?.toLowerCase();
+    return ext ? extToLang[ext] ?? null : null;
+  }
+
+  // Pre-highlight all code lines together for consistent tokenization
+  const highlightedLines = $derived.by((): Map<number, string> => {
+    const map = new Map<number, string>();
+    const lang = langForFile(selectedFile);
+    if (!lang) return map;
+
+    // Collect code lines with their indices
+    const codeIndices: number[] = [];
+    const codeLines: string[] = [];
+    for (let i = 0; i < parsedDiff.length; i++) {
+      const line = parsedDiff[i];
+      if (line.type === "add" || line.type === "del" || line.type === "context") {
+        codeIndices.push(i);
+        codeLines.push(line.content);
+      }
+    }
+
+    if (codeLines.length === 0) return map;
+
+    try {
+      // Highlight as a single block for consistent state tracking
+      const joined = codeLines.join("\n");
+      const result = hljs.highlight(joined, { language: lang, ignoreIllegals: true });
+      const htmlLines = result.value.split("\n");
+      for (let i = 0; i < codeIndices.length && i < htmlLines.length; i++) {
+        map.set(codeIndices[i], htmlLines[i]);
+      }
+    } catch {
+      // Highlighting failed, return empty map (will fall back to plain text)
+    }
+    return map;
+  });
 </script>
 
 <div class="flex h-full flex-col">
   <!-- Header -->
   <div class="flex shrink-0 items-center gap-2 border-b border-[var(--sg-border)] bg-[var(--sg-surface)] px-3 py-1.5">
-    <p class="min-w-0 flex-1 truncate text-xs text-[var(--sg-text)]">
-      <span class="text-[var(--sg-text-faint)]">Changes in</span>
-      <span class="font-mono font-medium">{commitLabel}</span>
-      <span class="text-[var(--sg-text-faint)]">· {files.length} file{files.length !== 1 ? "s" : ""}</span>
-    </p>
+    <div class="min-w-0 flex-1">
+      <p class="truncate text-xs text-[var(--sg-text)]">
+        <span class="text-[var(--sg-text-faint)]">Changes in</span>
+        <span class="font-mono font-medium">{commitLabel}</span>
+        <span class="text-[var(--sg-text-faint)]">· {files.length} file{files.length !== 1 ? "s" : ""}</span>
+      </p>
+      {#if commits.length === 1}
+        <p class="truncate text-[10px] text-[var(--sg-text-faint)]">
+          {commits[0].authorName} · {commits[0].authorDate}
+          {#if commits[0].subject}
+            — {commits[0].subject}
+          {/if}
+        </p>
+      {/if}
+    </div>
     <button
       onclick={onclose}
       class="rounded p-0.5 text-[var(--sg-text-faint)] hover:bg-[var(--sg-surface-raised)] hover:text-[var(--sg-text)]"
@@ -160,7 +249,8 @@
       {:else}
         <table class="w-full border-collapse font-mono text-[11px] leading-[18px]">
           <tbody>
-            {#each parsedDiff as line}
+            {#each parsedDiff as line, idx}
+              {@const hl = highlightedLines.get(idx)}
               {#if line.type === "header"}
                 <tr class="bg-[var(--sg-surface)]">
                   <td class="select-none px-1 text-right text-[var(--sg-text-faint)]" colspan="2"></td>
@@ -175,19 +265,31 @@
                 <tr class="bg-green-500/10">
                   <td class="w-[1px] select-none whitespace-nowrap border-r border-[var(--sg-border-subtle)] px-1 text-right text-[var(--sg-text-faint)]"></td>
                   <td class="w-[1px] select-none whitespace-nowrap border-r border-[var(--sg-border-subtle)] px-1 text-right text-[var(--sg-text-faint)]">{line.newNum}</td>
-                  <td class="whitespace-pre-wrap break-all px-2 text-green-400">+{line.content}</td>
+                  {#if hl}
+                    <td class="diff-hl-add whitespace-pre-wrap break-all px-2">+{@html hl}</td>
+                  {:else}
+                    <td class="whitespace-pre-wrap break-all px-2 text-green-400">+{line.content}</td>
+                  {/if}
                 </tr>
               {:else if line.type === "del"}
                 <tr class="bg-red-500/10">
                   <td class="w-[1px] select-none whitespace-nowrap border-r border-[var(--sg-border-subtle)] px-1 text-right text-[var(--sg-text-faint)]">{line.oldNum}</td>
                   <td class="w-[1px] select-none whitespace-nowrap border-r border-[var(--sg-border-subtle)] px-1 text-right text-[var(--sg-text-faint)]"></td>
-                  <td class="whitespace-pre-wrap break-all px-2 text-red-400">-{line.content}</td>
+                  {#if hl}
+                    <td class="diff-hl-del whitespace-pre-wrap break-all px-2">-{@html hl}</td>
+                  {:else}
+                    <td class="whitespace-pre-wrap break-all px-2 text-red-400">-{line.content}</td>
+                  {/if}
                 </tr>
               {:else if line.type === "context"}
                 <tr>
                   <td class="w-[1px] select-none whitespace-nowrap border-r border-[var(--sg-border-subtle)] px-1 text-right text-[var(--sg-text-faint)]">{line.oldNum}</td>
                   <td class="w-[1px] select-none whitespace-nowrap border-r border-[var(--sg-border-subtle)] px-1 text-right text-[var(--sg-text-faint)]">{line.newNum}</td>
-                  <td class="whitespace-pre-wrap break-all px-2 text-[var(--sg-text-dim)]"> {line.content}</td>
+                  {#if hl}
+                    <td class="diff-hl whitespace-pre-wrap break-all px-2"> {@html hl}</td>
+                  {:else}
+                    <td class="whitespace-pre-wrap break-all px-2 text-[var(--sg-text-dim)]"> {line.content}</td>
+                  {/if}
                 </tr>
               {/if}
             {/each}
