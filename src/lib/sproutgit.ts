@@ -87,11 +87,14 @@ export type WorkspaceHookTrigger =
   | 'before_worktree_switch'
   | 'after_worktree_switch';
 
+export type WorkspaceHookScope = 'worktree' | 'workspace';
+
 export type WorkspaceHookShell = 'bash' | 'zsh' | 'pwsh';
 
 export type WorkspaceHook = {
   id: string;
   name: string;
+  scope: WorkspaceHookScope;
   trigger: WorkspaceHookTrigger;
   shell: WorkspaceHookShell;
   script: string;
@@ -106,6 +109,7 @@ export type WorkspaceHook = {
 
 export type HookUpsertInput = {
   name: string;
+  scope: WorkspaceHookScope;
   trigger: WorkspaceHookTrigger;
   shell: WorkspaceHookShell;
   script: string;

@@ -11,6 +11,7 @@
     type HookUpsertInput,
     type WorkspaceHook,
     type WorkspaceHookShell,
+    type WorkspaceHookScope,
     type WorkspaceHookTrigger,
   } from '$lib/sproutgit';
   import { toast } from '$lib/toast.svelte';
@@ -42,6 +43,18 @@
 
   let detectedShell = $state<WorkspaceHookShell>('bash');
   let detectedShellLabel = $state('Linux (bash)');
+  const scopeOptions: { value: WorkspaceHookScope; label: string; detail: string }[] = [
+    {
+      value: 'worktree',
+      label: 'Worktree',
+      detail: 'Use when the hook is specific to the worktree being acted on.',
+    },
+    {
+      value: 'workspace',
+      label: 'Workspace',
+      detail: 'Use when the hook manages shared workspace resources or cross-worktree state.',
+    },
+  ];
 
   const hookVariableGroups = [
     {
@@ -78,6 +91,7 @@
       items: [
         { name: 'SPROUTGIT_HOOK_ID', description: 'Stable ID of the current hook.' },
         { name: 'SPROUTGIT_HOOK_NAME', description: 'Human-readable hook name.' },
+        { name: 'SPROUTGIT_HOOK_SCOPE', description: 'Whether the hook is classified as worktree or workspace scoped.' },
         { name: 'SPROUTGIT_HOOK_SHELL', description: 'Shell used to execute the script.' },
         { name: 'SPROUTGIT_HOOK_CRITICAL', description: 'true when the hook is marked critical.' },
         { name: 'SPROUTGIT_HOOK_TIMEOUT_SECONDS', description: 'Configured timeout for this hook run.' },
@@ -89,6 +103,7 @@
 
   let form = $state<HookUpsertInput>({
     name: '',
+    scope: 'worktree',
     trigger: 'before_worktree_create',
     shell: 'bash',
     script: defaultScript(),
@@ -140,6 +155,7 @@
     editingHookId = null;
     form = {
       name: '',
+      scope: 'worktree',
       trigger: 'before_worktree_create',
       shell: detectedShell,
       script: defaultScript(),
@@ -160,6 +176,7 @@
     editingHookId = hook.id;
     form = {
       name: hook.name,
+      scope: hook.scope,
       trigger: hook.trigger,
       shell: detectedShell,
       script: hook.script,
@@ -317,7 +334,7 @@
                   <div class="min-w-0">
                     <p class="truncate text-sm font-medium text-[var(--sg-text)]">{hook.name}</p>
                     <p class="mt-0.5 text-xs text-[var(--sg-text-faint)]">
-                      {normalizeTriggerLabel(hook.trigger)} • {hook.timeoutSeconds}s • {hook.shell}
+                      {normalizeTriggerLabel(hook.trigger)} • {hook.scope} • {hook.timeoutSeconds}s • {hook.shell}
                     </p>
                   </div>
 
@@ -415,6 +432,24 @@
           </label>
 
           <div class="grid grid-cols-1 gap-2 sm:grid-cols-2">
+            <label class="text-xs text-[var(--sg-text-faint)]">
+              Scope
+              <div class="relative mt-1">
+                <select
+                  bind:value={form.scope}
+                  class="w-full appearance-none rounded border border-[var(--sg-input-border)] bg-[var(--sg-input-bg)] px-2.5 py-1.5 pr-8 text-xs text-[var(--sg-text)] outline-none focus:border-[var(--sg-input-focus)]"
+                >
+                  {#each scopeOptions as scope}
+                    <option value={scope.value}>{scope.label}</option>
+                  {/each}
+                </select>
+                <svg class="pointer-events-none absolute right-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-[var(--sg-text-faint)]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" /></svg>
+              </div>
+              <p class="mt-1 text-[10px] leading-relaxed text-[var(--sg-text-faint)]">
+                {scopeOptions.find((scope) => scope.value === form.scope)?.detail}
+              </p>
+            </label>
+
             <label class="text-xs text-[var(--sg-text-faint)]">
               Trigger
               <div class="relative mt-1">
