@@ -108,9 +108,6 @@ async fn ensure_workspace_schema(conn: &DatabaseConnection) -> Result<(), String
         CREATE INDEX IF NOT EXISTS idx_hook_definitions_trigger_enabled
             ON hook_definitions(trigger, enabled);
 
-        CREATE INDEX IF NOT EXISTS idx_hook_definitions_scope_trigger_enabled
-            ON hook_definitions(scope, trigger, enabled);
-
         CREATE INDEX IF NOT EXISTS idx_hook_dependencies_depends_on
             ON hook_dependencies(depends_on_hook_id);
 

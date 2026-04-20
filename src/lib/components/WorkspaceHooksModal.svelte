@@ -1,10 +1,13 @@
 <script lang="ts">
   import { fade, scale } from 'svelte/transition';
+  import Checkbox from '$lib/components/Checkbox.svelte';
+  import Select from '$lib/components/Select.svelte';
   import MonacoEditor from '$lib/components/MonacoEditor.svelte';
   import Spinner from '$lib/components/Spinner.svelte';
   import {
     createWorkspaceHook,
     deleteWorkspaceHook,
+    getAvailableHookShells,
     listWorkspaceHooks,
     toggleWorkspaceHook,
     updateWorkspaceHook,
@@ -42,8 +45,7 @@
   let editorOpen = $state(false);
   let editingHookId = $state<string | null>(null);
 
-  let detectedShell = $state<WorkspaceHookShell>('bash');
-  let detectedShellLabel = $state('Linux (bash)');
+  let availableShells = $state<WorkspaceHookShell[]>(['bash']);
   const scopeOptions: { value: WorkspaceHookScope; label: string; detail: string }[] = [
     {
       value: 'worktree',
@@ -114,29 +116,39 @@
     dependencyIds: [],
   });
 
-  function detectShellFromPlatform(): { shell: WorkspaceHookShell; label: string } {
-    if (typeof navigator === 'undefined') {
-      return { shell: 'bash', label: 'Linux (bash)' };
+  function normalizeShell(shell: string): WorkspaceHookShell {
+    if (shell === 'pwsh' || shell === 'zsh' || shell === 'powershell') {
+      return shell;
     }
-
-    const ua = `${navigator.userAgent} ${navigator.platform}`.toLowerCase();
-    if (ua.includes('win')) {
-      return { shell: 'pwsh', label: 'Windows (pwsh)' };
-    }
-    if (ua.includes('mac')) {
-      return { shell: 'zsh', label: 'macOS (zsh)' };
-    }
-    return { shell: 'bash', label: 'Linux (bash)' };
+    return 'bash';
   }
 
-  function applyDetectedShell() {
-    const detected = detectShellFromPlatform();
-    detectedShell = detected.shell;
-    detectedShellLabel = detected.label;
+  function preferredShell(): WorkspaceHookShell {
+    return availableShells[0] ?? 'bash';
+  }
+
+  async function loadAvailableShells() {
+    try {
+      const detected = await getAvailableHookShells();
+      if (detected.length > 0) {
+        availableShells = detected.map(normalizeShell);
+        if (!availableShells.includes(form.shell)) {
+          form = { ...form, shell: preferredShell() };
+        }
+      }
+    } catch {
+      availableShells = ['bash'];
+      if (form.shell !== 'bash') {
+        form = { ...form, shell: 'bash' };
+      }
+    }
   }
 
   function normalizeTriggerLabel(trigger: WorkspaceHookTrigger): string {
-    return trigger.replaceAll('_', ' ');
+    if (trigger === 'manual') return 'Manual';
+    return trigger
+      .replaceAll('_', ' ')
+      .replace(/\b\w/g, (c) => c.toUpperCase());
   }
 
   async function loadHooks() {
@@ -157,7 +169,7 @@
       name: '',
       scope: 'worktree',
       trigger: 'before_worktree_create',
-      shell: detectedShell,
+      shell: preferredShell(),
       script: defaultScript(),
       enabled: true,
       critical: false,
@@ -177,7 +189,7 @@
       name: hook.name,
       scope: hook.scope,
       trigger: hook.trigger,
-      shell: detectedShell,
+      shell: normalizeShell(hook.shell),
       script: hook.script,
       enabled: hook.enabled,
       critical: hook.critical,
@@ -193,7 +205,6 @@
     saving = true;
     const payload: HookUpsertInput = {
       ...form,
-      shell: detectedShell,
     };
 
     try {
@@ -259,15 +270,16 @@
   }
 
   let dependencyCandidates = $derived(
-    hooks.filter(hook => hook.id !== editingHookId && hook.trigger === form.trigger)
+    hooks.filter(
+      hook =>
+        hook.id !== editingHookId &&
+        (hook.trigger === form.trigger || hook.trigger === 'manual'),
+    )
   );
 
   $effect(() => {
-    applyDetectedShell();
-  });
-
-  $effect(() => {
     if (!open || !workspacePath) return;
+    void loadAvailableShells();
     void loadHooks();
   });
 </script>
@@ -298,8 +310,13 @@
         <div class="flex items-center gap-2">
           <button
             onclick={openNewModal}
-            class="rounded border border-[var(--sg-border)] bg-[var(--sg-surface-raised)] px-3 py-1.5 text-xs text-[var(--sg-text)] hover:bg-[var(--sg-border)]"
-            >New hook</button
+            class="inline-flex items-center gap-1.5 rounded bg-[var(--sg-primary)] px-3 py-1.5 text-xs font-semibold text-[var(--sg-bg)] hover:bg-[var(--sg-primary-hover)]"
+          >
+            <svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+              <path d="M12 5v14M5 12h14" stroke-width="2" stroke-linecap="round" />
+            </svg>
+            New hook
+          </button
           >
           <button
             onclick={onClose}
@@ -313,7 +330,7 @@
         </div>
       </div>
 
-      <div class="min-h-0 flex-1 overflow-auto p-4">
+      <div class="min-h-0 flex-1 overflow-auto">
         {#if loading}
           <div class="flex items-center gap-2 text-xs text-[var(--sg-text-dim)]">
             <Spinner size="sm" />
@@ -326,84 +343,62 @@
             No hooks defined yet. Create one to automate workspace setup or cleanup.
           </div>
         {:else}
-          <div class="space-y-2">
-            {#each hooks as hook}
+          <div class="border-b border-[var(--sg-border-subtle)] bg-[var(--sg-surface)]">
+            {#each hooks as hook, index}
               <div
-                class="rounded-lg border border-[var(--sg-border-subtle)] bg-[var(--sg-surface-raised)] px-3 py-2.5 transition-all duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] hover:-translate-y-0.5 hover:shadow-[0_10px_30px_-20px_rgba(0,0,0,0.55)]"
-                transition:fade={{ duration: 180 }}
+                class="px-4 py-2.5 {index > 0 ? 'border-t border-[var(--sg-border-subtle)]' : ''}"
+                transition:fade={{ duration: 140 }}
               >
-                <div class="flex items-start justify-between gap-3">
+                <div class="flex items-center justify-between gap-3">
                   <div class="min-w-0">
                     <p class="truncate text-sm font-medium text-[var(--sg-text)]">{hook.name}</p>
                     <p class="mt-0.5 text-xs text-[var(--sg-text-faint)]">
                       {normalizeTriggerLabel(hook.trigger)} • {hook.scope} • {hook.timeoutSeconds}s • {hook.shell}
                     </p>
+                    <div class="mt-1 flex flex-wrap items-center gap-1.5">
+                      {#if hook.critical}
+                        <span class="rounded border border-[var(--sg-danger)]/30 bg-[var(--sg-danger)]/10 px-1.5 py-0.5 text-[10px] font-medium text-[var(--sg-danger)]">Critical</span>
+                      {/if}
+                      {#if hook.dependencyIds.length > 0}
+                        <span class="rounded border border-[var(--sg-border)] px-1.5 py-0.5 text-[10px] text-[var(--sg-text-faint)]">
+                          Depends on {hook.dependencyIds.length}
+                        </span>
+                      {/if}
+                    </div>
                   </div>
 
-                  <label class="inline-flex cursor-pointer items-center gap-2">
-                    <input
-                      type="checkbox"
-                      class="sr-only"
-                      checked={hook.enabled}
-                      disabled={togglingHookId === hook.id}
-                      onchange={() => toggleEnabled(hook)}
-                    />
-                    <span
-                      class="inline-flex h-4 w-8 items-center rounded-full p-0.5 transition-all duration-500 ease-[cubic-bezier(0.22,1,0.36,1)] {hook.enabled
-                        ? 'bg-[var(--sg-primary)] shadow-[0_0_0_1px_color-mix(in_oklab,var(--sg-primary)_60%,black)]'
-                        : 'bg-[var(--sg-border)]'} {togglingHookId === hook.id ? 'opacity-80' : ''}"
-                    >
-                      <span
-                        class="h-3 w-3 rounded-full bg-white shadow-sm transform-gpu will-change-transform transition-all duration-500 ease-[cubic-bezier(0.22,1,0.36,1)] {hook.enabled
-                          ? 'scale-105'
-                          : 'scale-100'}"
-                        style="transform: translateX({hook.enabled ? '16px' : '0px'});"
-                      ></span>
-                    </span>
-                    <span
-                      class="text-xs text-[var(--sg-text-dim)] transition-opacity duration-300 {togglingHookId ===
-                      hook.id
-                        ? 'opacity-60'
-                        : 'opacity-100'}">Enabled</span
-                    >
-                  </label>
-                </div>
-
-                <div class="mt-2 flex items-center justify-between gap-2">
                   <div class="flex items-center gap-2">
-                    {#if hook.critical}
-                      <span
-                        class="rounded bg-[var(--sg-danger)]/15 px-2 py-0.5 text-[10px] font-medium text-[var(--sg-danger)]"
-                        >Critical</span
-                      >
-                    {:else}
-                      <span
-                        class="rounded bg-[var(--sg-accent)]/15 px-2 py-0.5 text-[10px] font-medium text-[var(--sg-accent)]"
-                        >Non-critical</span
-                      >
-                    {/if}
-
-                    {#if hook.dependencyIds.length > 0}
-                      <span
-                        class="rounded bg-[var(--sg-surface)] px-2 py-0.5 text-[10px] text-[var(--sg-text-faint)]"
-                      >
-                        Depends on {hook.dependencyIds.length}
-                      </span>
-                    {/if}
-                  </div>
-
-                  <div class="flex items-center gap-1">
                     <button
                       onclick={() => openEditModal(hook)}
-                      class="rounded border border-[var(--sg-border)] px-2 py-1 text-[10px] text-[var(--sg-text-dim)] transition-all duration-200 hover:-translate-y-px hover:bg-[var(--sg-surface)] hover:text-[var(--sg-text)]"
+                      class="rounded border border-[var(--sg-border)] px-2 py-1 text-[10px] text-[var(--sg-text-dim)] hover:bg-[var(--sg-surface-raised)] hover:text-[var(--sg-text)]"
                       >Edit</button
                     >
                     <button
                       onclick={() => removeHook(hook.id)}
                       disabled={saving}
-                      class="rounded border border-[var(--sg-border)] px-2 py-1 text-[10px] text-[var(--sg-danger)] transition-all duration-200 hover:-translate-y-px hover:bg-[var(--sg-danger)]/10 disabled:opacity-50"
+                      class="rounded border border-[var(--sg-border)] px-2 py-1 text-[10px] text-[var(--sg-danger)] hover:bg-[var(--sg-danger)]/10 disabled:opacity-50"
                       >Delete</button
                     >
+                    <label class="inline-flex cursor-pointer items-center gap-1.5 pl-1">
+                      <input
+                        type="checkbox"
+                        class="sr-only"
+                        checked={hook.enabled}
+                        disabled={togglingHookId === hook.id}
+                        onchange={() => toggleEnabled(hook)}
+                      />
+                      <span
+                        class="inline-flex h-4 w-8 items-center rounded-full p-0.5 transition-all duration-300 {hook.enabled
+                          ? 'bg-[var(--sg-primary)]'
+                          : 'bg-[var(--sg-border)]'} {togglingHookId === hook.id ? 'opacity-70' : ''}"
+                      >
+                        <span
+                          class="h-3 w-3 rounded-full bg-white transition-all duration-300"
+                          style="transform: translateX({hook.enabled ? '16px' : '0px'});"
+                        ></span>
+                      </span>
+                      <span class="text-[10px] text-[var(--sg-text-faint)]">Enabled</span>
+                    </label>
                   </div>
                 </div>
               </div>
@@ -437,7 +432,7 @@
             {editingHookId ? 'Edit hook' : 'New hook'}
           </p>
           <p class="text-xs text-[var(--sg-text-faint)]">
-            Shell is auto-detected for your platform: {detectedShellLabel}
+            Choose when this hook runs and which shell executes it.
           </p>
         </div>
         <button
@@ -462,20 +457,17 @@
             />
           </label>
 
-          <div class="grid grid-cols-1 gap-2 sm:grid-cols-2">
+          <div class="grid grid-cols-1 gap-2 sm:grid-cols-3">
             <label class="text-xs text-[var(--sg-text-faint)]">
               Scope
-              <div class="relative mt-1">
-                <select
-                  bind:value={form.scope}
-                  class="w-full appearance-none rounded border border-[var(--sg-input-border)] bg-[var(--sg-input-bg)] px-2.5 py-1.5 pr-8 text-xs text-[var(--sg-text)] outline-none focus:border-[var(--sg-input-focus)]"
-                >
-                  {#each scopeOptions as scope}
-                    <option value={scope.value}>{scope.label}</option>
-                  {/each}
-                </select>
-                <svg class="pointer-events-none absolute right-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-[var(--sg-text-faint)]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" /></svg>
-              </div>
+              <Select
+                className="mt-1"
+                value={form.scope}
+                options={scopeOptions.map((scope) => ({ value: scope.value, label: scope.label }))}
+                onChange={(value) => {
+                  form = { ...form, scope: value as WorkspaceHookScope };
+                }}
+              />
               <p class="mt-1 text-[10px] leading-relaxed text-[var(--sg-text-faint)]">
                 {scopeOptions.find((scope) => scope.value === form.scope)?.detail}
               </p>
@@ -483,28 +475,29 @@
 
             <label class="text-xs text-[var(--sg-text-faint)]">
               Trigger
-              <div class="relative mt-1">
-                <select
-                  bind:value={form.trigger}
-                  class="w-full appearance-none rounded border border-[var(--sg-input-border)] bg-[var(--sg-input-bg)] px-2.5 py-1.5 pr-8 text-xs text-[var(--sg-text)] outline-none focus:border-[var(--sg-input-focus)]"
-                >
-                  {#each triggerOptions as trigger}
-                    <option value={trigger}>{normalizeTriggerLabel(trigger)}</option>
-                  {/each}
-                </select>
-                <svg
-                  class="pointer-events-none absolute right-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-[var(--sg-text-faint)]"
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
-                  ><path
-                    d="m6 9 6 6 6-6"
-                    stroke-width="2"
-                    stroke-linecap="round"
-                    stroke-linejoin="round"
-                  /></svg
-                >
-              </div>
+              <Select
+                className="mt-1"
+                value={form.trigger}
+                options={triggerOptions.map((trigger) => ({
+                  value: trigger,
+                  label: normalizeTriggerLabel(trigger),
+                }))}
+                onChange={(value) => {
+                  form = { ...form, trigger: value as WorkspaceHookTrigger };
+                }}
+              />
+            </label>
+
+            <label class="text-xs text-[var(--sg-text-faint)]">
+              Shell
+              <Select
+                className="mt-1"
+                value={form.shell}
+                options={availableShells.map((shell) => ({ value: shell, label: shell }))}
+                onChange={(value) => {
+                  form = { ...form, shell: value as WorkspaceHookShell };
+                }}
+              />
             </label>
 
             <label class="text-xs text-[var(--sg-text-faint)]">
@@ -520,65 +513,34 @@
           </div>
 
           <div class="grid grid-cols-1 gap-2 sm:grid-cols-2">
-            <label class="inline-flex cursor-pointer items-start gap-2">
-              <input type="checkbox" class="sr-only" bind:checked={form.enabled} />
-              <span
-                class="mt-0.5 inline-flex h-4 w-4 items-center justify-center rounded border border-[var(--sg-input-border)] {form.enabled
-                  ? 'border-[var(--sg-primary)] bg-[var(--sg-primary)]'
-                  : 'bg-[var(--sg-input-bg)]'}"
-              >
-                {#if form.enabled}
-                  <svg
-                    class="h-3 w-3 text-white"
-                    fill="none"
-                    stroke="currentColor"
-                    viewBox="0 0 24 24"
-                    ><path
-                      d="m5 13 4 4L19 7"
-                      stroke-width="2"
-                      stroke-linecap="round"
-                      stroke-linejoin="round"
-                    /></svg
-                  >
-                {/if}
-              </span>
+            <Checkbox
+              checked={form.enabled}
+              onChange={(next) => {
+                form = { ...form, enabled: next };
+              }}
+            >
               <span>
                 <span class="block text-xs text-[var(--sg-text)]">Enabled</span>
                 <span class="block text-[10px] text-[var(--sg-text-faint)]"
                   >Disable to keep without running.</span
                 >
               </span>
-            </label>
+            </Checkbox>
 
-            <label class="inline-flex cursor-pointer items-start gap-2">
-              <input type="checkbox" class="sr-only" bind:checked={form.critical} />
-              <span
-                class="mt-0.5 inline-flex h-4 w-4 items-center justify-center rounded border border-[var(--sg-input-border)] {form.critical
-                  ? 'border-[var(--sg-danger)] bg-[var(--sg-danger)]'
-                  : 'bg-[var(--sg-input-bg)]'}"
-              >
-                {#if form.critical}
-                  <svg
-                    class="h-3 w-3 text-white"
-                    fill="none"
-                    stroke="currentColor"
-                    viewBox="0 0 24 24"
-                    ><path
-                      d="m5 13 4 4L19 7"
-                      stroke-width="2"
-                      stroke-linecap="round"
-                      stroke-linejoin="round"
-                    /></svg
-                  >
-                {/if}
-              </span>
+            <Checkbox
+              checked={form.critical}
+              variant="danger"
+              onChange={(next) => {
+                form = { ...form, critical: next };
+              }}
+            >
               <span>
                 <span class="block text-xs text-[var(--sg-text)]">Critical</span>
                 <span class="block text-[10px] text-[var(--sg-text-faint)]"
                   >If this fails in a before_* trigger, the worktree operation is blocked.</span
                 >
               </span>
-            </label>
+            </Checkbox>
           </div>
 
           <div>
@@ -593,46 +555,21 @@
               <div
                 class="max-h-28 overflow-auto rounded border border-[var(--sg-border-subtle)] bg-[var(--sg-surface-raised)] p-2"
               >
+                <div class="space-y-1">
                 {#each dependencyCandidates as candidate}
                   {@const isChecked = form.dependencyIds.includes(candidate.id)}
-                  <label
-                    class="mb-1.5 inline-flex w-full cursor-pointer items-center gap-2 rounded px-1 py-1 hover:bg-[var(--sg-surface)]"
+                  <Checkbox
+                    checked={isChecked}
+                    align="center"
+                    className="w-full rounded px-1 py-1 hover:bg-[var(--sg-surface)]"
+                    onChange={(next) => toggleDependency(candidate.id, next)}
                   >
-                    <input
-                      type="checkbox"
-                      class="sr-only"
-                      checked={isChecked}
-                      onchange={event =>
-                        toggleDependency(
-                          candidate.id,
-                          (event.currentTarget as HTMLInputElement).checked
-                        )}
-                    />
-                    <span
-                      class="inline-flex h-4 w-4 items-center justify-center rounded border border-[var(--sg-input-border)] {isChecked
-                        ? 'border-[var(--sg-primary)] bg-[var(--sg-primary)]'
-                        : 'bg-[var(--sg-input-bg)]'}"
-                    >
-                      {#if isChecked}
-                        <svg
-                          class="h-3 w-3 text-white"
-                          fill="none"
-                          stroke="currentColor"
-                          viewBox="0 0 24 24"
-                          ><path
-                            d="m5 13 4 4L19 7"
-                            stroke-width="2"
-                            stroke-linecap="round"
-                            stroke-linejoin="round"
-                          /></svg
-                        >
-                      {/if}
-                    </span>
                     <span class="min-w-0 truncate text-xs text-[var(--sg-text-dim)]"
                       >{candidate.name}</span
                     >
-                  </label>
+                  </Checkbox>
                 {/each}
+                </div>
               </div>
             {/if}
             <p class="mt-1 text-[10px] text-[var(--sg-text-faint)]">
@@ -644,7 +581,7 @@
             <p class="mb-1 text-xs text-[var(--sg-text-faint)]">Script</p>
             <MonacoEditor
               value={form.script}
-              language={detectedShell === 'pwsh' ? 'powershell' : 'shell'}
+              language={form.shell === 'pwsh' || form.shell === 'powershell' ? 'powershell' : 'shell'}
               theme="auto"
               height="360px"
               onChange={next => {
@@ -660,7 +597,7 @@
                   </p>
                 </div>
                 <span class="rounded border border-[var(--sg-border)] bg-[var(--sg-surface)] px-2 py-0.5 text-[10px] text-[var(--sg-text-faint)]">
-                  {detectedShell === 'pwsh' ? '$env:NAME' : '$NAME'}
+                  {form.shell === 'pwsh' || form.shell === 'powershell' ? '$env:NAME' : '$NAME'}
                 </span>
               </div>
 
