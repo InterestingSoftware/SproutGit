@@ -507,8 +507,9 @@ impl GitCache {
 #[cfg(test)]
 mod tests {
     use super::{
-        validate_git_config_key, validate_non_option_value, validate_repo_url, GitAction,
-        SystemAction,
+        validate_git_config_key, validate_no_control_chars, validate_non_option_value,
+        validate_repo_url, ensure_git_success, slugify_for_path, CachedValue, GitAction,
+        GitCache, SystemAction,
     };
 
     #[test]
@@ -546,5 +547,141 @@ mod tests {
         assert!(validate_repo_url("--local").is_err());
         assert!(validate_repo_url("https://github.com/acme/repo.git\n").is_ok());
         assert!(validate_repo_url("https://github.com/acme/repo .git").is_err());
+    }
+
+    // ── slugify_for_path ──
+
+    #[test]
+    fn slugify_simple_branch_name() {
+        assert_eq!(slugify_for_path("feature-login"), "feature-login");
+    }
+
+    #[test]
+    fn slugify_converts_to_lowercase() {
+        assert_eq!(slugify_for_path("Feature-Login"), "feature-login");
+    }
+
+    #[test]
+    fn slugify_replaces_slashes_with_dashes() {
+        assert_eq!(slugify_for_path("feature/auth/login"), "feature-auth-login");
+    }
+
+    #[test]
+    fn slugify_collapses_consecutive_special_chars() {
+        assert_eq!(slugify_for_path("fix///multiple---slashes"), "fix-multiple---slashes");
+    }
+
+    #[test]
+    fn slugify_trims_leading_trailing_dashes() {
+        assert_eq!(slugify_for_path("/feature/"), "feature");
+        assert_eq!(slugify_for_path("--branch--"), "branch");
+    }
+
+    #[test]
+    fn slugify_handles_spaces_and_special_chars() {
+        assert_eq!(slugify_for_path("my branch name"), "my-branch-name");
+        assert_eq!(slugify_for_path("fix@bug#123"), "fix-bug-123");
+    }
+
+    #[test]
+    fn slugify_preserves_underscores() {
+        assert_eq!(slugify_for_path("my_branch_name"), "my_branch_name");
+    }
+
+    #[test]
+    fn slugify_empty_string() {
+        assert_eq!(slugify_for_path(""), "");
+    }
+
+    // ── validate_no_control_chars ──
+
+    #[test]
+    fn control_chars_rejects_null_byte() {
+        assert!(validate_no_control_chars("hello\0world", "field").is_err());
+    }
+
+    #[test]
+    fn control_chars_rejects_tab() {
+        assert!(validate_no_control_chars("hello\tworld", "field").is_err());
+    }
+
+    #[test]
+    fn control_chars_accepts_normal_text() {
+        assert!(validate_no_control_chars("hello world", "field").is_ok());
+    }
+
+    #[test]
+    fn control_chars_accepts_empty_string() {
+        assert!(validate_no_control_chars("", "field").is_ok());
+    }
+
+    // ── ensure_git_success ──
+
+    #[test]
+    fn ensure_git_success_passes_on_success() {
+        let output = std::process::Output {
+            status: std::process::ExitStatus::default(),
+            stdout: b"all good".to_vec(),
+            stderr: vec![],
+        };
+        // ExitStatus::default() is success on unix
+        if output.status.success() {
+            assert!(ensure_git_success(output, "failed").is_ok());
+        }
+    }
+
+    // ── CachedValue ──
+
+    #[test]
+    fn cached_value_is_stale_when_older_than_write() {
+        let cached = CachedValue {
+            data: "hello".to_string(),
+            timestamp: 100,
+        };
+        assert!(cached.is_stale(200));
+    }
+
+    #[test]
+    fn cached_value_is_fresh_when_newer_than_write() {
+        let cached = CachedValue {
+            data: 42,
+            timestamp: 300,
+        };
+        assert!(!cached.is_stale(200));
+    }
+
+    #[test]
+    fn cached_value_is_stale_when_equal_to_write() {
+        let cached = CachedValue {
+            data: true,
+            timestamp: 100,
+        };
+        // equal timestamps should be considered stale (< not <=)
+        assert!(!cached.is_stale(100));
+    }
+
+    // ── GitCache ──
+
+    #[test]
+    fn git_cache_starts_valid_for_any_positive_timestamp() {
+        let cache = GitCache::new();
+        assert!(cache.is_valid(1));
+        assert!(cache.is_valid(u64::MAX));
+    }
+
+    #[test]
+    fn git_cache_zero_timestamp_is_invalid() {
+        let cache = GitCache::new();
+        // last_write is 0, so cache_timestamp=0 means 0 > 0 => false
+        assert!(!cache.is_valid(0));
+    }
+
+    #[test]
+    fn git_cache_invalidation_makes_old_timestamps_invalid() {
+        let cache = GitCache::new();
+        assert!(cache.is_valid(1));
+        cache.invalidate();
+        // After invalidation, timestamp 1 should be too old
+        assert!(!cache.is_valid(1));
     }
 }

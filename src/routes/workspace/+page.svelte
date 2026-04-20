@@ -47,6 +47,8 @@
   } from "lucide-svelte";
   import WindowControls from "$lib/components/WindowControls.svelte";
 
+  const GRAPH_PAGE_SIZE = 2000;
+
   let workspace = $state<WorkspaceStatus | null>(null);
   let worktrees = $state<WorktreeInfo[]>([]);
   let graph = $state<CommitGraphResult | null>(null);
@@ -54,6 +56,9 @@
   let selectedRef = $state("");
   let newBranch = $state("");
   let activeWorktreePath = $state<string | null>(null);
+  let graphSkip = $state(0);
+  let graphHasMore = $state(false);
+  let graphLoadingMore = $state(false);
   let loading = $state(true);
   let creating = $state(false);
   let deleting = $state<string | null>(null);
@@ -384,6 +389,19 @@
     refs.map((r) => ({ label: r.name, value: r.name, detail: r.kind })),
   );
 
+  function mergeGraphCommits(existing: CommitEntry[], incoming: CommitEntry[]): CommitEntry[] {
+    if (incoming.length === 0) return existing;
+
+    const seen = new Set(existing.map((c) => c.hash));
+    const merged = [...existing];
+    for (const commit of incoming) {
+      if (seen.has(commit.hash)) continue;
+      seen.add(commit.hash);
+      merged.push(commit);
+    }
+    return merged;
+  }
+
   async function loadWorkspace() {
     loading = true;
     error = "";
@@ -404,12 +422,14 @@
       const [worktreeData, refsData, graphData] = await Promise.all([
         listWorktrees(status.rootPath),
         listRefs(status.rootPath),
-        getCommitGraph(status.rootPath, 140),
+        getCommitGraph(status.rootPath, GRAPH_PAGE_SIZE, 0),
       ]);
 
       worktrees = worktreeData.worktrees;
       refs = refsData.refs;
       graph = graphData;
+      graphSkip = graphData.commits.length;
+      graphHasMore = graphData.commits.length === GRAPH_PAGE_SIZE;
       selectedRef = refsData.refs[0]?.name ?? "HEAD";
       activeWorktreePath = worktreeData.worktrees[0]?.path ?? null;
     } catch (err) {
@@ -625,12 +645,38 @@
     if (!workspace) return;
     const [refreshedWt, refreshedGraph, refreshedRefs] = await Promise.all([
       listWorktrees(workspace.rootPath),
-      getCommitGraph(workspace.rootPath, 140),
+      getCommitGraph(workspace.rootPath, GRAPH_PAGE_SIZE, 0),
       listRefs(workspace.rootPath),
     ]);
     worktrees = refreshedWt.worktrees;
     graph = refreshedGraph;
+    graphSkip = refreshedGraph.commits.length;
+    graphHasMore = refreshedGraph.commits.length === GRAPH_PAGE_SIZE;
     refs = refreshedRefs.refs;
+  }
+
+  async function loadMoreGraphCommits() {
+    if (!workspace || graphLoadingMore || !graphHasMore) return;
+
+    graphLoadingMore = true;
+    try {
+      const nextPage = await getCommitGraph(workspace.rootPath, GRAPH_PAGE_SIZE, graphSkip);
+      if (!graph) {
+        graph = nextPage;
+      } else {
+        graph = {
+          ...graph,
+          commits: mergeGraphCommits(graph.commits, nextPage.commits),
+        };
+      }
+
+      graphSkip += nextPage.commits.length;
+      graphHasMore = nextPage.commits.length === GRAPH_PAGE_SIZE;
+    } catch (err) {
+      toast.error(`Failed to load more commits: ${err}`);
+    } finally {
+      graphLoadingMore = false;
+    }
   }
 
   async function handleCheckoutWorktree(wt: WorktreeInfo, targetRef: string) {
@@ -1046,9 +1092,9 @@
       </aside>
 
       <!-- Main content area -->
-      <section class="flex min-w-0 flex-1 flex-col">
+      <section class="flex min-w-0 flex-1 flex-col overflow-hidden">
         <!-- Commit graph -->
-        <div class="flex min-h-0 {selectedCommits.length > 0 ? 'h-1/2' : 'flex-1'} flex-col">
+        <div class="flex min-h-0 overflow-hidden {selectedCommits.length > 0 ? 'h-1/2' : 'flex-1'} flex-col">
           <div class="flex items-center justify-between border-b border-[var(--sg-border-subtle)] bg-[var(--sg-surface)] px-4 py-2">
             <div class="flex items-center gap-2">
               <p class="text-[10px] font-semibold uppercase tracking-wider text-[var(--sg-text-faint)]">Commit graph</p>
@@ -1076,6 +1122,9 @@
                 oncheckout={handleGraphCheckout}
                 onreset={handleGraphReset}
                 onselect={handleCommitSelect}
+                hasmore={graphHasMore}
+                loadingmore={graphLoadingMore}
+                onloadmore={loadMoreGraphCommits}
               />
             {/if}
           </div>

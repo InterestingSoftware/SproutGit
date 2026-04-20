@@ -97,6 +97,13 @@
     }
   }
 
+  // Keep folder name auto-derived from URL until the user manually edits it.
+  $effect(() => {
+    if (!folderNameManual) {
+      folderName = repoNameFromUrl(cloneUrl);
+    }
+  });
+
   function handleRepoSelect(value: string) {
     cloneUrl = value;
     handleUrlInput();

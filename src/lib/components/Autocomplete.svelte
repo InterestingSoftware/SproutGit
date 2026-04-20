@@ -42,6 +42,8 @@
   }
 
   function handleInput() {
+    // Keep bound value in sync with free-typed text (not only selected items).
+    value = query;
     open = true;
     highlightIdx = 0;
   }

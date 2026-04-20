@@ -13,6 +13,9 @@
     oncheckout?: (targetRef: string) => void;
     onreset?: (targetRef: string, mode: "soft" | "mixed" | "hard") => void;
     onselect?: (commits: CommitEntry[]) => void;
+    hasmore?: boolean;
+    loadingmore?: boolean;
+    onloadmore?: () => void;
   };
 
   let {
@@ -23,6 +26,9 @@
     oncheckout,
     onreset,
     onselect,
+    hasmore = false,
+    loadingmore = false,
+    onloadmore,
   }: Props = $props();
 
   const ROW_H = 28;
@@ -59,6 +65,20 @@
   let activeMatchIdx = $state(0);
   let searchInput = $state<HTMLInputElement | null>(null);
   let scrollContainer = $state<HTMLDivElement | null>(null);
+
+  // Track scroll position and visible height for sticky SVG column
+  let graphScrollTop = $state(0);
+  let containerHeight = $state(0);
+
+  $effect(() => {
+    if (!scrollContainer) return;
+    containerHeight = scrollContainer.clientHeight;
+    const ro = new ResizeObserver(() => {
+      containerHeight = scrollContainer!.clientHeight;
+    });
+    ro.observe(scrollContainer);
+    return () => ro.disconnect();
+  });
 
   // ── Context menu state ──
   let contextMenu = $state<{ x: number; y: number; items: MenuItem[] } | null>(null);
@@ -153,6 +173,18 @@
     if (rowIdx == null) return;
     const targetY = rowIdx * ROW_H - scrollContainer.clientHeight / 2 + ROW_H / 2;
     scrollContainer.scrollTo({ top: Math.max(0, targetY), behavior: "smooth" });
+  }
+
+  function handleGraphScroll() {
+    if (!scrollContainer) return;
+    graphScrollTop = scrollContainer.scrollTop;
+
+    if (!hasmore || loadingmore || !onloadmore) return;
+    const remaining =
+      scrollContainer.scrollHeight - (scrollContainer.scrollTop + scrollContainer.clientHeight);
+    if (remaining <= ROW_H * 12) {
+      onloadmore();
+    }
   }
 
   function nextMatch() {
@@ -324,6 +356,7 @@
     lane: number;
     y: number;
     parentPositions: { hash: string; lane: number; y: number }[];
+    offGraphParentCount: number;
     worktreeBranch: string | null;
   };
 
@@ -391,6 +424,7 @@
         lane,
         y,
         parentPositions: [],
+        offGraphParentCount: 0,
         worktreeBranch: wtBranch,
       });
     }
@@ -407,6 +441,8 @@
           return { hash: ph, lane: parent.lane, y: parent.y };
         })
         .filter((p): p is NonNullable<typeof p> => p !== null);
+
+      row.offGraphParentCount = row.parents.length - row.parentPositions.length;
     }
 
     return { rows, maxLane };
@@ -436,7 +472,7 @@
     No commits yet.
   </div>
 {:else}
-  <div class="relative flex min-h-0 flex-1 flex-col">
+  <div class="relative flex h-full min-h-0 flex-1 flex-col overflow-hidden">
     <!-- Search bar -->
     {#if searchOpen}
       <div class="flex shrink-0 items-center gap-2 border-b border-[var(--sg-border-subtle)] bg-[var(--sg-surface)] px-3 py-1.5" style="animation: sg-slide-down 0.15s ease-out">
@@ -468,10 +504,14 @@
     {/if}
 
     <!-- Scrollable graph area -->
-    <div bind:this={scrollContainer} class="flex min-h-0 flex-1 overflow-auto">
-      <!-- SVG graph lanes -->
-      <div class="shrink-0" style="width: {svgWidth}px">
-        <svg width={svgWidth} height={svgHeight} class="block">
+    <div bind:this={scrollContainer} onscroll={handleGraphScroll} class="min-h-0 flex-1 overflow-y-auto overflow-x-hidden">
+      <div class="flex">
+      <!-- SVG graph lanes — sticky so horizontal scrollbar stays in viewport -->
+      <div
+        class="sg-scrollbar-visible sticky top-0 shrink-0 self-start overflow-y-hidden"
+        style="max-width: min({svgWidth}px, 120px); height: {containerHeight}px"
+      >
+        <svg width={svgWidth} height={svgHeight} class="block" style="transform: translateY(-{graphScrollTop}px)">
           <!-- Connection lines -->
           {#each laneData.rows as row}
             {#each row.parentPositions as parent}
@@ -486,11 +526,15 @@
                   opacity="0.7"
                 />
               {:else}
+                {@const x1 = laneX(row.lane)}
+                {@const x2 = laneX(parent.lane)}
+                {@const dy = Math.max(ROW_H, parent.y - row.y)}
+                {@const c = Math.max(ROW_H * 0.6, Math.min(dy * 0.3, ROW_H * 3))}
                 <path
-                  d="M {laneX(row.lane)} {row.y}
-                     C {laneX(row.lane)} {row.y + ROW_H * 0.6},
-                       {laneX(parent.lane)} {parent.y - ROW_H * 0.6},
-                       {laneX(parent.lane)} {parent.y}"
+                  d="M {x1} {row.y}
+                     C {x1} {row.y + c},
+                       {x2} {parent.y - c},
+                       {x2} {parent.y}"
                   fill="none"
                   stroke={laneColor(parent.lane)}
                   stroke-width="2"
@@ -498,6 +542,22 @@
                 />
               {/if}
             {/each}
+
+            {#if row.offGraphParentCount > 0}
+              {@const x = laneX(row.lane)}
+              {@const x2 = x + COL_W * 0.75}
+              {@const y2 = Math.min(svgHeight - 2, row.y + ROW_H * 0.9)}
+              <line
+                x1={x}
+                y1={row.y}
+                x2={x2}
+                y2={y2}
+                stroke={laneColor(row.lane)}
+                stroke-width="2"
+                stroke-dasharray="3 3"
+                opacity="0.55"
+              />
+            {/if}
           {/each}
 
           <!-- Commit nodes -->
@@ -529,7 +589,7 @@
       </div>
 
       <!-- Commit list table -->
-      <div class="min-w-0 flex-1">
+      <div class="min-w-0 flex-1 overflow-hidden">
         {#each laneData.rows as row, i}
           {@const isMatch = matchSet.has(i)}
           {@const isActive = matchingIndices[activeMatchIdx] === i}
@@ -569,6 +629,15 @@
             </span>
           {/if}
 
+          {#if row.offGraphParentCount > 0}
+            <span
+              class="shrink-0 rounded bg-[var(--sg-warning)]/15 px-1.5 py-px text-[9px] font-medium text-[var(--sg-warning)]"
+              title="{row.offGraphParentCount} parent commit(s) are outside the loaded graph"
+            >
+              ↘ +{row.offGraphParentCount}
+            </span>
+          {/if}
+
           <!-- Hash -->
           <span class="shrink-0 font-mono text-[10px] text-[var(--sg-text-faint)]">{row.shortHash}</span>
 
@@ -579,6 +648,17 @@
           <span class="hidden w-20 shrink-0 text-right text-[10px] text-[var(--sg-text-faint)] md:block">{row.authorDate}</span>
         </div>
       {/each}
+
+      {#if loadingmore}
+        <div class="flex items-center justify-center border-b border-[var(--sg-border-subtle)] px-3" style="height: {ROW_H}px">
+          <span class="text-[10px] text-[var(--sg-text-faint)]">Loading older commits…</span>
+        </div>
+      {:else if hasmore}
+        <div class="flex items-center justify-center border-b border-[var(--sg-border-subtle)] px-3" style="height: {ROW_H}px">
+          <span class="text-[10px] text-[var(--sg-text-faint)]">Scroll down to load older commits</span>
+        </div>
+      {/if}
+      </div>
     </div>
   </div>
   </div>
