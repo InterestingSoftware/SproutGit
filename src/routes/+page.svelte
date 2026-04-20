@@ -414,7 +414,7 @@
       {/if}
 
       {#if error}
-        <div class="mx-4 mb-3 rounded border border-[var(--sg-border)] bg-[var(--sg-surface-raised)] px-2.5 py-1.5 text-xs text-[var(--sg-danger)]">
+        <div class="mx-4 mb-3 select-text rounded border border-[var(--sg-border)] bg-[var(--sg-surface-raised)] px-2.5 py-1.5 text-xs text-[var(--sg-danger)]">
           {error}
         </div>
       {/if}

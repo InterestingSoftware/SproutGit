@@ -110,6 +110,7 @@ pub async fn create_sproutgit_workspace(
             .spawn()
             .map_err(|e| format!("Failed to run git clone: {e}"))?;
 
+        let mut stderr_lines: Vec<String> = Vec::new();
         if let Some(stderr) = child.stderr.take() {
             let reader = BufReader::new(stderr);
             let mut line_buf = String::new();
@@ -119,6 +120,7 @@ pub async fn create_sproutgit_workspace(
                         let trimmed = line_buf.trim().to_string();
                         if !trimmed.is_empty() {
                             let _ = app_handle.emit("clone-progress", &trimmed);
+                            stderr_lines.push(trimmed);
                         }
                         line_buf.clear();
                     }
@@ -129,6 +131,7 @@ pub async fn create_sproutgit_workspace(
             let trimmed = line_buf.trim().to_string();
             if !trimmed.is_empty() {
                 let _ = app_handle.emit("clone-progress", &trimmed);
+                stderr_lines.push(trimmed);
             }
         }
 
@@ -136,7 +139,31 @@ pub async fn create_sproutgit_workspace(
 
         if !status.success() {
             let _ = app_handle.emit("clone-progress", "Clone failed");
-            return Err("git clone failed".to_string());
+            // Find the most relevant error line from git's stderr output.
+            // Git prefixes errors with "fatal:" or "error:"; prefer those.
+            let error_detail = stderr_lines
+                .iter()
+                .rev()
+                .find(|l| {
+                    let lower = l.to_lowercase();
+                    lower.starts_with("fatal:") || lower.starts_with("error:")
+                })
+                .or_else(|| stderr_lines.last())
+                .cloned();
+            let msg = match error_detail {
+                Some(detail) => {
+                    // Provide a friendlier hint for authentication failures.
+                    if detail.to_lowercase().contains("authentication") ||
+                       detail.to_lowercase().contains("could not read username") ||
+                       detail.to_lowercase().contains("repository not found") {
+                        format!("Authentication failed — check your credentials or repo URL. ({})", detail)
+                    } else {
+                        format!("git clone failed: {}", detail)
+                    }
+                }
+                None => "git clone failed".to_string(),
+            };
+            return Err(msg);
         }
 
         let _ = app_handle.emit("clone-progress", "Done");
