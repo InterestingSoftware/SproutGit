@@ -11,6 +11,11 @@ use crate::helpers::{
     normalize_or_create_dir, now_epoch_seconds,
 };
 
+fn is_git_error_line(line: &str) -> bool {
+    line.get(..6)
+        .is_some_and(|prefix| prefix.eq_ignore_ascii_case("fatal:") || prefix.eq_ignore_ascii_case("error:"))
+}
+
 // ── Structs ──
 
 #[derive(Serialize)]
@@ -123,8 +128,7 @@ pub async fn create_sproutgit_workspace(
                         let trimmed = line_buf.trim().to_string();
                         if !trimmed.is_empty() {
                             let _ = app_handle.emit("clone-progress", &trimmed);
-                            let lower = trimmed.to_lowercase();
-                            if lower.starts_with("fatal:") || lower.starts_with("error:") {
+                            if is_git_error_line(&trimmed) {
                                 latest_error_line = Some(trimmed.clone());
                             }
                             if stderr_lines.len() == MAX_STDERR_LINES {
@@ -141,8 +145,7 @@ pub async fn create_sproutgit_workspace(
             let trimmed = line_buf.trim().to_string();
             if !trimmed.is_empty() {
                 let _ = app_handle.emit("clone-progress", &trimmed);
-                let lower = trimmed.to_lowercase();
-                if lower.starts_with("fatal:") || lower.starts_with("error:") {
+                if is_git_error_line(&trimmed) {
                     latest_error_line = Some(trimmed.clone());
                 }
                 if stderr_lines.len() == MAX_STDERR_LINES {
