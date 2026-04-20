@@ -12,7 +12,7 @@ use tokio::time::timeout;
 
 use crate::db::connect_workspace_db;
 use crate::git::helpers::{
-    now_epoch_seconds, run_git, system_command, validate_no_control_chars, GitAction,
+    command_exists, now_epoch_seconds, run_git, system_command, validate_no_control_chars, GitAction,
     SystemAction,
 };
 
@@ -125,13 +125,30 @@ const MAX_HOOK_OUTPUT_BYTES: usize = 64 * 1024;
 
 const ALLOWED_SCOPES: &[&str] = &["worktree", "workspace"];
 
-fn allowed_shells_for_current_os() -> &'static [&'static str] {
+fn shell_candidates_for_current_os() -> &'static [&'static str] {
     if cfg!(target_os = "windows") {
-        &["pwsh"]
+        &["pwsh", "powershell", "bash"]
     } else if cfg!(target_os = "macos") {
-        &["zsh"]
+        &["zsh", "bash"]
     } else {
-        &["bash"]
+        &["bash", "zsh", "pwsh"]
+    }
+}
+
+fn detect_available_hook_shells() -> Vec<String> {
+    let detected: Vec<String> = shell_candidates_for_current_os()
+        .iter()
+        .filter(|candidate| command_exists(candidate))
+        .map(|candidate| candidate.to_string())
+        .collect();
+
+    if detected.is_empty() {
+        shell_candidates_for_current_os()
+            .first()
+            .map(|candidate| vec![candidate.to_string()])
+            .unwrap_or_else(|| vec!["bash".to_string()])
+    } else {
+        detected
     }
 }
 
@@ -180,11 +197,12 @@ fn validate_trigger(trigger: &str) -> Result<String, String> {
 
 fn validate_shell(shell: &str) -> Result<String, String> {
     let shell = normalize_non_empty(shell, "Shell")?;
-    if !allowed_shells_for_current_os().contains(&shell.as_str()) {
+    let available_shells = detect_available_hook_shells();
+    if !available_shells.iter().any(|candidate| candidate == &shell) {
         return Err(format!(
-            "Unsupported shell '{}' for this OS. Allowed: {}",
+            "Unsupported shell '{}' for this machine. Available: {}",
             shell,
-            allowed_shells_for_current_os().join(", ")
+            available_shells.join(", ")
         ));
     }
     Ok(shell)
@@ -498,14 +516,18 @@ fn ensure_dependency_triggers_compatible(
             format!("Dependency '{dependency_id}' could not be validated for trigger compatibility")
         })?;
 
-        if dependency_trigger != trigger {
+        if !dependency_trigger_compatible(trigger, dependency_trigger) {
             return Err(format!(
-                "Dependency '{dependency_id}' uses trigger '{dependency_trigger}', which does not match hook trigger '{trigger}'"
+                "Dependency '{dependency_id}' uses trigger '{dependency_trigger}', which is not compatible with hook trigger '{trigger}' (only same-trigger or manual dependencies are allowed)"
             ));
         }
     }
 
     Ok(())
+}
+
+fn dependency_trigger_compatible(trigger: &str, dependency_trigger: &str) -> bool {
+    dependency_trigger == trigger || dependency_trigger == "manual"
 }
 
 async fn ensure_no_dependency_cycle(
@@ -667,6 +689,16 @@ fn resolve_script_execution(
     match hook.shell.as_str() {
         "bash" => Ok(("bash".to_string(), vec![script])),
         "zsh" => Ok(("zsh".to_string(), vec![script])),
+        "powershell" => Ok((
+            "powershell".to_string(),
+            vec![
+                "-NoLogo".to_string(),
+                "-NoProfile".to_string(),
+                "-NonInteractive".to_string(),
+                "-File".to_string(),
+                script,
+            ],
+        )),
         "pwsh" => Ok((
             "pwsh".to_string(),
             vec![
@@ -1158,9 +1190,34 @@ async fn load_hooks_for_trigger(
     }
 
     let mut dependency_map: HashMap<String, Vec<String>> = HashMap::new();
-    for hook_id in hooks.keys() {
-        let deps = load_dependencies(conn, hook_id).await?;
-        dependency_map.insert(hook_id.clone(), deps);
+    let mut stack: Vec<String> = hooks.keys().cloned().collect();
+
+    while let Some(hook_id) = stack.pop() {
+        if dependency_map.contains_key(&hook_id) {
+            continue;
+        }
+
+        let deps = load_dependencies(conn, &hook_id).await?;
+        for dep_id in &deps {
+            if hooks.contains_key(dep_id) {
+                continue;
+            }
+
+            let dep_hook = load_hook_by_id(conn, dep_id).await?;
+            if !dependency_trigger_compatible(trigger, &dep_hook.trigger) {
+                return Err(format!(
+                    "Dependency '{}' uses trigger '{}', which is not compatible with trigger '{}' (only same-trigger or manual dependencies are allowed)",
+                    dep_hook.name, dep_hook.trigger, trigger
+                ));
+            }
+
+            if dep_hook.enabled {
+                hooks.insert(dep_hook.id.clone(), to_runtime_hook(dep_hook));
+                stack.push(dep_id.clone());
+            }
+        }
+
+        dependency_map.insert(hook_id, deps);
     }
 
     Ok((hooks, dependency_map))
@@ -1186,9 +1243,9 @@ async fn load_hook_closure(
         }
 
         if let Some(existing_trigger) = &root_trigger {
-            if hook.trigger != *existing_trigger {
+            if !dependency_trigger_compatible(existing_trigger, &hook.trigger) {
                 return Err(format!(
-                    "Hook '{}' uses trigger '{}', which does not match the selected hook trigger '{}'; dependencies must stay within one trigger",
+                    "Hook '{}' uses trigger '{}', which is not compatible with the selected hook trigger '{}' (only same-trigger or manual dependencies are allowed)",
                     hook.name, hook.trigger, existing_trigger
                 ));
             }
@@ -1522,6 +1579,11 @@ pub async fn toggle_workspace_hook(
 }
 
 #[tauri::command]
+pub fn get_available_hook_shells() -> Vec<String> {
+    detect_available_hook_shells()
+}
+
+#[tauri::command]
 pub async fn run_workspace_hook(
     app_handle: tauri::AppHandle,
     workspace_path: String,
@@ -1623,7 +1685,22 @@ mod tests {
             &dependency_triggers,
         ) {
             Ok(_) => panic!("cross-trigger dependency should be rejected"),
-            Err(err) => assert!(err.contains("does not match hook trigger")),
+            Err(err) => assert!(err.contains("not compatible with hook trigger")),
+        }
+    }
+
+    #[test]
+    fn dependency_trigger_validation_allows_manual_dependency_for_any_trigger() {
+        let dependency_ids = vec!["dep-1".to_string()];
+        let dependency_triggers = HashMap::from([("dep-1".to_string(), "manual".to_string())]);
+
+        match ensure_dependency_triggers_compatible(
+            "before_worktree_create",
+            &dependency_ids,
+            &dependency_triggers,
+        ) {
+            Ok(_) => {}
+            Err(err) => panic!("manual dependency should be allowed: {err}"),
         }
     }
 }

@@ -90,7 +90,7 @@ export type WorkspaceHookTrigger =
 
 export type WorkspaceHookScope = 'worktree' | 'workspace';
 
-export type WorkspaceHookShell = 'bash' | 'zsh' | 'pwsh';
+export type WorkspaceHookShell = 'bash' | 'zsh' | 'pwsh' | 'powershell';
 
 export type WorkspaceHook = {
   id: string;
@@ -298,6 +298,9 @@ export const deleteWorkspaceHook = (workspacePath: string, hookId: string) =>
 
 export const toggleWorkspaceHook = (workspacePath: string, hookId: string, enabled: boolean) =>
   invoke<void>('toggle_workspace_hook', { workspacePath, hookId, enabled });
+
+export const getAvailableHookShells = () =>
+  invoke<WorkspaceHookShell[]>('get_available_hook_shells');
 
 export const runWorkspaceHook = (
   workspacePath: string,

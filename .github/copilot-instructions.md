@@ -155,6 +155,17 @@ Always use `var(--sg-*)` tokens in components. Never hardcode colors outside of 
 ### Spinner (`Spinner.svelte`)
 - Sizes: `sm`, `md`, `lg`. Optional `label` text. Uses `--sg-primary` color.
 
+### Form Controls (`Checkbox.svelte` + `Select.svelte`)
+- Use shared form controls from `src/lib/components/` instead of ad-hoc checkbox/select markup in feature components.
+- `Checkbox.svelte` is the source of truth for custom checkbox visuals and spacing behavior. Keep checked/unchecked icon rendering layout-stable to avoid row height shifts.
+- `Select.svelte` is the source of truth for themed dropdowns. Prefer it over native `<select>` styling repeated inline.
+
+## Recent Hook Findings
+
+- Schema migration ordering matters: do not create indexes that reference new columns until after migration checks/additions run (example: `hook_definitions.scope`).
+- Hook dependency compatibility rule: dependencies may be same-trigger or `manual`; incompatible cross-trigger links should fail validation clearly.
+- Hook shell handling must use runtime detection of available shells. On Windows, support both `pwsh` and `powershell` fallback.
+
 ## Animations
 
 Global keyframes defined in `app.css`:
