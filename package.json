@@ -22,7 +22,8 @@
   "license": "MIT",
   "pnpm": {
     "overrides": {
-      "cookie": "0.7.2"
+      "cookie": "0.7.2",
+      "dompurify": "3.4.0"
     }
   },
   "dependencies": {
