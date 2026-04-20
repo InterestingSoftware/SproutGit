@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { onDestroy } from "svelte";
   import { goto } from "$app/navigation";
   import { page } from "$app/stores";
   import Autocomplete from "$lib/components/Autocomplete.svelte";
@@ -7,6 +8,7 @@
   import ContextMenu, { type MenuItem } from "$lib/components/ContextMenu.svelte";
   import DiffViewer from "$lib/components/DiffViewer.svelte";
   import Spinner from "$lib/components/Spinner.svelte";
+  import WorkspaceHooksModal from "$lib/components/WorkspaceHooksModal.svelte";
   import {
     checkoutWorktree,
     createManagedWorktree,
@@ -15,21 +17,34 @@
     getDiffContent,
     getDiffFiles,
     inspectWorkspace,
+    listWorkspaceHooks,
     listRefs,
     listWorktrees,
     openInEditor,
+    onHookProgress,
     resetWorktreeBranch,
+    runWorkspaceHook,
     type CommitEntry,
     type CommitGraphResult,
     type DiffFileEntry,
     type RefInfo,
+    type HookProgressEvent,
+    type WorkspaceHook,
+    type WorkspaceHookTrigger,
     type WorkspaceStatus,
     type WorktreeInfo,
   } from "$lib/sproutgit";
   import { toast } from "$lib/toast.svelte";
   import { validateBranchName, validateSourceRef } from "$lib/validation";
   import { openPath } from "@tauri-apps/plugin-opener";
-  import { FolderOpen, Trash2, SquareTerminal, ShieldAlert } from "lucide-svelte";
+  import {
+    FolderOpen,
+    Play,
+    Trash2,
+    SquareTerminal,
+    ShieldAlert,
+    Settings,
+  } from "lucide-svelte";
   import WindowControls from "$lib/components/WindowControls.svelte";
 
   let workspace = $state<WorkspaceStatus | null>(null);
@@ -65,6 +80,289 @@
 
   // Worktree context menu
   let worktreeContextMenu = $state<{ x: number; y: number; items: MenuItem[] } | null>(null);
+  let hooksModalOpen = $state(false);
+  let operationStatus = $state<{ title: string; detail: string } | null>(null);
+  let operationError = $state<string | null>(null);
+  let activeHookName = $state<string | null>(null);
+  let operationLogs = $state<string[]>([]);
+
+  type OperationHookStatus = "pending" | "running" | "success" | "skipped" | "timed_out" | "error";
+  type OperationHookState = {
+    id: string;
+    name: string;
+    trigger: string;
+    status: OperationHookStatus;
+    logs: string[];
+  };
+
+  let operationHooks = $state<OperationHookState[]>([]);
+
+  const hookStatusSummary = $derived.by(() => {
+    const summary = {
+      pending: 0,
+      running: 0,
+      success: 0,
+      skipped: 0,
+      timed_out: 0,
+      error: 0,
+    };
+
+    for (const hook of operationHooks) {
+      summary[hook.status] += 1;
+    }
+
+    return summary;
+  });
+
+  function statusLabel(status: OperationHookStatus): string {
+    switch (status) {
+      case "pending":
+        return "Pending";
+      case "running":
+        return "Running";
+      case "success":
+        return "Complete";
+      case "skipped":
+        return "Skipped";
+      case "timed_out":
+        return "Timed out";
+      case "error":
+        return "Error";
+      default:
+        return status;
+    }
+  }
+
+  function statusBadgeClass(status: OperationHookStatus): string {
+    switch (status) {
+      case "pending":
+        return "border-[var(--sg-border)] bg-[var(--sg-surface-raised)] text-[var(--sg-text-faint)]";
+      case "running":
+        return "border-[var(--sg-accent)]/40 bg-[var(--sg-accent)]/15 text-[var(--sg-accent)]";
+      case "success":
+        return "border-[var(--sg-primary)]/40 bg-[var(--sg-primary)]/15 text-[var(--sg-primary)]";
+      case "skipped":
+        return "border-[var(--sg-warning)]/40 bg-[var(--sg-warning)]/15 text-[var(--sg-warning)]";
+      case "timed_out":
+        return "border-[var(--sg-danger)]/40 bg-[var(--sg-danger)]/15 text-[var(--sg-danger)]";
+      case "error":
+        return "border-[var(--sg-danger)]/40 bg-[var(--sg-danger)]/15 text-[var(--sg-danger)]";
+      default:
+        return "border-[var(--sg-border)] bg-[var(--sg-surface-raised)] text-[var(--sg-text-faint)]";
+    }
+  }
+
+  function mapEventStatus(event: HookProgressEvent): OperationHookStatus {
+    if (event.phase === "start") return "running";
+    if (event.phase === "skipped") return "skipped";
+    if (event.status === "success") return "success";
+    if (event.status === "timed_out") return "timed_out";
+    return "error";
+  }
+
+  function updateHookState(hookId: string, updater: (current: OperationHookState) => OperationHookState) {
+    const idx = operationHooks.findIndex((hook) => hook.id === hookId);
+    if (idx < 0) return;
+    const current = operationHooks[idx];
+    const next = updater(current);
+    operationHooks = [
+      ...operationHooks.slice(0, idx),
+      next,
+      ...operationHooks.slice(idx + 1),
+    ];
+  }
+
+  function ensureHookState(event: HookProgressEvent): OperationHookState {
+    const existing = operationHooks.find((hook) => hook.id === event.hookId);
+    if (existing) return existing;
+
+    const created: OperationHookState = {
+      id: event.hookId,
+      name: event.hookName,
+      trigger: event.trigger,
+      status: "pending",
+      logs: [],
+    };
+
+    operationHooks = [...operationHooks, created];
+    return created;
+  }
+
+  function appendOperationLog(line: string) {
+    operationLogs = [...operationLogs, line];
+  }
+
+  function toOperationHookState(hook: Pick<WorkspaceHook, "id" | "name" | "trigger">): OperationHookState {
+    return {
+      id: hook.id,
+      name: hook.name,
+      trigger: hook.trigger,
+      status: "pending",
+      logs: [],
+    };
+  }
+
+  function sortHooksByTriggerAndName<T extends { trigger: string; name: string }>(hooks: T[]): T[] {
+    return [...hooks].sort((a, b) => {
+      if (a.trigger !== b.trigger) return a.trigger.localeCompare(b.trigger);
+      return a.name.localeCompare(b.name);
+    });
+  }
+
+  function collectHookClosure(allHooks: WorkspaceHook[], rootHookId: string): WorkspaceHook[] {
+    const hooksById = new Map(allHooks.map((hook) => [hook.id, hook]));
+    const collectedIds = new Set<string>();
+
+    function visit(hookId: string) {
+      if (collectedIds.has(hookId)) return;
+      const hook = hooksById.get(hookId);
+      if (!hook) return;
+      collectedIds.add(hookId);
+      for (const dependencyId of hook.dependencyIds) {
+        visit(dependencyId);
+      }
+    }
+
+    visit(rootHookId);
+
+    return sortHooksByTriggerAndName(
+      Array.from(collectedIds)
+        .map((hookId) => hooksById.get(hookId))
+        .filter((hook): hook is WorkspaceHook => Boolean(hook)),
+    );
+  }
+
+  async function beginOperation(
+    title: string,
+    detail: string,
+    triggers: WorkspaceHookTrigger[] = [],
+    preloadedHooks: Array<Pick<WorkspaceHook, "id" | "name" | "trigger">> = [],
+  ) {
+    operationStatus = { title, detail };
+    operationError = null;
+    activeHookName = null;
+    operationLogs = [];
+    operationHooks = [];
+
+    if (preloadedHooks.length > 0) {
+      operationHooks = sortHooksByTriggerAndName(preloadedHooks).map(toOperationHookState);
+      return;
+    }
+
+    if (!workspace || triggers.length === 0) return;
+    const workspacePath = workspace.workspacePath;
+
+    try {
+      const hookLists = await Promise.all(
+        triggers.map((trigger) => listWorkspaceHooks(workspacePath, trigger)),
+      );
+
+      const seen = new Set<string>();
+      const hooks: Array<Pick<WorkspaceHook, "id" | "name" | "trigger">> = [];
+
+      for (const triggerHooks of hookLists) {
+        for (const hook of triggerHooks) {
+          if (seen.has(hook.id)) continue;
+          seen.add(hook.id);
+          hooks.push({ id: hook.id, name: hook.name, trigger: hook.trigger });
+        }
+      }
+
+      operationHooks = sortHooksByTriggerAndName(hooks).map(toOperationHookState);
+    } catch (err) {
+      appendOperationLog(`Failed to preload hook list: ${err}`);
+    }
+  }
+
+  function failOperation(message: string) {
+    operationError = message;
+    appendOperationLog(`Operation error: ${message}`);
+  }
+
+  function endOperation(force = false) {
+    if (operationError && !force) return;
+    operationStatus = null;
+    operationError = null;
+    activeHookName = null;
+    operationHooks = [];
+  }
+
+  function handleHookProgress(event: HookProgressEvent) {
+    if (!operationStatus) return;
+
+    ensureHookState(event);
+    const nextStatus = mapEventStatus(event);
+
+    if (event.phase === "start") {
+      activeHookName = event.hookName;
+      appendOperationLog(`▶ ${event.hookName} (${event.trigger})`);
+      updateHookState(event.hookId, (current) => ({
+        ...current,
+        name: event.hookName,
+        trigger: event.trigger,
+        status: nextStatus,
+        logs: [...current.logs, "Started"],
+      }));
+      return;
+    }
+
+    if (event.phase === "skipped") {
+      appendOperationLog(`⏭ ${event.hookName} skipped`);
+      updateHookState(event.hookId, (current) => ({
+        ...current,
+        name: event.hookName,
+        trigger: event.trigger,
+        status: nextStatus,
+        logs: event.errorMessage
+          ? [...current.logs, `Skipped: ${event.errorMessage}`]
+          : [...current.logs, "Skipped"],
+      }));
+      if (event.errorMessage?.trim()) {
+        appendOperationLog(`  error: ${event.errorMessage}`);
+      }
+      return;
+    }
+
+    appendOperationLog(
+      `${event.status === "success" ? "✓" : "✗"} ${event.hookName} (${event.status})`,
+    );
+
+    if (event.stdoutSnippet?.trim()) {
+      appendOperationLog(`  stdout:\n${event.stdoutSnippet}`);
+    }
+
+    if (event.stderrSnippet?.trim()) {
+      appendOperationLog(`  stderr:\n${event.stderrSnippet}`);
+    }
+
+    if (event.errorMessage?.trim()) {
+      appendOperationLog(`  error: ${event.errorMessage}`);
+    }
+
+    const hookLogs: string[] = [];
+    hookLogs.push(`Finished with status: ${event.status}`);
+    if (event.stdoutSnippet?.trim()) {
+      hookLogs.push(`stdout:\n${event.stdoutSnippet}`);
+    }
+    if (event.stderrSnippet?.trim()) {
+      hookLogs.push(`stderr:\n${event.stderrSnippet}`);
+    }
+    if (event.errorMessage?.trim()) {
+      hookLogs.push(`error: ${event.errorMessage}`);
+    }
+
+    updateHookState(event.hookId, (current) => ({
+      ...current,
+      name: event.hookName,
+      trigger: event.trigger,
+      status: nextStatus,
+      logs: [...current.logs, ...hookLogs],
+    }));
+
+    if (activeHookName === event.hookName) {
+      activeHookName = null;
+    }
+  }
 
   const branchError = $derived(validateBranchName(newBranch));
   const refError = $derived(validateSourceRef(selectedRef));
@@ -132,6 +430,11 @@
     error = "";
 
     try {
+      await beginOperation(
+        "Creating worktree",
+        "Running hooks and creating the managed worktree...",
+        ["before_worktree_create", "after_worktree_create"],
+      );
 
       const currentWorkspace = workspace;
       if (!currentWorkspace) {
@@ -155,14 +458,21 @@
       newBranch = "";
       formTouched = { branch: false, ref: false };
     } catch (err) {
+      failOperation(String(err));
       toast.error(String(err));
       error = String(err);
     } finally {
+      endOperation();
       creating = false;
     }
   }
 
   loadWorkspace();
+
+  const unlistenHookProgress = onHookProgress(handleHookProgress);
+  onDestroy(() => {
+    void unlistenHookProgress.then((unlisten) => unlisten());
+  });
 
   function handleCreateWorktreeFromGraph(fromRef: string) {
     selectedRef = fromRef;
@@ -190,6 +500,90 @@
     }
   }
 
+  function formatHookTrigger(trigger: WorkspaceHookTrigger): string {
+    return trigger === "manual" ? "manual" : trigger.replaceAll("_", " ");
+  }
+
+  async function openRunHookMenu(wt: WorktreeInfo, anchor: HTMLElement) {
+    if (!workspace) return;
+
+    try {
+      const availableHooks = (await listWorkspaceHooks(workspace.workspacePath)).filter(
+        (hook) => hook.enabled,
+      );
+
+      if (availableHooks.length === 0) {
+        toast.info("No enabled hooks are available to run");
+        return;
+      }
+
+      const manualHooks = sortHooksByTriggerAndName(
+        availableHooks.filter((hook) => hook.trigger === "manual"),
+      );
+      const lifecycleHooks = sortHooksByTriggerAndName(
+        availableHooks.filter((hook) => hook.trigger !== "manual"),
+      );
+      const items: MenuItem[] = [];
+
+      for (const hook of manualHooks) {
+        items.push({
+          label: hook.name,
+          icon: "▶",
+          action: () => void handleRunHook(wt, hook, availableHooks),
+        });
+      }
+
+      if (manualHooks.length > 0 && lifecycleHooks.length > 0) {
+        items.push({ separator: true });
+      }
+
+      for (const hook of lifecycleHooks) {
+        items.push({
+          label: `${hook.name} (${formatHookTrigger(hook.trigger)})`,
+          icon: "▶",
+          action: () => void handleRunHook(wt, hook, availableHooks),
+        });
+      }
+
+      const rect = anchor.getBoundingClientRect();
+      worktreeContextMenu = {
+        x: Math.round(rect.right),
+        y: Math.round(rect.bottom + 6),
+        items,
+      };
+    } catch (err) {
+      toast.error(`Failed to load hooks: ${err}`);
+    }
+  }
+
+  async function handleRunHook(
+    wt: WorktreeInfo,
+    hook: WorkspaceHook,
+    availableHooks: WorkspaceHook[],
+  ) {
+    if (!workspace) return;
+
+    worktreeContextMenu = null;
+    const closureHooks = collectHookClosure(availableHooks, hook.id);
+    const label = wt.branch ?? wt.path.split("/").pop() ?? "worktree";
+
+    try {
+      await beginOperation(
+        "Running hook",
+        `Executing ${hook.name} for ${label}...`,
+        [],
+        closureHooks,
+      );
+      await runWorkspaceHook(workspace.workspacePath, hook.id, wt.path);
+      toast.success(`Ran hook: ${hook.name}`);
+    } catch (err) {
+      failOperation(String(err));
+      toast.error(String(err));
+    } finally {
+      endOperation();
+    }
+  }
+
   async function handleDeleteWorktree(wt: WorktreeInfo) {
     if (!workspace) return;
     const label = wt.branch ?? wt.path.split("/").pop() ?? "worktree";
@@ -202,6 +596,11 @@
         confirmDialog = null;
         deleting = wt.path;
         try {
+          await beginOperation(
+            "Removing worktree",
+            "Running hooks and removing worktree files...",
+            ["before_worktree_remove", "after_worktree_remove"],
+          );
           await deleteManagedWorktree(workspace!.rootPath, wt.path, true);
           toast.success(`Deleted worktree: ${label}`);
           await refreshWorkspaceData();
@@ -212,8 +611,10 @@
               null;
           }
         } catch (err) {
+          failOperation(String(err));
           toast.error(String(err));
         } finally {
+          endOperation();
           deleting = null;
         }
       },
@@ -243,6 +644,11 @@
       onconfirm: async () => {
         confirmDialog = null;
         try {
+          await beginOperation(
+            "Switching worktree",
+            "Running hooks and switching branch...",
+            ["before_worktree_switch", "after_worktree_switch"],
+          );
           const result = await checkoutWorktree(wt.path, targetRef, true);
           if (result.stashed) {
             toast.warning(`Checked out ${result.newBranch} — changes were stashed (may need manual resolve)`);
@@ -251,7 +657,10 @@
           }
           await refreshWorkspaceData();
         } catch (err) {
+          failOperation(String(err));
           toast.error(String(err));
+        } finally {
+          endOperation();
         }
       },
     };
@@ -273,11 +682,15 @@
       onconfirm: async () => {
         confirmDialog = null;
         try {
+          await beginOperation("Resetting branch", `Applying ${mode} reset to ${targetRef}...`);
           await resetWorktreeBranch(wt.path, targetRef, mode);
           toast.success(`Reset ${label} to ${targetRef} (${mode})`);
           await refreshWorkspaceData();
         } catch (err) {
+          failOperation(String(err));
           toast.error(String(err));
+        } finally {
+          endOperation();
         }
       },
     };
@@ -413,7 +826,12 @@
     </span>
     <div class="ml-auto flex items-center">
       <button
-        onclick={() => goto("/settings")}
+        onclick={() =>
+          goto(
+            workspace?.workspacePath
+              ? `/settings?workspace=${encodeURIComponent(workspace.workspacePath)}`
+              : "/settings",
+          )}
         class="rounded p-1 text-[var(--sg-text-faint)] hover:bg-[var(--sg-surface-raised)] hover:text-[var(--sg-text)]"
         title="Settings"
       >
@@ -501,8 +919,18 @@
 
         <!-- Worktree list -->
         <div class="flex min-h-0 flex-1 flex-col">
-          <div class="px-3 py-2">
+          <div class="flex items-center justify-between px-3 py-2">
             <p class="text-[10px] font-semibold uppercase tracking-wider text-[var(--sg-text-faint)]">Worktrees</p>
+            <button
+              onclick={() => {
+                hooksModalOpen = true;
+              }}
+              class="rounded p-1 text-[var(--sg-text-faint)] hover:bg-[var(--sg-surface-raised)] hover:text-[var(--sg-text)]"
+              title="Manage workspace hooks"
+              aria-label="Manage workspace hooks"
+            >
+              <Settings class="h-3.5 w-3.5" />
+            </button>
           </div>
           <div class="flex-1 overflow-auto px-2">
             {#if nonRootWorktrees.length === 0}
@@ -524,6 +952,13 @@
                     <span class="truncate">{wt.branch ?? (wt.detached ? "detached" : "unknown")}</span>
                   </button>
                   <div class="flex shrink-0 items-center gap-0.5 opacity-0 group-hover:opacity-100">
+                    <button
+                      onclick={(event) => openRunHookMenu(wt, event.currentTarget as HTMLElement)}
+                      class="rounded p-0.5 text-[var(--sg-text-faint)] hover:bg-[var(--sg-surface)] hover:text-[var(--sg-text)]"
+                      title="Run hook"
+                    >
+                      <Play class="h-3 w-3" />
+                    </button>
                     <button
                       onclick={() => handleOpenInEditor(wt.path)}
                       class="rounded p-0.5 text-[var(--sg-text-faint)] hover:bg-[var(--sg-surface)] hover:text-[var(--sg-text)]"
@@ -676,6 +1111,96 @@
     oncancel={() => (confirmDialog = null)}
   />
 {/if}
+
+{#if operationStatus}
+  <div class="fixed inset-0 z-[80] bg-black/45"></div>
+  <div class="fixed inset-0 z-[90] flex items-center justify-center p-4" style="animation: sg-fade-in 0.2s ease-out">
+    <div class="w-[min(940px,98vw)] rounded-xl border border-[var(--sg-border)] bg-[var(--sg-surface)] px-4 py-4 shadow-xl">
+      <div class="flex items-center gap-3">
+        <Spinner size="md" />
+        <div>
+          <p class="text-sm font-semibold text-[var(--sg-text)]">{operationStatus.title}</p>
+          <p class="mt-0.5 text-xs text-[var(--sg-text-dim)]">{operationStatus.detail}</p>
+        </div>
+      </div>
+      {#if activeHookName}
+        <p class="mt-3 text-xs text-[var(--sg-primary)]">Running hook: {activeHookName}</p>
+      {/if}
+      {#if operationError}
+        <div class="mt-3 rounded border border-[var(--sg-danger)]/35 bg-[var(--sg-danger)]/10 px-3 py-2">
+          <p class="text-xs font-medium text-[var(--sg-danger)]">Operation failed</p>
+          <p class="mt-0.5 text-[11px] text-[var(--sg-text-dim)]">{operationError}</p>
+        </div>
+      {/if}
+      <div class="mt-3 grid gap-3 lg:grid-cols-[1.2fr,1fr]">
+        <div class="max-h-[340px] overflow-auto rounded border border-[var(--sg-border-subtle)] bg-[var(--sg-surface-raised)] p-2.5">
+          <div class="mb-2 flex flex-wrap items-center gap-1.5 text-[10px]">
+            <span class="rounded border border-[var(--sg-border)] bg-[var(--sg-surface)] px-1.5 py-px text-[var(--sg-text-faint)]">Pending: {hookStatusSummary.pending}</span>
+            <span class="rounded border border-[var(--sg-accent)]/40 bg-[var(--sg-accent)]/15 px-1.5 py-px text-[var(--sg-accent)]">Running: {hookStatusSummary.running}</span>
+            <span class="rounded border border-[var(--sg-primary)]/40 bg-[var(--sg-primary)]/15 px-1.5 py-px text-[var(--sg-primary)]">Complete: {hookStatusSummary.success}</span>
+            <span class="rounded border border-[var(--sg-warning)]/40 bg-[var(--sg-warning)]/15 px-1.5 py-px text-[var(--sg-warning)]">Skipped: {hookStatusSummary.skipped}</span>
+            <span class="rounded border border-[var(--sg-danger)]/40 bg-[var(--sg-danger)]/15 px-1.5 py-px text-[var(--sg-danger)]">Errors: {hookStatusSummary.error + hookStatusSummary.timed_out}</span>
+          </div>
+          {#if operationHooks.length === 0}
+            <p class="text-[10px] text-[var(--sg-text-faint)]">No hooks registered for this operation.</p>
+          {:else}
+            <div class="space-y-2">
+              {#each operationHooks as hook (hook.id)}
+                <div class="rounded border border-[var(--sg-border)] bg-[var(--sg-surface)] p-2">
+                  <div class="flex items-start justify-between gap-2">
+                    <div class="min-w-0">
+                      <p class="truncate text-xs font-medium text-[var(--sg-text)]">{hook.name}</p>
+                      <p class="mt-0.5 text-[10px] text-[var(--sg-text-faint)]">{hook.trigger}</p>
+                    </div>
+                    <span class={`shrink-0 rounded border px-1.5 py-px text-[10px] ${statusBadgeClass(hook.status)}`}>
+                      {statusLabel(hook.status)}
+                    </span>
+                  </div>
+                  <div class="mt-1.5 max-h-24 overflow-auto rounded border border-[var(--sg-border-subtle)] bg-[var(--sg-bg)] p-1.5">
+                    {#if hook.logs.length === 0}
+                      <p class="text-[10px] text-[var(--sg-text-faint)]">Waiting for output...</p>
+                    {:else}
+                      <pre class="whitespace-pre-wrap break-words font-mono text-[10px] leading-relaxed text-[var(--sg-text-dim)]">{hook.logs.join("\n\n")}</pre>
+                    {/if}
+                  </div>
+                </div>
+              {/each}
+            </div>
+          {/if}
+        </div>
+
+        <div class="max-h-[340px] overflow-auto rounded border border-[var(--sg-border-subtle)] bg-[var(--sg-surface-raised)] p-2.5">
+          <p class="mb-1 text-[10px] font-semibold uppercase tracking-wider text-[var(--sg-text-faint)]">Operation Timeline</p>
+          {#if operationLogs.length === 0}
+            <p class="text-[10px] text-[var(--sg-text-faint)]">Waiting for hook output...</p>
+          {:else}
+            <pre class="whitespace-pre-wrap break-words font-mono text-[10px] leading-relaxed text-[var(--sg-text-dim)]">{operationLogs.join("\n")}</pre>
+          {/if}
+        </div>
+      </div>
+      {#if operationError}
+        <div class="mt-3 flex justify-end">
+          <button
+            onclick={() => endOperation(true)}
+            class="rounded border border-[var(--sg-border)] px-2.5 py-1 text-xs text-[var(--sg-text-dim)] hover:bg-[var(--sg-surface-raised)] hover:text-[var(--sg-text)]"
+          >
+            Dismiss
+          </button>
+        </div>
+      {:else}
+        <p class="mt-3 text-[10px] text-[var(--sg-text-faint)]">Please wait. This can include lifecycle hooks and git operations.</p>
+      {/if}
+    </div>
+  </div>
+{/if}
+
+<WorkspaceHooksModal
+  open={hooksModalOpen}
+  workspacePath={workspace?.workspacePath ?? ""}
+  onClose={() => {
+    hooksModalOpen = false;
+  }}
+/>
 
 {#if worktreeContextMenu}
   <ContextMenu

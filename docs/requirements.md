@@ -23,6 +23,11 @@ SproutGit enforces a project workspace structure above Git root/worktrees:
   - SQLite database: <project_workspace>/.sproutgit/state.db
   - Project marker/metadata file: <project_workspace>/.sproutgit/project.json
 
+App-level config storage (global, per user):
+
+- SQLite config database in user profile directory (cross-platform app config location)
+- Stores recent workspaces and app settings
+
 Rules:
 
 1. New managed worktrees must be created under <project_workspace>/worktrees/.
@@ -34,7 +39,8 @@ Rules:
 5. Worktree switcher prioritizes managed worktrees first.
 6. Deleting a managed worktree prunes both Git metadata and its folder.
 7. Presence of <project_workspace>/.sproutgit/project.json identifies the filesystem as a SproutGit project.
-8. SQLite state.db stores SproutGit-local state and settings, not Git object data.
+8. SQLite state.db stores workspace-local state, not Git object data.
+9. Global app settings and recent-workspace state must be stored in the user-profile config SQLite database.
 
 ## MVP Scope
 
@@ -91,6 +97,13 @@ Rules:
 1. Fetch and pull for current worktree
 2. Push current branch with upstream setup
 3. Keyboard-first global context switcher
+4. Repo-scoped worktree lifecycle hooks (local-only, persisted in workspace SQLite)
+
+### P2: Candidate (post-MVP)
+
+1. Hook execution history UI (per-hook run logs and status)
+2. Hook parallel execution groups with timeout and blocking policy controls
+3. Shell-aware script editor highlighting (bash/zsh/pwsh) in workspace settings
 
 ### Excluded from v0.1
 
@@ -135,6 +148,21 @@ Rules:
 3. Explicit permission and confirmation gates for destructive operations.
 4. Project-scoped capability model backed by .sproutgit metadata and SQLite state.
 5. Full audit trail in project state for agent-triggered actions.
+
+## Post-MVP Local Automation (Planned)
+
+1. Repository-scoped lifecycle hooks for worktree create/remove events.
+2. Hooks stored in `<project_workspace>/.sproutgit/state.db`, never committed to Git by default.
+3. Hook scripts run with OS-specific shells:
+   - Linux: bash
+   - macOS: zsh
+   - Windows: PowerShell Core (`pwsh`)
+4. Hook definitions and runs managed with an ORM-backed SQLite model.
+5. Hook dependency model supports multiple dependencies (AND semantics) and tree/DAG execution.
+6. Hooks can be marked critical (required) or non-critical.
+7. Force remove bypasses only failing non-critical hooks; critical failures still block.
+8. `after_*` hook failures are warning-only by default.
+9. Hook editor uses Monaco with shell-aware syntax highlighting.
 
 ## Non-Functional Requirements
 

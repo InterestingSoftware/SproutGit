@@ -155,6 +155,17 @@ Always use `var(--sg-*)` tokens in components. Never hardcode colors outside of 
 ### Spinner (`Spinner.svelte`)
 - Sizes: `sm`, `md`, `lg`. Optional `label` text. Uses `--sg-primary` color.
 
+### Form Controls (`Checkbox.svelte` + `Select.svelte`)
+- Use shared form controls from `src/lib/components/` instead of ad-hoc checkbox/select markup in feature components.
+- `Checkbox.svelte` is the source of truth for custom checkbox visuals and spacing behavior. Keep checked/unchecked icon rendering layout-stable to avoid row height shifts.
+- `Select.svelte` is the source of truth for themed dropdowns. Prefer it over native `<select>` styling repeated inline.
+
+## Recent Hook Findings
+
+- Schema migration ordering matters: do not create indexes that reference new columns until after migration checks/additions run (example: `hook_definitions.scope`).
+- Hook dependency compatibility rule: dependencies may be same-trigger or `manual`; incompatible cross-trigger links should fail validation clearly.
+- Hook shell handling must use runtime detection of available shells. On Windows, support both `pwsh` and `powershell` fallback.
+
 ## Animations
 
 Global keyframes defined in `app.css`:
@@ -544,5 +555,6 @@ The `Spinner.svelte` component supports:
 - `git clone --progress` writes to **stderr**, not stdout
 - Tauri event emission requires `tauri::Emitter` trait in scope
 - `format!()` in Rust: don't mix string concatenation with format placeholders — use `.join()` for building git format strings
+- SQLite + SeaORM (`sqlx-sqlite`) integer decode: avoid `u64` in `FromQueryResult` structs; use `i64` for `INTEGER` columns (timestamps included)
 - Svelte 5 `class:` directive with Tailwind arbitrary values (e.g., `class:bg-[var(--x)]/10={cond}`) works but looks odd
 - Window overflow: parent containers must be `flex flex-col overflow-hidden` for child `flex-1 overflow-auto` to scroll properly

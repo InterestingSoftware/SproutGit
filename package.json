@@ -26,11 +26,13 @@
     }
   },
   "dependencies": {
+    "@monaco-editor/loader": "^1.7.0",
     "@tauri-apps/api": "^2",
     "@tauri-apps/plugin-dialog": "^2.7.0",
     "@tauri-apps/plugin-opener": "^2",
     "highlight.js": "^11.11.1",
-    "lucide-svelte": "^1.0.1"
+    "lucide-svelte": "^1.0.1",
+    "monaco-editor": "^0.55.1"
   },
   "devDependencies": {
     "@sveltejs/adapter-static": "^3.0.6",

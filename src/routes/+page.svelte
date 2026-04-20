@@ -6,16 +6,23 @@
   import Autocomplete from "$lib/components/Autocomplete.svelte";
   import {
     createWorkspace,
+    importGitRepoWorkspace,
     getGitInfo,
     inspectWorkspace,
     onCloneProgress,
     getGithubAuthStatus,
     listGithubRepos,
     getHomeDir,
+    listRecentWorkspaces,
+    touchRecentWorkspace,
+    removeRecentWorkspace,
+    getAppSetting,
+    setAppSetting,
     type GitInfo,
     type WorkspaceInitResult,
     type WorkspaceStatus,
     type GitHubAuthStatus,
+    type RecentWorkspace,
   } from "$lib/sproutgit";
   import { toast } from "$lib/toast.svelte";
   import WindowControls from "$lib/components/WindowControls.svelte";
@@ -28,17 +35,20 @@
     lastOpenedAt: number;
   };
 
-  const KNOWN_PROJECTS_KEY = "sproutgit.knownProjects";
-  const PROJECTS_FOLDER_KEY = "sproutgit.projectsFolder";
+  const PROJECTS_FOLDER_SETTING_KEY = "projectsFolder";
 
   let gitChecked = $state(false);
   let git = $state<GitInfo>({ installed: false, version: null });
-  let projectsFolder = $state(localStorage.getItem(PROJECTS_FOLDER_KEY) ?? "");
+  let projectsFolder = $state("");
   let cloneUrl = $state("");
   let folderName = $state("");
   let folderNameManual = $state(false);
   let openWorkspacePath = $state("");
+  let importRepoPath = $state("");
+  let importFolderName = $state("");
+  let importFolderNameManual = $state(false);
   let creating = $state(false);
+  let importing = $state(false);
   let opening = $state(false);
   let error = $state("");
   let knownProjects = $state<KnownProject[]>([]);
@@ -58,6 +68,10 @@
     projectsFolder && folderName ? `${projectsFolder}/${folderName}` : ""
   );
 
+  let importWorkspacePath = $derived(
+    projectsFolder && importFolderName ? `${projectsFolder}/${importFolderName}` : ""
+  );
+
   function repoNameFromUrl(url: string): string {
     const trimmed = url.trim().replace(/\/+$/, "");
     // Handle .git suffix
@@ -68,6 +82,13 @@
     const sep = Math.max(lastSlash, lastColon);
     if (sep === -1) return "";
     return withoutGit.slice(sep + 1);
+  }
+
+  function repoNameFromPath(path: string): string {
+    const trimmed = path.trim().replace(/[\\/]+$/g, "");
+    if (!trimmed) return "";
+    const idx = Math.max(trimmed.lastIndexOf("/"), trimmed.lastIndexOf("\\"));
+    return idx === -1 ? trimmed : trimmed.slice(idx + 1);
   }
 
   function handleUrlInput() {
@@ -103,23 +124,42 @@
     folderNameManual = folderName !== "" && folderName !== repoNameFromUrl(cloneUrl);
   }
 
-  function saveProjectsFolder() {
-    localStorage.setItem(PROJECTS_FOLDER_KEY, projectsFolder);
+  function handleImportRepoPathInput() {
+    if (!importFolderNameManual) {
+      importFolderName = repoNameFromPath(importRepoPath);
+    }
   }
 
-  function loadKnownProjects() {
-    const raw = localStorage.getItem(KNOWN_PROJECTS_KEY);
-    if (!raw) return;
+  function handleImportFolderNameInput() {
+    importFolderNameManual =
+      importFolderName !== "" && importFolderName !== repoNameFromPath(importRepoPath);
+  }
 
+  async function saveProjectsFolder() {
+    await setAppSetting(PROJECTS_FOLDER_SETTING_KEY, projectsFolder);
+  }
+
+  function fromRecentWorkspace(item: RecentWorkspace): KnownProject {
+    return {
+      workspacePath: item.workspacePath,
+      rootPath: `${item.workspacePath}/root`,
+      lastOpenedAt: item.lastOpenedAt,
+    };
+  }
+
+  async function loadKnownProjects() {
     try {
-      const parsed = JSON.parse(raw) as KnownProject[];
-      knownProjects = parsed.sort((a, b) => b.lastOpenedAt - a.lastOpenedAt);
-    } catch {
+      const recents = await listRecentWorkspaces();
+      knownProjects = recents.map(fromRecentWorkspace);
+    } catch (err) {
+      toast.error(`Failed to load recent workspaces: ${err}`);
       knownProjects = [];
     }
   }
 
-  function saveKnownProject(workspace: WorkspaceStatus | WorkspaceInitResult) {
+  async function saveKnownProject(workspace: WorkspaceStatus | WorkspaceInitResult) {
+    await touchRecentWorkspace(workspace.workspacePath);
+
     const updated = [
       {
         workspacePath: workspace.workspacePath,
@@ -130,7 +170,6 @@
     ].slice(0, 20);
 
     knownProjects = updated;
-    localStorage.setItem(KNOWN_PROJECTS_KEY, JSON.stringify(updated));
   }
 
   async function startNewProject(event: Event) {
@@ -150,7 +189,7 @@
       return;
     }
 
-    saveProjectsFolder();
+    await saveProjectsFolder();
     cloneProgress = [];
     clonePercent = null;
     clonePhase = "";
@@ -177,7 +216,7 @@
     try {
       const created = await createWorkspace(workspacePath, cloneUrl);
       createdWorkspace = created;
-      saveKnownProject(created);
+      await saveKnownProject(created);
       toast.success(`Workspace created: ${created.workspacePath.split('/').pop()}`);
       await goto(`/workspace?workspace=${encodeURIComponent(created.workspacePath)}`);
     } catch (err) {
@@ -189,9 +228,43 @@
     }
   }
 
-  function removeKnownProject(workspacePath: string) {
+  async function removeKnownProject(workspacePath: string) {
+    await removeRecentWorkspace(workspacePath);
     knownProjects = knownProjects.filter((p) => p.workspacePath !== workspacePath);
-    localStorage.setItem(KNOWN_PROJECTS_KEY, JSON.stringify(knownProjects));
+  }
+
+  async function importExistingRepo(event: Event) {
+    event.preventDefault();
+    error = "";
+
+    if (!projectsFolder.trim()) {
+      error = "Projects folder is required";
+      return;
+    }
+    if (!importRepoPath.trim()) {
+      error = "Repository path is required";
+      return;
+    }
+    if (!importFolderName.trim()) {
+      error = "Folder name is required";
+      return;
+    }
+
+    await saveProjectsFolder();
+    importing = true;
+
+    try {
+      const imported = await importGitRepoWorkspace(importWorkspacePath, importRepoPath);
+      createdWorkspace = imported;
+      await saveKnownProject(imported);
+      toast.success(`Workspace imported: ${imported.workspacePath.split('/').pop()}`);
+      await goto(`/workspace?workspace=${encodeURIComponent(imported.workspacePath)}`);
+    } catch (err) {
+      error = String(err);
+      toast.error(String(err));
+    } finally {
+      importing = false;
+    }
   }
 
   async function openKnownWorkspace(path: string) {
@@ -203,12 +276,12 @@
       if (!status.isSproutgitProject) {
         throw new Error("Selected path is not a SproutGit project");
       }
-      saveKnownProject(status);
+      await saveKnownProject(status);
       await goto(`/workspace?workspace=${encodeURIComponent(status.workspacePath)}`);
     } catch (err) {
       const msg = String(err);
       if (msg.includes("does not exist") || msg.includes("No such file") || msg.includes("not found") || msg.includes("not a SproutGit project")) {
-        removeKnownProject(path);
+        await removeKnownProject(path);
         toast.error(`Project removed — path no longer exists: ${path.split("/").pop()}`);
       } else {
         error = msg;
@@ -233,7 +306,7 @@
         toast.error("Selected path is not a SproutGit workspace");
         return;
       }
-      saveKnownProject(status);
+      await saveKnownProject(status);
       await goto(`/workspace?workspace=${encodeURIComponent(status.workspacePath)}`);
     } catch (err) {
       toast.error(String(err));
@@ -246,19 +319,36 @@
     git = info;
     gitChecked = true;
   });
+
   loadKnownProjects();
+
   getGithubAuthStatus().then((s) => {
     githubAuth = s;
     if (s.authenticated) fetchGithubRepos();
   });
 
-  // Default projects folder to ~/Projects on first use
-  if (!localStorage.getItem(PROJECTS_FOLDER_KEY)) {
-    getHomeDir().then((home) => {
-      projectsFolder = `${home}/Projects`;
-      saveProjectsFolder();
-    }).catch(() => {});
-  }
+  getAppSetting(PROJECTS_FOLDER_SETTING_KEY)
+    .then((value) => {
+      if (value?.trim()) {
+        projectsFolder = value;
+        return;
+      }
+
+      getHomeDir()
+        .then(async (home) => {
+          projectsFolder = `${home}/Projects`;
+          await saveProjectsFolder();
+        })
+        .catch(() => {});
+    })
+    .catch(() => {
+      getHomeDir()
+        .then(async (home) => {
+          projectsFolder = `${home}/Projects`;
+          await saveProjectsFolder();
+        })
+        .catch(() => {});
+    });
 </script>
 
 {#if !gitChecked}
@@ -407,6 +497,60 @@
         {/if}
       </form>
 
+      <div class="mx-4 border-t border-[var(--sg-border-subtle)] pt-4">
+        <form onsubmit={importExistingRepo} class="flex flex-col gap-3">
+          <h3 class="text-xs font-semibold uppercase tracking-wider text-[var(--sg-text-dim)]">
+            Import existing repository
+          </h3>
+
+          <div>
+            <label for="import-repo-path" class="mb-1 block text-xs text-[var(--sg-text-dim)]">Repository path</label>
+            <div class="flex gap-1.5">
+              <input
+                id="import-repo-path"
+                bind:value={importRepoPath}
+                oninput={handleImportRepoPathInput}
+                class="min-w-0 flex-1 rounded border border-[var(--sg-input-border)] bg-[var(--sg-input-bg)] px-2.5 py-1.5 text-xs text-[var(--sg-text)] placeholder-[var(--sg-text-faint)] outline-none focus:border-[var(--sg-input-focus)]"
+                placeholder="~/src/my-repo"
+              />
+              <button
+                type="button"
+                onclick={async () => {
+                  const dir = await open({ directory: true, title: "Select repository to import" });
+                  if (dir) {
+                    importRepoPath = dir;
+                    handleImportRepoPathInput();
+                  }
+                }}
+                class="shrink-0 rounded border border-[var(--sg-border)] bg-[var(--sg-surface-raised)] px-2.5 py-1.5 text-xs text-[var(--sg-text-dim)] hover:bg-[var(--sg-border)] hover:text-[var(--sg-text)]"
+              >Browse</button>
+            </div>
+          </div>
+
+          <div>
+            <label for="import-folder-name" class="mb-1 block text-xs text-[var(--sg-text-dim)]">Workspace folder name</label>
+            <input
+              id="import-folder-name"
+              bind:value={importFolderName}
+              oninput={handleImportFolderNameInput}
+              class="w-full rounded border border-[var(--sg-input-border)] bg-[var(--sg-input-bg)] px-2.5 py-1.5 text-xs text-[var(--sg-text)] placeholder-[var(--sg-text-faint)] outline-none focus:border-[var(--sg-input-focus)]"
+              placeholder="my-repo"
+            />
+            {#if importWorkspacePath}
+              <p class="mt-1 truncate text-[10px] text-[var(--sg-text-faint)]">{importWorkspacePath}</p>
+            {/if}
+          </div>
+
+          <button
+            type="submit"
+            disabled={importing || creating || !git.installed || !importWorkspacePath}
+            class="rounded border border-[var(--sg-border)] bg-[var(--sg-surface-raised)] px-3 py-1.5 text-xs font-semibold text-[var(--sg-text-dim)] hover:bg-[var(--sg-border)] hover:text-[var(--sg-text)] disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            {#if importing}<Spinner size="sm" />&nbsp;Importing…{:else}Import repository{/if}
+          </button>
+        </form>
+      </div>
+
       {#if createdWorkspace}
         <div class="mx-4 mb-3 rounded border border-[var(--sg-border)] bg-[var(--sg-surface-raised)] px-2.5 py-1.5 text-xs text-[var(--sg-primary)]">
           Created: {createdWorkspace.workspacePath}
@@ -476,7 +620,16 @@
                 <button
                   class="shrink-0 rounded p-1.5 mr-2 text-[var(--sg-text-faint)] opacity-0 transition-opacity hover:text-[var(--sg-danger)] group-hover:opacity-100"
                   title="Remove from recent projects"
-                  onclick={(e) => { e.stopPropagation(); removeKnownProject(project.workspacePath); toast.info(`Removed ${project.workspacePath.split("/").pop()} from recent projects`); }}
+                  onclick={(e) => {
+                    e.stopPropagation();
+                    void removeKnownProject(project.workspacePath)
+                      .then(() => {
+                        toast.info(`Removed ${project.workspacePath.split("/").pop()} from recent projects`);
+                      })
+                      .catch((err) => {
+                        toast.error(String(err));
+                      });
+                  }}
                 >
                   <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
                 </button>

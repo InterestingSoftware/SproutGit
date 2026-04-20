@@ -282,3 +282,62 @@ pub async fn create_feature_branch_with_worktree(
 **Recommendation**: ✅ **Yes, it's a solid foundation**, but add a `GitTransaction` pattern (Tier 1) before building complex workflows. This adds composability and rollback semantics without breaking existing code.
 
 The security and auditability are excellent. The main gap is composability for multi-step operations. Once that's addressed, it's a very capable platform.
+
+## Proposed Extension: Worktree Lifecycle Hooks
+
+### Why this fits the architecture
+
+Worktree lifecycle hooks are a natural extension of the worktree-first model because users often need local environment setup/teardown around create/remove operations.
+
+The existing command architecture should remain the security boundary:
+
+- Git operations continue through registered `GitAction` paths
+- Hook execution should use a dedicated registered system action type (for auditability)
+- Trigger orchestration should happen in backend commands, not frontend choreography
+
+### Persistence strategy
+
+Current state DB initialization uses direct `rusqlite` SQL in `initialize_state_db()`.
+
+For hooks and future app/workspace state, move to an ORM-backed model for maintainable evolution:
+
+- Introduce ORM entities for `hook_definitions` and `hook_runs`
+- Introduce ORM entities for global app config state (recent workspaces, app settings)
+- Keep migrations explicit and versioned
+- Migrate existing lightweight tables/repositories incrementally behind compatibility adapters
+
+Use a dual-database model:
+
+- User-profile config DB for app-level state
+- Workspace DB (`.sproutgit/state.db`) for repository-local state
+
+### Execution strategy
+
+Attach hook orchestration to semantic lifecycle command paths:
+
+- `before_worktree_create` -> run -> perform create -> `after_worktree_create`
+- `before_worktree_remove` -> run -> perform remove -> `after_worktree_remove`
+
+Execution rules:
+
+- Critical hook failure aborts `before_*` operations
+- Non-critical hook failures are logged and surfaced but do not block
+- Force remove bypasses only failing non-critical hooks
+- `after_*` failures are warning-only by default and are not rolled back
+- Parallel execution allowed for independent groups
+- Dependency DAG with AND semantics determines run readiness
+- Timeouts and output limits enforced per hook run
+
+### Security constraints for hook execution
+
+Because this executes arbitrary local scripts, treat as explicit user-authorized code execution:
+
+- Require clear UI warning and explicit enablement
+- No privilege elevation workflow in app
+- Validate trigger payload and paths before execution
+- Use non-interactive shell modes where possible
+- Persist run metadata for audit/debug visibility
+
+### Implementation note
+
+This feature should be implemented as a composable service module (for example `hooks.rs`) that can be called from worktree operations, rather than embedding hook logic directly into each command handler.

@@ -1,9 +1,11 @@
 use serde::Serialize;
+use std::path::{Path, PathBuf};
 
 use crate::git::helpers::{
     ensure_git_success, git_command, normalize_existing_path, run_git, slugify_for_path,
     validate_non_option_value, GitAction,
 };
+use crate::hooks::execute_workspace_hooks_for_trigger;
 
 // ── Structs ──
 
@@ -81,6 +83,27 @@ pub struct CheckoutResult {
     pub previous_branch: Option<String>,
     pub new_branch: String,
     pub stashed: bool,
+}
+
+fn workspace_from_root_repo(root_repo: &Path) -> Option<PathBuf> {
+    let workspace = root_repo.parent()?.to_path_buf();
+    let marker = workspace.join(".sproutgit").join("project.json");
+    if marker.exists() {
+        Some(workspace)
+    } else {
+        None
+    }
+}
+
+fn workspace_from_worktree_path(worktree_path: &Path) -> Option<PathBuf> {
+    for ancestor in worktree_path.ancestors() {
+        let marker = ancestor.join(".sproutgit").join("project.json");
+        if marker.exists() {
+            return Some(ancestor.to_path_buf());
+        }
+    }
+
+    None
 }
 
 // ── Commands ──
@@ -285,6 +308,7 @@ pub async fn get_commit_graph(
 
 #[tauri::command]
 pub async fn create_managed_worktree(
+    app_handle: tauri::AppHandle,
     root_repo_path: String,
     managed_worktrees_path: String,
     from_ref: String,
@@ -312,6 +336,23 @@ pub async fn create_managed_worktree(
         ));
     }
 
+    if let Some(workspace_path) = workspace_from_root_repo(&root_repo) {
+        let before_summary = execute_workspace_hooks_for_trigger(
+            &workspace_path,
+            "before_worktree_create",
+            &target_worktree,
+            Some(&app_handle),
+        )
+        .await?;
+
+        if before_summary.had_critical_failure {
+            return Err(format!(
+                "Worktree creation blocked by critical hook failure(s): {}",
+                before_summary.failed_critical_hooks.join(", ")
+            ));
+        }
+    }
+
     let output = run_git(
         GitAction::CreateManagedWorktree,
         &[
@@ -328,6 +369,16 @@ pub async fn create_managed_worktree(
 
     ensure_git_success(output, "Failed to create managed worktree")?;
 
+    if let Some(workspace_path) = workspace_from_root_repo(&root_repo) {
+        let _ = execute_workspace_hooks_for_trigger(
+            &workspace_path,
+            "after_worktree_create",
+            &target_worktree,
+            Some(&app_handle),
+        )
+        .await;
+    }
+
     Ok(CreateWorktreeResult {
         worktree_path: target_worktree.to_string_lossy().to_string(),
         branch,
@@ -337,12 +388,30 @@ pub async fn create_managed_worktree(
 
 #[tauri::command]
 pub async fn delete_managed_worktree(
+    app_handle: tauri::AppHandle,
     root_repo_path: String,
     worktree_path: String,
     delete_branch: bool,
 ) -> Result<String, String> {
     let root_repo = normalize_existing_path(&root_repo_path)?;
     let wt_path = normalize_existing_path(&worktree_path)?;
+
+    if let Some(workspace_path) = workspace_from_root_repo(&root_repo) {
+        let before_summary = execute_workspace_hooks_for_trigger(
+            &workspace_path,
+            "before_worktree_remove",
+            &wt_path,
+            Some(&app_handle),
+        )
+        .await?;
+
+        if before_summary.had_critical_failure {
+            return Err(format!(
+                "Worktree removal blocked by critical hook failure(s): {}",
+                before_summary.failed_critical_hooks.join(", ")
+            ));
+        }
+    }
 
     let output = run_git(
         GitAction::DeleteManagedWorktree,
@@ -365,11 +434,22 @@ pub async fn delete_managed_worktree(
         let _ = ensure_git_success(output, "Failed to prune worktrees");
     }
 
+    if let Some(workspace_path) = workspace_from_root_repo(&root_repo) {
+        let _ = execute_workspace_hooks_for_trigger(
+            &workspace_path,
+            "after_worktree_remove",
+            &wt_path,
+            Some(&app_handle),
+        )
+        .await;
+    }
+
     Ok(wt_path.to_string_lossy().to_string())
 }
 
 #[tauri::command]
 pub async fn checkout_worktree(
+    app_handle: tauri::AppHandle,
     worktree_path: String,
     target_ref: String,
     auto_stash: bool,
@@ -377,10 +457,28 @@ pub async fn checkout_worktree(
     let wt_path = normalize_existing_path(&worktree_path)?;
     let wt_str = wt_path.to_string_lossy();
     let target = validate_non_option_value(target_ref.trim(), "Target ref")?;
+    let workspace_for_hooks = workspace_from_worktree_path(&wt_path);
+
+    if let Some(workspace_path) = workspace_for_hooks.as_ref() {
+        let before_summary = execute_workspace_hooks_for_trigger(
+            workspace_path,
+            "before_worktree_switch",
+            &wt_path,
+            Some(&app_handle),
+        )
+        .await?;
+
+        if before_summary.had_critical_failure {
+            return Err(format!(
+                "Worktree switch blocked by critical hook failure(s): {}",
+                before_summary.failed_critical_hooks.join(", ")
+            ));
+        }
+    }
 
     // Get current branch before checkout
     let current_output = run_git(
-        GitAction::CurrentBranch,
+        GitAction::RevParse,
         &["-C", &wt_str, "rev-parse", "--abbrev-ref", "HEAD"],
     )?;
     let previous_branch = if current_output.status.success() {
@@ -446,6 +544,16 @@ pub async fn checkout_worktree(
     if stashed {
         let pop_output = run_git(GitAction::StashPop, &["-C", &wt_str, "stash", "pop"])?;
         if !pop_output.status.success() {
+            if let Some(workspace_path) = workspace_for_hooks.as_ref() {
+                let _ = execute_workspace_hooks_for_trigger(
+                    workspace_path,
+                    "after_worktree_switch",
+                    &wt_path,
+                    Some(&app_handle),
+                )
+                .await;
+            }
+
             return Ok(CheckoutResult {
                 worktree_path: wt_str.to_string(),
                 previous_branch,
@@ -453,6 +561,16 @@ pub async fn checkout_worktree(
                 stashed: true,
             });
         }
+    }
+
+    if let Some(workspace_path) = workspace_for_hooks.as_ref() {
+        let _ = execute_workspace_hooks_for_trigger(
+            workspace_path,
+            "after_worktree_switch",
+            &wt_path,
+            Some(&app_handle),
+        )
+        .await;
     }
 
     Ok(CheckoutResult {
@@ -499,6 +617,7 @@ pub async fn reset_worktree_branch(
 /// Convenience wrapper over create_managed_worktree for clarity.
 #[allow(dead_code)]
 pub async fn create_feature_worktree(
+    app_handle: tauri::AppHandle,
     root_path: String,
     worktrees_path: String,
     source_ref: String,
@@ -511,18 +630,19 @@ pub async fn create_feature_worktree(
     let feature = validate_non_option_value(&feature_name, "Feature name")?;
 
     // Use existing create_managed_worktree under the hood
-    create_managed_worktree(root_path, worktrees_path, source, feature).await
+    create_managed_worktree(app_handle, root_path, worktrees_path, source, feature).await
 }
 
 /// Checkout a worktree to a target ref with automatic stash.
 /// Semantic alias for clarity (what we're actually doing: switching branches).
 #[allow(dead_code)]
 pub async fn switch_worktree_branch(
+    app_handle: tauri::AppHandle,
     worktree_path: String,
     target_ref: String,
     auto_stash: bool,
 ) -> Result<CheckoutResult, String> {
-    checkout_worktree(worktree_path, target_ref, auto_stash).await
+    checkout_worktree(app_handle, worktree_path, target_ref, auto_stash).await
 }
 
 /// Cleanup and reset a worktree to a clean state.

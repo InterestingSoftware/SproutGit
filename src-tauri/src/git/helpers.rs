@@ -16,6 +16,7 @@ pub enum GitAction {
     DeleteManagedWorktree,
     PruneWorktrees,
     CurrentBranch,
+    RevParse,
     StatusPorcelain,
     StashPush,
     StashPop,
@@ -32,7 +33,7 @@ pub enum GitAction {
 
 impl GitAction {
     #[cfg(test)]
-    pub const ALL: [GitAction; 20] = [
+    pub const ALL: [GitAction; 21] = [
         GitAction::GitInfo,
         GitAction::WorktreeList,
         GitAction::ListRefs,
@@ -41,6 +42,7 @@ impl GitAction {
         GitAction::DeleteManagedWorktree,
         GitAction::PruneWorktrees,
         GitAction::CurrentBranch,
+        GitAction::RevParse,
         GitAction::StatusPorcelain,
         GitAction::StashPush,
         GitAction::StashPop,
@@ -65,6 +67,7 @@ impl GitAction {
             GitAction::DeleteManagedWorktree => "delete_managed_worktree",
             GitAction::PruneWorktrees => "prune_worktrees",
             GitAction::CurrentBranch => "current_branch",
+            GitAction::RevParse => "rev_parse",
             GitAction::StatusPorcelain => "status_porcelain",
             GitAction::StashPush => "stash_push",
             GitAction::StashPop => "stash_pop",
@@ -85,16 +88,22 @@ impl GitAction {
 pub enum SystemAction {
     CommandLookup,
     OpenEditor,
+    HookExecute,
 }
 
 impl SystemAction {
     #[cfg(test)]
-    pub const ALL: [SystemAction; 2] = [SystemAction::CommandLookup, SystemAction::OpenEditor];
+    pub const ALL: [SystemAction; 3] = [
+        SystemAction::CommandLookup,
+        SystemAction::OpenEditor,
+        SystemAction::HookExecute,
+    ];
 
     pub fn label(self) -> &'static str {
         match self {
             SystemAction::CommandLookup => "command_lookup",
             SystemAction::OpenEditor => "open_editor",
+            SystemAction::HookExecute => "hook_execute",
         }
     }
 }
@@ -356,6 +365,7 @@ pub fn slugify_for_path(name: &str) -> String {
     output.trim_matches('-').to_string()
 }
 
+#[allow(dead_code)]
 pub fn initialize_state_db(state_db_path: &Path) -> Result<(), String> {
     let conn = Connection::open(state_db_path)
         .map_err(|e| format!("Failed to open workspace state database: {e}"))?;

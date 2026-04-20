@@ -34,6 +34,13 @@
   // ── Git State ──
   let gitInfo = $state<GitInfo | null>(null);
 
+  // Keep workspace context for back navigation.
+  const initialWorkspacePath =
+    typeof window !== "undefined"
+      ? new URL(window.location.href).searchParams.get("workspace") ?? ""
+      : "";
+  let workspacePath = $state(initialWorkspacePath);
+
   // Load initial state
   getGitInfo().then((info) => { gitInfo = info; });
   getGithubAuthStatus().then((s) => { githubAuth = s; });
@@ -155,7 +162,15 @@
 
 <main class="flex h-screen flex-col">
   <header data-tauri-drag-region class="flex shrink-0 items-center gap-3 border-b border-[var(--sg-border)] bg-[var(--sg-surface)] pt-1 pr-1 pb-1 pl-[var(--sg-titlebar-inset)]">
-    <button onclick={() => goto("/")} class="rounded px-2 py-0.5 text-xs text-[var(--sg-text-dim)] hover:bg-[var(--sg-surface-raised)] hover:text-[var(--sg-text)]">
+    <button
+      onclick={() =>
+        goto(
+          workspacePath
+            ? `/workspace?workspace=${encodeURIComponent(workspacePath)}`
+            : "/",
+        )}
+      class="rounded px-2 py-0.5 text-xs text-[var(--sg-text-dim)] hover:bg-[var(--sg-surface-raised)] hover:text-[var(--sg-text)]"
+    >
       &larr; Projects
     </button>
     <div class="h-3 w-px bg-[var(--sg-border)]"></div>
@@ -288,6 +303,14 @@
             </div>
           {/if}
         {/if}
+      </section>
+
+      <section>
+        <h2 class="mb-1 text-sm font-semibold text-[var(--sg-text)]">Workspace hooks</h2>
+        <p class="mb-4 text-xs text-[var(--sg-text-faint)]">Hook management moved to the workspace screen for better context.</p>
+        <div class="rounded-lg border border-[var(--sg-border)] bg-[var(--sg-surface)] px-4 py-3 text-xs text-[var(--sg-text-dim)]">
+          Open a workspace and use the <span class="font-semibold text-[var(--sg-text)]">Hooks</span> button in the top bar.
+        </div>
       </section>
 
       <!-- Git -->

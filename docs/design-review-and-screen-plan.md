@@ -82,7 +82,7 @@ Inside [4] Main Workspace:
 - **Create project**: calls `createWorkspace(path, url)` → navigates to `/workspace?workspace=<path>`
 - **Open known project**: calls `inspectWorkspace(path)` → validates `.sproutgit/project.json` exists → navigates to `/workspace?workspace=<path>`
 - **Open by path**: same validation flow as above
-- **Known projects list**: persisted in localStorage (later migrated to global SQLite), sorted by last opened, capped at 20
+- **Known projects list**: persisted in user-profile config SQLite, sorted by last opened, capped at 20
 - **Git version**: displayed as ambient indicator, not a blocker unless missing entirely
 
 ### Data requirements

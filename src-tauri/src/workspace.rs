@@ -5,15 +5,84 @@ use std::fs;
 use std::io::{BufReader, Read};
 use std::process::Stdio;
 
+use crate::db::initialize_workspace_db;
 use crate::git::helpers::{
-    ensure_directory, git_command, initialize_state_db, normalize_existing_path,
-    normalize_or_create_dir, now_epoch_seconds, validate_repo_url, GitAction,
+    ensure_directory, git_command, normalize_existing_path, normalize_or_create_dir,
+    now_epoch_seconds, validate_repo_url, GitAction,
 };
 use crate::github::git_auth_env;
 
+fn write_project_marker(
+    project_marker_path: &std::path::Path,
+    workspace: &std::path::Path,
+    root_path: &std::path::Path,
+    worktrees_path: &std::path::Path,
+    state_db_path: &std::path::Path,
+) -> Result<(), String> {
+    let marker = json!({
+        "projectVersion": 1,
+        "createdAt": now_epoch_seconds(),
+        "workspacePath": workspace.to_string_lossy(),
+        "rootPath": root_path.to_string_lossy(),
+        "worktreesPath": worktrees_path.to_string_lossy(),
+        "stateDbPath": state_db_path.to_string_lossy(),
+    });
+
+    let marker_pretty = serde_json::to_string_pretty(&marker)
+        .map_err(|e| format!("Failed to serialize project marker: {e}"))?;
+    fs::write(project_marker_path, marker_pretty)
+        .map_err(|e| format!("Failed to write project marker: {e}"))
+}
+
+fn validate_clean_git_repo(repo_path: &std::path::Path) -> Result<(), String> {
+    let repo_str = repo_path.to_string_lossy().to_string();
+
+    let inside_output = git_command(
+        GitAction::RevParse,
+        &["-C", &repo_str, "rev-parse", "--is-inside-work-tree"],
+    )
+    .output()
+    .map_err(|e| format!("Failed to inspect repository: {e}"))?;
+
+    if !inside_output.status.success() {
+        return Err("Selected path is not a Git working tree".to_string());
+    }
+
+    let status_output = git_command(
+        GitAction::StatusPorcelain,
+        &["-C", &repo_str, "status", "--porcelain"],
+    )
+    .output()
+    .map_err(|e| format!("Failed to inspect repository status: {e}"))?;
+
+    if !status_output.status.success() {
+        let stderr = String::from_utf8_lossy(&status_output.stderr)
+            .trim()
+            .to_string();
+        return Err(if stderr.is_empty() {
+            "Failed to read repository status".to_string()
+        } else {
+            stderr
+        });
+    }
+
+    if !String::from_utf8_lossy(&status_output.stdout)
+        .trim()
+        .is_empty()
+    {
+        return Err(
+            "Repository has uncommitted changes. Commit or reset your working tree before import."
+                .to_string(),
+        );
+    }
+
+    Ok(())
+}
+
 fn is_git_error_line(line: &str) -> bool {
-    line.get(..6)
-        .is_some_and(|prefix| prefix.eq_ignore_ascii_case("fatal:") || prefix.eq_ignore_ascii_case("error:"))
+    line.get(..6).is_some_and(|prefix| {
+        prefix.eq_ignore_ascii_case("fatal:") || prefix.eq_ignore_ascii_case("error:")
+    })
 }
 
 // ── Structs ──
@@ -63,22 +132,16 @@ pub async fn create_sproutgit_workspace(
     ensure_directory(&worktrees_path)?;
     ensure_directory(&metadata_path)?;
 
-    initialize_state_db(&state_db_path)?;
+    initialize_workspace_db(&workspace).await?;
 
     if !project_marker_path.exists() {
-        let marker = json!({
-            "projectVersion": 1,
-            "createdAt": now_epoch_seconds(),
-            "workspacePath": workspace.to_string_lossy(),
-            "rootPath": root_path.to_string_lossy(),
-            "worktreesPath": worktrees_path.to_string_lossy(),
-            "stateDbPath": state_db_path.to_string_lossy(),
-        });
-
-        let marker_pretty = serde_json::to_string_pretty(&marker)
-            .map_err(|e| format!("Failed to serialize project marker: {e}"))?;
-        fs::write(&project_marker_path, marker_pretty)
-            .map_err(|e| format!("Failed to write project marker: {e}"))?;
+        write_project_marker(
+            &project_marker_path,
+            &workspace,
+            &root_path,
+            &worktrees_path,
+            &state_db_path,
+        )?;
     }
 
     let repo_url = repo_url
@@ -166,14 +229,18 @@ pub async fn create_sproutgit_workspace(
             let msg = match error_detail {
                 Some(detail) => {
                     // Provide a friendlier hint for authentication failures.
-                    if detail.to_lowercase().contains("authentication") ||
-                       detail.to_lowercase().contains("could not read username") ||
-                       detail.to_lowercase().contains("repository not found") {
-                        format!("Authentication failed — check your credentials or repo URL. ({})", detail)
+                    if detail.to_lowercase().contains("authentication")
+                        || detail.to_lowercase().contains("could not read username")
+                        || detail.to_lowercase().contains("repository not found")
+                    {
+                        format!(
+                            "Authentication failed — check your credentials or repo URL. ({})",
+                            detail
+                        )
                     } else {
                         format!("git clone failed: {}", detail)
                     }
-                }
+                },
                 None => "git clone failed".to_string(),
             };
             return Err(msg);
@@ -209,6 +276,83 @@ pub async fn create_sproutgit_workspace(
 }
 
 #[tauri::command]
+pub async fn import_git_repo_workspace(
+    workspace_path: String,
+    source_repo_path: String,
+) -> Result<WorkspaceInitResult, String> {
+    let workspace = normalize_or_create_dir(&workspace_path)?;
+    let source_repo = normalize_existing_path(&source_repo_path)?;
+
+    validate_clean_git_repo(&source_repo)?;
+
+    let root_path = workspace.join("root");
+    let worktrees_path = workspace.join("worktrees");
+    let metadata_path = workspace.join(".sproutgit");
+    let state_db_path = metadata_path.join("state.db");
+    let project_marker_path = metadata_path.join("project.json");
+
+    ensure_directory(&root_path)?;
+    ensure_directory(&worktrees_path)?;
+    ensure_directory(&metadata_path)?;
+
+    let root_has_content = fs::read_dir(&root_path)
+        .map_err(|e| format!("Failed to inspect root directory: {e}"))?
+        .next()
+        .is_some();
+
+    if root_has_content {
+        return Err("Cannot import into root/: directory is not empty".to_string());
+    }
+
+    let source_repo_string = source_repo.to_string_lossy().to_string();
+    let root_path_string = root_path.to_string_lossy().to_string();
+    let clone_output = git_command(
+        GitAction::Clone,
+        &[
+            "clone",
+            "--no-hardlinks",
+            "--",
+            &source_repo_string,
+            &root_path_string,
+        ],
+    )
+    .output()
+    .map_err(|e| format!("Failed to import repository: {e}"))?;
+
+    if !clone_output.status.success() {
+        let stderr = String::from_utf8_lossy(&clone_output.stderr)
+            .trim()
+            .to_string();
+        return Err(if stderr.is_empty() {
+            "Failed to import repository".to_string()
+        } else {
+            stderr
+        });
+    }
+
+    initialize_workspace_db(&workspace).await?;
+
+    if !project_marker_path.exists() {
+        write_project_marker(
+            &project_marker_path,
+            &workspace,
+            &root_path,
+            &worktrees_path,
+            &state_db_path,
+        )?;
+    }
+
+    Ok(WorkspaceInitResult {
+        workspace_path: workspace.to_string_lossy().to_string(),
+        root_path: root_path.to_string_lossy().to_string(),
+        worktrees_path: worktrees_path.to_string_lossy().to_string(),
+        metadata_path: metadata_path.to_string_lossy().to_string(),
+        state_db_path: state_db_path.to_string_lossy().to_string(),
+        cloned: true,
+    })
+}
+
+#[tauri::command]
 pub async fn inspect_sproutgit_workspace(
     workspace_path: String,
 ) -> Result<WorkspaceStatus, String> {
@@ -220,16 +364,40 @@ pub async fn inspect_sproutgit_workspace(
     let state_db_path = metadata_path.join("state.db");
     let project_marker_path = metadata_path.join("project.json");
 
+    let root_exists = root_path.exists();
+    let worktrees_exists = worktrees_path.exists();
+    let metadata_exists = metadata_path.exists();
+    let project_marker_exists = project_marker_path.exists();
+    let layout_exists = root_exists && worktrees_exists && metadata_exists;
+
+    if layout_exists {
+        // Backfill state DB for projects created before workspace DB became required.
+        if !state_db_path.exists() {
+            initialize_workspace_db(&workspace).await?;
+        }
+
+        // Backfill marker for legacy projects while preserving existing paths.
+        if !project_marker_exists {
+            write_project_marker(
+                &project_marker_path,
+                &workspace,
+                &root_path,
+                &worktrees_path,
+                &state_db_path,
+            )?;
+        }
+    }
+
     Ok(WorkspaceStatus {
         workspace_path: workspace.to_string_lossy().to_string(),
         root_path: root_path.to_string_lossy().to_string(),
         worktrees_path: worktrees_path.to_string_lossy().to_string(),
         metadata_path: metadata_path.to_string_lossy().to_string(),
         state_db_path: state_db_path.to_string_lossy().to_string(),
-        is_sproutgit_project: project_marker_path.exists(),
-        root_exists: root_path.exists(),
-        worktrees_exists: worktrees_path.exists(),
-        metadata_exists: metadata_path.exists(),
+        is_sproutgit_project: project_marker_path.exists() || layout_exists,
+        root_exists,
+        worktrees_exists,
+        metadata_exists,
         state_db_exists: state_db_path.exists(),
     })
 }
