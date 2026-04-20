@@ -9,6 +9,7 @@
     "preview": "vite preview",
     "check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
     "check:watch": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --watch",
+    "test:security": "cd src-tauri && cargo test --all-targets",
     "tauri": "tauri",
     "test:tauri:prepare": "pnpm run build && cd src-tauri && cargo build",
     "test:tauri:driver": "node tests/tauri-driver/smoke.mjs",

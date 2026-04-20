@@ -18,6 +18,20 @@
   <a href="#license">License</a>
 </p>
 
+<p align="center">
+  <a href="https://github.com/liamcottle/sproutgit/actions/workflows/ci.yml">
+    <img src="https://github.com/liamcottle/sproutgit/actions/workflows/ci.yml/badge.svg" alt="CI Status" />
+  </a>
+  <a href="https://codecov.io/gh/liamcottle/sproutgit">
+    <img src="https://codecov.io/gh/liamcottle/sproutgit/graph/badge.svg" alt="Code Coverage" />
+  </a>
+  <a href="https://github.com/liamcottle/sproutgit/blob/main/LICENSE">
+    <img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="License: MIT" />
+  </a>
+  <img src="https://img.shields.io/badge/status-early%20prototype-red.svg" alt="Status: Early Prototype" />
+  <img src="https://img.shields.io/badge/platform-macOS%20|%20Linux%20|%20Windows-lightgrey.svg" alt="Cross-Platform" />
+</p>
+
 ---
 
 > [!WARNING]
@@ -106,6 +120,25 @@ pnpm run build
 cd src-tauri && cargo check
 ```
 
+## Testing & Coverage
+
+```bash
+# Run all backend unit tests
+pnpm run test:security
+
+# Run tests with verbose output
+cd src-tauri && cargo test --all-targets -- --nocapture
+
+# Generate code coverage report (requires cargo-tarpaulin)
+cargo install cargo-tarpaulin
+cd src-tauri && cargo tarpaulin --out Html --output-dir coverage
+
+# View coverage report
+open coverage/tarpaulin-report.html
+```
+
+All git and system interactions are security-hardened and tested. See [docs/security-audit.md](docs/security-audit.md) for details.
+
 ## Project Structure
 
 ```
@@ -156,6 +189,21 @@ SproutGit manages repos in a prescribed directory structure:
 | Icons | Lucide |
 | State | Svelte 5 runes + SQLite (rusqlite) |
 | Git | CLI via `std::process::Command` |
+
+## Backend Architecture & Platform
+
+The Rust backend uses a **registered action pattern** for all git and system operations, designed for security, auditability, and testability.
+
+**Key design principles:**
+- ✅ **Secure-by-default**: Input validation, no shell interpolation, injection-safe
+- ✅ **Auditable**: Every git operation is explicitly registered and testable
+- ✅ **Cross-platform**: macOS, Linux, Windows with environment-aware setup
+- ⚠️ **Composability gap**: Currently single-step operations; multi-step workflows require client orchestration
+
+**For developers building on this platform:**
+- Read [docs/architecture.md](docs/architecture.md) for detailed design assessment, reusability analysis, and recommendations for adding transaction/composition support
+- All git/system interactions route through registered helpers in `src-tauri/src/helpers.rs`
+- Security-focused unit tests run in CI across all platforms (see `pnpm run test:security`)
 
 ## Contributing
 

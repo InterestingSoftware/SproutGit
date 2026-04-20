@@ -1,8 +1,10 @@
 use serde::Serialize;
 use std::path::Path;
-use std::process::{Command, Stdio};
 
-use crate::helpers::{augmented_path, normalize_existing_path, run_git};
+use crate::helpers::{
+    command_exists, normalize_existing_path, run_git, system_command, validate_git_config_key,
+    validate_no_control_chars, validate_non_option_value, GitAction, SystemAction,
+};
 
 // ── Structs ──
 
@@ -41,14 +43,7 @@ fn known_editors() -> Vec<EditorCandidate> {
 }
 
 fn is_command_available(cmd: &str) -> bool {
-    Command::new("which")
-        .arg(cmd)
-        .env("PATH", augmented_path())
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .status()
-        .map(|s| s.success())
-        .unwrap_or(false)
+    command_exists(cmd)
 }
 
 /// Resolve the actual executable path for an editor, checking the CLI
@@ -122,7 +117,7 @@ pub async fn open_in_editor(worktree_path: String) -> Result<String, String> {
     let editor = std::env::var("GIT_EDITOR")
         .ok()
         .or_else(|| {
-            run_git(&["config", "core.editor"])
+            run_git(GitAction::ReadGitConfig, &["config", "--global", "--", "core.editor"])
                 .ok()
                 .filter(|o| o.status.success())
                 .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
@@ -145,14 +140,17 @@ pub async fn open_in_editor(worktree_path: String) -> Result<String, String> {
         return Err("No editor configured".to_string());
     }
 
-    let mut cmd = Command::new(&parts[0]);
-    for arg in &parts[1..] {
-        if arg != "--wait" && arg != "-w" {
-            cmd.arg(arg);
-        }
-    }
-    cmd.arg(&wt_str);
-    cmd.env("PATH", augmented_path());
+    validate_non_option_value(&parts[0], "Editor command")?;
+    validate_no_control_chars(&wt_str, "Worktree path")?;
+
+    let mut args: Vec<&str> = parts[1..]
+        .iter()
+        .map(|s| s.as_str())
+        .filter(|arg| *arg != "--wait" && *arg != "-w")
+        .collect();
+    args.push(&wt_str);
+
+    let mut cmd = system_command(SystemAction::OpenEditor, &parts[0], &args);
 
     cmd.spawn()
         .map_err(|e| format!("Failed to open editor '{}': {e}", parts[0]))?;
@@ -178,7 +176,8 @@ pub fn detect_editors() -> Vec<EditorInfo> {
 
 #[tauri::command]
 pub fn get_git_config(key: String) -> Result<String, String> {
-    let output = run_git(&["config", "--global", &key])
+    let key = validate_git_config_key(&key)?;
+    let output = run_git(GitAction::ReadGitConfig, &["config", "--global", "--", &key])
         .map_err(|e| format!("Failed to read git config: {e}"))?;
     if output.status.success() {
         Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
@@ -189,11 +188,20 @@ pub fn get_git_config(key: String) -> Result<String, String> {
 
 #[tauri::command]
 pub fn set_git_config(key: String, value: String) -> Result<(), String> {
+    let key = validate_git_config_key(&key)?;
+    validate_no_control_chars(value.trim(), "Git config value")?;
+
     if value.is_empty() {
-        let _ = run_git(&["config", "--global", "--unset", &key]);
+        let _ = run_git(
+            GitAction::UnsetGitConfig,
+            &["config", "--global", "--unset", "--", &key],
+        );
         Ok(())
     } else {
-        let output = run_git(&["config", "--global", &key, &value])
+        let output = run_git(
+            GitAction::SetGitConfig,
+            &["config", "--global", "--", &key, value.trim()],
+        )
             .map_err(|e| format!("Failed to set git config: {e}"))?;
         if output.status.success() {
             Ok(())

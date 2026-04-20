@@ -196,6 +196,142 @@ pnpm run tauri dev
 - **No stores** — All page state uses `$state` directly in `<script>` blocks.
 - **Imports** — Frontend API types come from `$lib/sproutgit`. Components from `$lib/components/`.
 
+## Security And Cross-Platform Rules (Required)
+
+When adding or changing **any** git or system interaction, follow all rules below.
+
+- **Secure-by-default execution**: Never use shell interpolation (`sh -c`, `bash -c`, PowerShell `-Command`) for git/system actions. Always call executables directly with explicit argument vectors.
+- **Injection safety**: Treat all user-controlled values (refs, branch names, config keys, paths, URLs) as untrusted. Trim, validate, and reject values that are empty, start with `-`, or contain control characters.
+- **Escalation safety**: Do not execute arbitrary repo-provided hooks/scripts implicitly. Keep `GIT_TERMINAL_PROMPT=0` for non-interactive backend operations.
+- **Option-boundary safety**: For commands that accept untrusted values, use argument boundaries (for example `--` when supported) to prevent option smuggling.
+- **System command registry**: Route all git/system process execution through registered helpers (`GitAction` / `SystemAction`) so behavior is auditable and testable.
+- **Cross-platform compatibility**: Assume macOS, Linux, and Windows on every change. Avoid OS-specific shell utilities unless a platform-specific fallback exists.
+- **Path handling**: Use `Path`/`PathBuf` and platform-aware path/env separators. Do not hardcode `:` as PATH separator.
+- **Least privilege and clear errors**: Fail closed on invalid input and return clear, user-safe error messages.
+
+## Security Testing Requirements
+
+- Use Rust built-in unit testing (`cargo test`) for backend security tests.
+- Add/maintain unit tests for input validation and command registration invariants.
+- Run security-focused tests before committing.
+- CI must execute these tests on all supported OS targets.
+
+## Loading UI Patterns
+
+**All async operations must have an associated loading state.** This ensures users understand that work is happening and prevents duplicate submissions.
+
+### Frontend Loading States
+
+Every async operation requires three elements:
+
+1. **State variable** — `let opName = $state(false)` for single ops, or `let opName = $state<string | null>(null)` for multi-item ops (e.g., which worktree is deleting)
+2. **Set during operation** — Set to `true` (or the identifier) before `invoke()`, reset in `finally` block
+3. **UI feedback** — Show spinner + label, disable submit button, or show progress indicator
+
+#### Pattern: Single Async Operation
+
+```svelte
+<script>
+  let creating = $state(false);
+
+  async function handleCreate(event: Event) {
+    event.preventDefault();
+    creating = true;
+    error = "";
+    try {
+      await createManagedWorktree(...);
+      toast.success("Worktree created");
+    } catch (err) {
+      toast.error(String(err));
+    } finally {
+      creating = false;
+    }
+  }
+</script>
+
+<button type="submit" disabled={creating}>
+  {#if creating}
+    <Spinner size="sm" /> Creating…
+  {:else}
+    Create worktree
+  {/if}
+</button>
+```
+
+#### Pattern: Multi-Item Async Operation
+
+```svelte
+<script>
+  let deleting = $state<string | null>(null);  // Track which item is being deleted
+
+  async function handleDelete(id: string) {
+    deleting = id;
+    try {
+      await deleteItem(id);
+    } finally {
+      deleting = null;
+    }
+  }
+</script>
+
+<button disabled={deleting === item.id}>
+  {#if deleting === item.id}
+    <Spinner size="sm" />
+  {:else}
+    Delete
+  {/if}
+</button>
+```
+
+#### Pattern: Content/Data Loading
+
+```svelte
+<script>
+  let loading = $state(true);
+  let graphData = $state(null);
+
+  async function loadData() {
+    loading = true;
+    try {
+      graphData = await getCommitGraph(...);
+    } finally {
+      loading = false;
+    }
+  }
+</script>
+
+<div class="flex flex-1 flex-col overflow-hidden">
+  {#if loading}
+    <div class="flex flex-1 items-center justify-center gap-2">
+      <Spinner size="md" />
+      <p class="text-xs text-[var(--sg-text-faint)]">Loading commit history…</p>
+    </div>
+  {:else}
+    <CommitGraph commits={graphData} />
+  {/if}
+</div>
+```
+
+### Rules
+
+- **Always set `false/null` in `finally`** — Guarantees cleanup even on error
+- **Pair with `toast.error()` on catch** — Users need to know what went wrong
+- **Disable interactive elements while loading** — `disabled={loading || creating}` for buttons
+- **Show meaningful labels** — "Loading commit history…" > "Loading…"
+- **Use consistent animations** — `style="animation: sg-fade-in 0.3s ease-out"` for loading containers
+
+### Spinner Component
+
+The `Spinner.svelte` component supports:
+- **Sizes**: `sm`, `md`, `lg`
+- **Label**: Optional text below spinner
+- **Color**: Inherits `--sg-primary` automatically
+
+```svelte
+<Spinner size="md" label="Loading…" />
+<Spinner size="sm" />  <!-- No label -->
+```
+
 ## Known Issues & Gotchas
 
 - `cargo` must be in PATH — always `source "$HOME/.cargo/env"` before running `tauri dev`

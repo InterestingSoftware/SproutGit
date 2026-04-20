@@ -2,12 +2,12 @@ use serde::Serialize;
 use serde_json::json;
 use std::fs;
 use std::io::{BufReader, Read};
-use std::process::{Command, Stdio};
+use std::process::Stdio;
 
 use crate::github::git_auth_env;
 use crate::helpers::{
-    augmented_path, ensure_directory, initialize_state_db, normalize_existing_path,
-    normalize_or_create_dir, now_epoch_seconds,
+    ensure_directory, git_command, initialize_state_db, normalize_existing_path, normalize_or_create_dir,
+    now_epoch_seconds, validate_repo_url, GitAction,
 };
 
 // ── Structs ──
@@ -84,6 +84,7 @@ pub async fn create_sproutgit_workspace(
     let mut cloned = false;
 
     if let Some(url) = repo_url {
+        let url = validate_repo_url(&url)?;
         let root_has_content = fs::read_dir(&root_path)
             .map_err(|e| format!("Failed to inspect root directory: {e}"))?
             .next()
@@ -97,15 +98,13 @@ pub async fn create_sproutgit_workspace(
 
         let _ = app_handle.emit("clone-progress", "Connecting...");
 
-        let mut child = Command::new("git")
-            .arg("clone")
-            .arg("--progress")
-            .arg(&url)
-            .arg(&root_path)
+        let root_path_string = root_path.to_string_lossy().to_string();
+        let mut child = git_command(
+            GitAction::Clone,
+            &["clone", "--progress", &url, &root_path_string],
+        )
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
-            .env("GIT_TERMINAL_PROMPT", "0")
-            .env("PATH", augmented_path())
             .envs(git_auth_env())
             .spawn()
             .map_err(|e| format!("Failed to run git clone: {e}"))?;
@@ -142,11 +141,8 @@ pub async fn create_sproutgit_workspace(
         let _ = app_handle.emit("clone-progress", "Done");
         cloned = true;
     } else if !root_path.join(".git").exists() {
-        let init_output = Command::new("git")
-            .arg("-C")
-            .arg(&root_path)
-            .arg("init")
-            .env("PATH", augmented_path())
+        let root_path_string = root_path.to_string_lossy().to_string();
+        let init_output = git_command(GitAction::Init, &["-C", &root_path_string, "init"])
             .output()
             .map_err(|e| format!("Failed to initialize git repository: {e}"))?;
 
