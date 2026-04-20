@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#121221" />
+      <stop offset="100%" stop-color="#1e1e2e" />
+    </linearGradient>
+    <linearGradient id="accent" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#1a8a5c" />
+      <stop offset="100%" stop-color="#74c7a4" />
+    </linearGradient>
+  </defs>
+  <rect width="1200" height="630" fill="url(#bg)" />
+  <g transform="translate(120 105)">
+    <circle cx="56" cy="56" r="52" fill="#1a8a5c22" />
+    <path d="M56 90V50" stroke="#74c7a4" stroke-width="6" stroke-linecap="round" />
+    <path d="M56 58c0 0-16-10-16-24 0 0 16-5 16 18Z" fill="#74c7a4" opacity="0.85" />
+    <path d="M56 64c0 0 16-10 16-24 0 0-16-5-16 18Z" fill="#74c7a4" />
+  </g>
+  <text x="230" y="188" fill="#e3e0f7" font-size="70" font-family="Space Grotesk, system-ui, sans-serif" font-weight="700">
+    SproutGit
+  </text>
+  <text x="230" y="266" fill="url(#accent)" font-size="54" font-family="Space Grotesk, system-ui, sans-serif" font-weight="700">
+    Git built for parallel work.
+  </text>
+  <text x="230" y="332" fill="#bdcabf" font-size="30" font-family="Space Grotesk, system-ui, sans-serif">
+    Worktree-first desktop Git client for humans and AI agents
+  </text>
+</svg>

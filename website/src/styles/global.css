@@ -151,16 +151,16 @@ html.js [data-animate].is-visible {
 }
 
 /* Stagger graph node animations */
-.graph-node:nth-child(1)  { animation-delay: 0.3s; }
-.graph-node:nth-child(2)  { animation-delay: 0.5s; }
-.graph-node:nth-child(3)  { animation-delay: 0.7s; }
-.graph-node:nth-child(4)  { animation-delay: 0.9s; }
-.graph-node:nth-child(5)  { animation-delay: 1.0s; }
-.graph-node:nth-child(6)  { animation-delay: 1.1s; }
-.graph-node:nth-child(7)  { animation-delay: 1.15s; }
-.graph-node:nth-child(8)  { animation-delay: 1.2s; }
-.graph-node:nth-child(9)  { animation-delay: 1.25s; }
-.graph-node:nth-child(10) { animation-delay: 1.3s; }
+.graph-node:nth-of-type(1)  { animation-delay: 0.3s; }
+.graph-node:nth-of-type(2)  { animation-delay: 0.5s; }
+.graph-node:nth-of-type(3)  { animation-delay: 0.7s; }
+.graph-node:nth-of-type(4)  { animation-delay: 0.9s; }
+.graph-node:nth-of-type(5)  { animation-delay: 1.0s; }
+.graph-node:nth-of-type(6)  { animation-delay: 1.1s; }
+.graph-node:nth-of-type(7)  { animation-delay: 1.15s; }
+.graph-node:nth-of-type(8)  { animation-delay: 1.2s; }
+.graph-node:nth-of-type(9)  { animation-delay: 1.25s; }
+.graph-node:nth-of-type(10) { animation-delay: 1.3s; }
 
 /* ── Nav scroll state ── */
 #site-nav {
