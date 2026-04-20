@@ -97,7 +97,6 @@ export type WorkspaceHook = {
   script: string;
   enabled: boolean;
   critical: boolean;
-  parallelGroup: string | null;
   timeoutSeconds: number;
   createdAt: number;
   updatedAt: number;
@@ -111,7 +110,6 @@ export type HookUpsertInput = {
   script: string;
   enabled: boolean;
   critical: boolean;
-  parallelGroup?: string | null;
   timeoutSeconds: number;
   dependencyIds: string[];
 };
@@ -232,7 +230,7 @@ export const createManagedWorktree = (
   rootRepoPath: string,
   managedWorktreesPath: string,
   fromRef: string,
-  newBranch: string,
+  newBranch: string
 ) =>
   invoke<CreateWorktreeResult>('create_managed_worktree', {
     rootRepoPath,
@@ -244,7 +242,7 @@ export const createManagedWorktree = (
 export const deleteManagedWorktree = (
   rootRepoPath: string,
   worktreePath: string,
-  deleteBranch = true,
+  deleteBranch = true
 ) =>
   invoke<string>('delete_managed_worktree', {
     rootRepoPath,
@@ -262,7 +260,7 @@ export const checkoutWorktree = (worktreePath: string, targetRef: string, autoSt
 export const resetWorktreeBranch = (
   worktreePath: string,
   targetRef: string,
-  mode: 'soft' | 'mixed' | 'hard',
+  mode: 'soft' | 'mixed' | 'hard'
 ) =>
   invoke<string>('reset_worktree_branch', {
     worktreePath,
@@ -282,7 +280,7 @@ export const createWorkspaceHook = (workspacePath: string, input: HookUpsertInpu
 export const updateWorkspaceHook = (
   workspacePath: string,
   hookId: string,
-  input: HookUpsertInput,
+  input: HookUpsertInput
 ) =>
   invoke<WorkspaceHook>('update_workspace_hook', {
     workspacePath,
@@ -310,7 +308,7 @@ export const getDiffContent = (
   repoPath: string,
   commit: string,
   base?: string | null,
-  filePath?: string | null,
+  filePath?: string | null
 ) =>
   invoke<DiffContentResult>('get_diff_content', {
     repoPath,
@@ -320,20 +318,19 @@ export const getDiffContent = (
   });
 
 export const onCloneProgress = (callback: (message: string) => void): Promise<UnlistenFn> =>
-  listen<string>('clone-progress', (event) => callback(event.payload));
+  listen<string>('clone-progress', event => callback(event.payload));
 
 export const onHookProgress = (
-  callback: (payload: HookProgressEvent) => void,
-): Promise<UnlistenFn> => listen<HookProgressEvent>('hook-progress', (event) => callback(event.payload));
+  callback: (payload: HookProgressEvent) => void
+): Promise<UnlistenFn> =>
+  listen<HookProgressEvent>('hook-progress', event => callback(event.payload));
 
-export const githubDeviceFlowStart = () =>
-  invoke<DeviceCodeResponse>('github_device_flow_start');
+export const githubDeviceFlowStart = () => invoke<DeviceCodeResponse>('github_device_flow_start');
 
 export const githubDeviceFlowPoll = (deviceCode: string) =>
   invoke<GitHubPollResult>('github_device_flow_poll', { deviceCode });
 
-export const getGithubAuthStatus = () =>
-  invoke<GitHubAuthStatus>('get_github_auth_status');
+export const getGithubAuthStatus = () => invoke<GitHubAuthStatus>('get_github_auth_status');
 
 export const githubLogout = () => invoke<void>('github_logout');
 

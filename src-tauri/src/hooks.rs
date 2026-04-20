@@ -1,11 +1,11 @@
 use sea_orm::{ConnectionTrait, DbBackend, FromQueryResult, Statement};
 use serde::{Deserialize, Serialize};
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
-use tokio::io::AsyncReadExt;
+use tokio::io::{AsyncRead, AsyncReadExt};
 use tokio::process::Command as TokioCommand;
 use tokio::task::JoinSet;
 use tokio::time::timeout;
@@ -25,7 +25,6 @@ pub struct WorkspaceHook {
     pub script: String,
     pub enabled: bool,
     pub critical: bool,
-    pub parallel_group: Option<String>,
     pub timeout_seconds: u32,
     pub created_at: i64,
     pub updated_at: i64,
@@ -41,7 +40,6 @@ pub struct WorkspaceHookWithDependencies {
     pub script: String,
     pub enabled: bool,
     pub critical: bool,
-    pub parallel_group: Option<String>,
     pub timeout_seconds: u32,
     pub created_at: i64,
     pub updated_at: i64,
@@ -57,7 +55,6 @@ pub struct HookUpsertInput {
     pub script: String,
     pub enabled: bool,
     pub critical: bool,
-    pub parallel_group: Option<String>,
     pub timeout_seconds: u32,
     pub dependency_ids: Vec<String>,
 }
@@ -70,7 +67,6 @@ struct RuntimeHook {
     shell: String,
     script: String,
     critical: bool,
-    parallel_group: Option<String>,
     timeout_seconds: u32,
 }
 
@@ -119,6 +115,7 @@ const ALLOWED_TRIGGERS: &[&str] = &[
     "before_worktree_switch",
     "after_worktree_switch",
 ];
+const MAX_HOOK_OUTPUT_BYTES: usize = 64 * 1024;
 
 fn allowed_shells_for_current_os() -> &'static [&'static str] {
     if cfg!(target_os = "windows") {
@@ -149,16 +146,20 @@ fn normalize_non_empty(value: &str, field: &str) -> Result<String, String> {
     Ok(trimmed.to_string())
 }
 
-fn normalize_optional(value: Option<String>, field: &str) -> Result<Option<String>, String> {
-    let Some(raw) = value else {
-        return Ok(None);
-    };
-    let trimmed = raw.trim();
+fn normalize_hook_script(script: &str) -> Result<String, String> {
+    let trimmed = script.trim();
     if trimmed.is_empty() {
-        return Ok(None);
+        return Err("Hook script is required".to_string());
     }
-    validate_no_control_chars(trimmed, field)?;
-    Ok(Some(trimmed.to_string()))
+
+    if trimmed
+        .chars()
+        .any(|c| c.is_control() && c != '\n' && c != '\r' && c != '\t')
+    {
+        return Err("Hook script contains invalid control characters".to_string());
+    }
+
+    Ok(trimmed.to_string())
 }
 
 fn validate_trigger(trigger: &str) -> Result<String, String> {
@@ -232,6 +233,56 @@ fn truncate_utf8(input: &[u8], max_bytes: usize) -> String {
     text.chars().take(max_bytes).collect()
 }
 
+fn write_hook_script_file(script_path: &Path, script: &str) -> Result<(), String> {
+    #[cfg(unix)]
+    {
+        use std::io::Write;
+        use std::os::unix::fs::OpenOptionsExt;
+
+        let mut file = fs::OpenOptions::new()
+            .create(true)
+            .truncate(true)
+            .write(true)
+            .mode(0o600)
+            .open(script_path)
+            .map_err(|e| format!("Failed to prepare hook script: {e}"))?;
+
+        file.write_all(script.as_bytes())
+            .map_err(|e| format!("Failed to prepare hook script: {e}"))?;
+        Ok(())
+    }
+
+    #[cfg(not(unix))]
+    {
+        fs::write(script_path, script.as_bytes())
+            .map_err(|e| format!("Failed to prepare hook script: {e}"))
+    }
+}
+
+async fn read_limited_output<R>(reader: &mut R, max_bytes: usize) -> Vec<u8>
+where
+    R: AsyncRead + Unpin,
+{
+    let mut bytes = Vec::with_capacity(max_bytes.min(8192));
+    let mut buffer = [0_u8; 8192];
+
+    loop {
+        match reader.read(&mut buffer).await {
+            Ok(0) => break,
+            Ok(read_count) => {
+                let remaining = max_bytes.saturating_sub(bytes.len());
+                if remaining > 0 {
+                    let to_copy = remaining.min(read_count);
+                    bytes.extend_from_slice(&buffer[..to_copy]);
+                }
+            },
+            Err(_) => break,
+        }
+    }
+
+    bytes
+}
+
 async fn load_dependencies(
     conn: &sea_orm::DatabaseConnection,
     hook_id: &str,
@@ -293,6 +344,69 @@ async fn ensure_dependencies_exist(
     Ok(())
 }
 
+#[derive(FromQueryResult)]
+struct HookDependencyTriggerRow {
+    id: String,
+    trigger: String,
+}
+
+async fn ensure_dependency_triggers_match(
+    conn: &sea_orm::DatabaseConnection,
+    trigger: &str,
+    dependency_ids: &[String],
+) -> Result<(), String> {
+    if dependency_ids.is_empty() {
+        return Ok(());
+    }
+
+    let placeholders = vec!["?"; dependency_ids.len()].join(", ");
+    let statement = Statement::from_sql_and_values(
+        DbBackend::Sqlite,
+        format!(
+            "
+            SELECT id, trigger
+            FROM hook_definitions
+            WHERE id IN ({placeholders})
+            "
+        ),
+        dependency_ids
+            .iter()
+            .cloned()
+            .map(Into::into)
+            .collect::<Vec<_>>(),
+    );
+
+    let rows = HookDependencyTriggerRow::find_by_statement(statement)
+        .all(conn)
+        .await
+        .map_err(|e| format!("Failed to validate workspace hook dependencies: {e}"))?;
+
+    let dependency_triggers: HashMap<String, String> =
+        rows.into_iter().map(|row| (row.id, row.trigger)).collect();
+
+    ensure_dependency_triggers_compatible(trigger, dependency_ids, &dependency_triggers)
+}
+
+fn ensure_dependency_triggers_compatible(
+    trigger: &str,
+    dependency_ids: &[String],
+    dependency_triggers: &HashMap<String, String>,
+) -> Result<(), String> {
+    for dependency_id in dependency_ids {
+        let dependency_trigger = dependency_triggers.get(dependency_id).ok_or_else(|| {
+            format!("Dependency '{dependency_id}' could not be validated for trigger compatibility")
+        })?;
+
+        if dependency_trigger != trigger {
+            return Err(format!(
+                "Dependency '{dependency_id}' uses trigger '{dependency_trigger}', which does not match hook trigger '{trigger}'"
+            ));
+        }
+    }
+
+    Ok(())
+}
+
 async fn ensure_no_dependency_cycle(
     conn: &sea_orm::DatabaseConnection,
     hook_id: &str,
@@ -337,7 +451,7 @@ async fn load_hook_by_id(
     let statement = Statement::from_sql_and_values(
         DbBackend::Sqlite,
         "
-        SELECT id, name, trigger, shell, script, enabled, critical, parallel_group, timeout_seconds, created_at, updated_at
+        SELECT id, name, trigger, shell, script, enabled, critical, timeout_seconds, created_at, updated_at
         FROM hook_definitions
         WHERE id = ?
         LIMIT 1
@@ -482,7 +596,7 @@ async fn execute_hook(
         script_extension
     ));
 
-    if let Err(e) = fs::write(&script_path, hook.script.as_bytes()) {
+    if let Err(e) = write_hook_script_file(&script_path, &hook.script) {
         return (
             RuntimeHookResult {
                 hook_id: hook.id,
@@ -490,7 +604,7 @@ async fn execute_hook(
                 critical: hook.critical,
                 status: "failed".to_string(),
                 success: false,
-                error_message: Some(format!("Failed to prepare hook script: {e}")),
+                error_message: Some(e),
             },
             None,
             None,
@@ -519,8 +633,14 @@ async fn execute_hook(
 
     let arg_refs: Vec<&str> = args.iter().map(String::as_str).collect();
     let mut base = system_command(SystemAction::HookExecute, &program, &arg_refs);
-    base.env("SPROUTGIT_WORKSPACE_PATH", workspace_path.to_string_lossy().to_string());
-    base.env("SPROUTGIT_ROOT_PATH", root_path.to_string_lossy().to_string());
+    base.env(
+        "SPROUTGIT_WORKSPACE_PATH",
+        workspace_path.to_string_lossy().to_string(),
+    );
+    base.env(
+        "SPROUTGIT_ROOT_PATH",
+        root_path.to_string_lossy().to_string(),
+    );
     base.env(
         "SPROUTGIT_WORKTREES_PATH",
         worktrees_path.to_string_lossy().to_string(),
@@ -556,26 +676,23 @@ async fn execute_hook(
     };
 
     let stdout_task = child.stdout.take().map(|mut out| {
-        tokio::spawn(async move {
-            let mut bytes = Vec::new();
-            let _ = out.read_to_end(&mut bytes).await;
-            bytes
-        })
+        tokio::spawn(async move { read_limited_output(&mut out, MAX_HOOK_OUTPUT_BYTES).await })
     });
 
     let stderr_task = child.stderr.take().map(|mut err| {
-        tokio::spawn(async move {
-            let mut bytes = Vec::new();
-            let _ = err.read_to_end(&mut bytes).await;
-            bytes
-        })
+        tokio::spawn(async move { read_limited_output(&mut err, MAX_HOOK_OUTPUT_BYTES).await })
     });
 
-    let wait_result = timeout(
+    let wait_outcome = timeout(
         Duration::from_secs(hook.timeout_seconds as u64),
         child.wait(),
     )
     .await;
+
+    if wait_outcome.is_err() {
+        let _ = child.kill().await;
+        let _ = child.wait().await;
+    }
 
     let stdout_bytes = match stdout_task {
         Some(task) => task.await.unwrap_or_default(),
@@ -589,17 +706,17 @@ async fn execute_hook(
     let stdout_snippet = if stdout_bytes.is_empty() {
         None
     } else {
-        Some(truncate_utf8(&stdout_bytes, 64 * 1024))
+        Some(truncate_utf8(&stdout_bytes, MAX_HOOK_OUTPUT_BYTES))
     };
     let stderr_snippet = if stderr_bytes.is_empty() {
         None
     } else {
-        Some(truncate_utf8(&stderr_bytes, 64 * 1024))
+        Some(truncate_utf8(&stderr_bytes, MAX_HOOK_OUTPUT_BYTES))
     };
 
     let _ = fs::remove_file(&script_path);
 
-    match wait_result {
+    match wait_outcome {
         Ok(Ok(status)) => {
             if status.success() {
                 (
@@ -646,25 +763,21 @@ async fn execute_hook(
             stdout_snippet,
             stderr_snippet,
         ),
-        Err(_) => {
-            let _ = child.kill().await;
-            let _ = child.wait().await;
-            (
-                RuntimeHookResult {
-                    hook_id: hook.id,
-                    hook_name: hook.name,
-                    critical: hook.critical,
-                    status: "timed_out".to_string(),
-                    success: false,
-                    error_message: Some(format!(
-                        "Hook timed out after {} seconds",
-                        hook.timeout_seconds
-                    )),
-                },
-                stdout_snippet,
-                stderr_snippet,
-            )
-        },
+        Err(_) => (
+            RuntimeHookResult {
+                hook_id: hook.id,
+                hook_name: hook.name,
+                critical: hook.critical,
+                status: "timed_out".to_string(),
+                success: false,
+                error_message: Some(format!(
+                    "Hook timed out after {} seconds",
+                    hook.timeout_seconds
+                )),
+            },
+            stdout_snippet,
+            stderr_snippet,
+        ),
     }
 }
 
@@ -706,7 +819,7 @@ pub async fn execute_workspace_hooks_for_trigger(
     let hook_statement = Statement::from_sql_and_values(
         DbBackend::Sqlite,
         "
-        SELECT id, name, trigger, shell, script, enabled, critical, parallel_group, timeout_seconds, created_at, updated_at
+        SELECT id, name, trigger, shell, script, enabled, critical, timeout_seconds, created_at, updated_at
         FROM hook_definitions
         WHERE trigger = ? AND enabled = 1
         ORDER BY name ASC
@@ -737,7 +850,6 @@ pub async fn execute_workspace_hooks_for_trigger(
                 shell: hook.shell,
                 script: hook.script,
                 critical: hook.critical,
-                parallel_group: hook.parallel_group,
                 timeout_seconds: hook.timeout_seconds,
             },
         );
@@ -836,95 +948,8 @@ pub async fn execute_workspace_hooks_for_trigger(
             a_name.cmp(b_name)
         });
 
-        let (grouped_ready, ungrouped_ready): (Vec<String>, Vec<String>) = ready_ids
-            .into_iter()
-            .partition(|id| {
-                pending
-                    .get(id)
-                    .and_then(|h| h.parallel_group.as_ref())
-                    .is_some_and(|group| !group.trim().is_empty())
-            });
-
-        if !grouped_ready.is_empty() {
-            let mut joins = JoinSet::new();
-            let mut grouped_ids = HashSet::new();
-
-            for hook_id in grouped_ready {
-                if let Some(hook) = pending.remove(&hook_id) {
-                    emit_hook_progress(
-                        app_handle,
-                        HookProgressEvent {
-                            trigger: trigger.clone(),
-                            hook_id: hook.id.clone(),
-                            hook_name: hook.name.clone(),
-                            phase: "start".to_string(),
-                            status: "running".to_string(),
-                            stdout_snippet: None,
-                            stderr_snippet: None,
-                            error_message: None,
-                        },
-                    );
-                    grouped_ids.insert(hook_id);
-                    joins.spawn(execute_hook(hook, workspace.clone(), worktree.clone()));
-                }
-            }
-
-            while let Some(join_result) = joins.join_next().await {
-                if let Ok((hook_result, stdout, stderr)) = join_result {
-                    let name = hook_result.hook_name.clone();
-                    let stdout_for_event = stdout.clone();
-                    let stderr_for_event = stderr.clone();
-
-                    if !hook_result.success {
-                        if hook_result.critical {
-                            summary.had_critical_failure = true;
-                            summary.failed_critical_hooks.push(name.clone());
-                        } else {
-                            summary.failed_non_critical_hooks.push(name.clone());
-                        }
-                    }
-
-                    insert_hook_run(
-                        &conn,
-                        HookRunRecord {
-                            hook_id: hook_result.hook_id.clone(),
-                            trigger: trigger.clone(),
-                            worktree_path: worktree.to_string_lossy().to_string(),
-                            status: hook_result.status.clone(),
-                            started_at: now_epoch_seconds() as i64,
-                            finished_at: Some(now_epoch_seconds() as i64),
-                            exit_code: None,
-                            stdout,
-                            stderr,
-                            error_message: hook_result.error_message.clone(),
-                        },
-                    )
-                    .await?;
-
-                    emit_hook_progress(
-                        app_handle,
-                        HookProgressEvent {
-                            trigger: trigger.clone(),
-                            hook_id: hook_result.hook_id.clone(),
-                            hook_name: hook_result.hook_name.clone(),
-                            phase: "end".to_string(),
-                            status: hook_result.status.clone(),
-                            stdout_snippet: stdout_for_event,
-                            stderr_snippet: stderr_for_event,
-                            error_message: hook_result.error_message.clone(),
-                        },
-                    );
-
-                    completed.insert(hook_result.hook_id.clone(), hook_result);
-                }
-            }
-
-            for grouped_id in grouped_ids {
-                pending.remove(&grouped_id);
-            }
-        }
-
-        for hook_id in ungrouped_ready {
+        let mut joins = JoinSet::new();
+        for hook_id in ready_ids {
             let Some(hook) = pending.remove(&hook_id) else {
                 continue;
             };
@@ -943,55 +968,57 @@ pub async fn execute_workspace_hooks_for_trigger(
                 },
             );
 
-            let (hook_result, stdout, stderr) = execute_hook(hook, workspace.clone(), worktree.clone()).await;
-            let stdout_for_event = stdout.clone();
-            let stderr_for_event = stderr.clone();
+            joins.spawn(execute_hook(hook, workspace.clone(), worktree.clone()));
+        }
 
-            if !hook_result.success {
-                if hook_result.critical {
-                    summary.had_critical_failure = true;
-                    summary
-                        .failed_critical_hooks
-                        .push(hook_result.hook_name.clone());
-                } else {
-                    summary
-                        .failed_non_critical_hooks
-                        .push(hook_result.hook_name.clone());
+        while let Some(join_result) = joins.join_next().await {
+            if let Ok((hook_result, stdout, stderr)) = join_result {
+                let name = hook_result.hook_name.clone();
+                let stdout_for_event = stdout.clone();
+                let stderr_for_event = stderr.clone();
+
+                if !hook_result.success {
+                    if hook_result.critical {
+                        summary.had_critical_failure = true;
+                        summary.failed_critical_hooks.push(name.clone());
+                    } else {
+                        summary.failed_non_critical_hooks.push(name.clone());
+                    }
                 }
+
+                insert_hook_run(
+                    &conn,
+                    HookRunRecord {
+                        hook_id: hook_result.hook_id.clone(),
+                        trigger: trigger.clone(),
+                        worktree_path: worktree.to_string_lossy().to_string(),
+                        status: hook_result.status.clone(),
+                        started_at: now_epoch_seconds() as i64,
+                        finished_at: Some(now_epoch_seconds() as i64),
+                        exit_code: None,
+                        stdout,
+                        stderr,
+                        error_message: hook_result.error_message.clone(),
+                    },
+                )
+                .await?;
+
+                emit_hook_progress(
+                    app_handle,
+                    HookProgressEvent {
+                        trigger: trigger.clone(),
+                        hook_id: hook_result.hook_id.clone(),
+                        hook_name: hook_result.hook_name.clone(),
+                        phase: "end".to_string(),
+                        status: hook_result.status.clone(),
+                        stdout_snippet: stdout_for_event,
+                        stderr_snippet: stderr_for_event,
+                        error_message: hook_result.error_message.clone(),
+                    },
+                );
+
+                completed.insert(hook_result.hook_id.clone(), hook_result);
             }
-
-            insert_hook_run(
-                &conn,
-                HookRunRecord {
-                    hook_id: hook_result.hook_id.clone(),
-                    trigger: trigger.clone(),
-                    worktree_path: worktree.to_string_lossy().to_string(),
-                    status: hook_result.status.clone(),
-                    started_at: now_epoch_seconds() as i64,
-                    finished_at: Some(now_epoch_seconds() as i64),
-                    exit_code: None,
-                    stdout,
-                    stderr,
-                    error_message: hook_result.error_message.clone(),
-                },
-            )
-            .await?;
-
-            emit_hook_progress(
-                app_handle,
-                HookProgressEvent {
-                    trigger: trigger.clone(),
-                    hook_id: hook_result.hook_id.clone(),
-                    hook_name: hook_result.hook_name.clone(),
-                    phase: "end".to_string(),
-                    status: hook_result.status.clone(),
-                    stdout_snippet: stdout_for_event,
-                    stderr_snippet: stderr_for_event,
-                    error_message: hook_result.error_message.clone(),
-                },
-            );
-
-            completed.insert(hook_result.hook_id.clone(), hook_result);
         }
     }
 
@@ -1010,7 +1037,7 @@ pub async fn list_workspace_hooks(
         Statement::from_sql_and_values(
             DbBackend::Sqlite,
             "
-            SELECT id, name, trigger, shell, script, enabled, critical, parallel_group, timeout_seconds, created_at, updated_at
+        SELECT id, name, trigger, shell, script, enabled, critical, timeout_seconds, created_at, updated_at
             FROM hook_definitions
             WHERE trigger = ?
             ORDER BY name ASC
@@ -1021,7 +1048,7 @@ pub async fn list_workspace_hooks(
         Statement::from_string(
             DbBackend::Sqlite,
             "
-            SELECT id, name, trigger, shell, script, enabled, critical, parallel_group, timeout_seconds, created_at, updated_at
+            SELECT id, name, trigger, shell, script, enabled, critical, timeout_seconds, created_at, updated_at
             FROM hook_definitions
             ORDER BY trigger ASC, name ASC
             "
@@ -1048,7 +1075,6 @@ pub async fn list_workspace_hooks(
             script: hook.script,
             enabled: hook.enabled,
             critical: hook.critical,
-            parallel_group: hook.parallel_group,
             timeout_seconds: hook.timeout_seconds,
             created_at: hook.created_at,
             updated_at: hook.updated_at,
@@ -1070,8 +1096,7 @@ pub async fn create_workspace_hook(
     let name = normalize_non_empty(&input.name, "Hook name")?;
     let trigger = validate_trigger(&input.trigger)?;
     let shell = validate_shell(&input.shell)?;
-    let script = normalize_non_empty(&input.script, "Hook script")?;
-    let parallel_group = normalize_optional(input.parallel_group, "Parallel group")?;
+    let script = normalize_hook_script(&input.script)?;
     let timeout_seconds = validate_timeout(input.timeout_seconds)? as i64;
     let now = now_epoch_seconds() as i64;
 
@@ -1086,12 +1111,11 @@ pub async fn create_workspace_hook(
             script,
             enabled,
             critical,
-            parallel_group,
             timeout_seconds,
             created_at,
             updated_at
         )
-        VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ",
         vec![
             id.clone().into(),
@@ -1101,7 +1125,6 @@ pub async fn create_workspace_hook(
             script.clone().into(),
             (input.enabled as i64).into(),
             (input.critical as i64).into(),
-            parallel_group.clone().into(),
             timeout_seconds.into(),
             now.into(),
             now.into(),
@@ -1119,6 +1142,7 @@ pub async fn create_workspace_hook(
         .collect::<Result<Vec<_>, _>>()?;
 
     ensure_dependencies_exist(&conn, &id, &dependency_ids).await?;
+    ensure_dependency_triggers_match(&conn, &trigger, &dependency_ids).await?;
     upsert_dependencies(&conn, &id, &dependency_ids).await?;
     ensure_no_dependency_cycle(&conn, &id).await?;
 
@@ -1132,7 +1156,6 @@ pub async fn create_workspace_hook(
         script: hook.script,
         enabled: hook.enabled,
         critical: hook.critical,
-        parallel_group: hook.parallel_group,
         timeout_seconds: hook.timeout_seconds,
         created_at: hook.created_at,
         updated_at: hook.updated_at,
@@ -1152,8 +1175,7 @@ pub async fn update_workspace_hook(
     let name = normalize_non_empty(&input.name, "Hook name")?;
     let trigger = validate_trigger(&input.trigger)?;
     let shell = validate_shell(&input.shell)?;
-    let script = normalize_non_empty(&input.script, "Hook script")?;
-    let parallel_group = normalize_optional(input.parallel_group, "Parallel group")?;
+    let script = normalize_hook_script(&input.script)?;
     let timeout_seconds = validate_timeout(input.timeout_seconds)? as i64;
     let now = now_epoch_seconds() as i64;
 
@@ -1167,7 +1189,6 @@ pub async fn update_workspace_hook(
             script = ?,
             enabled = ?,
             critical = ?,
-            parallel_group = ?,
             timeout_seconds = ?,
             updated_at = ?
         WHERE id = ?
@@ -1179,7 +1200,6 @@ pub async fn update_workspace_hook(
             script.clone().into(),
             (input.enabled as i64).into(),
             (input.critical as i64).into(),
-            parallel_group.clone().into(),
             timeout_seconds.into(),
             now.into(),
             hook_id.clone().into(),
@@ -1202,6 +1222,7 @@ pub async fn update_workspace_hook(
         .collect::<Result<Vec<_>, _>>()?;
 
     ensure_dependencies_exist(&conn, &hook_id, &dependency_ids).await?;
+    ensure_dependency_triggers_match(&conn, &trigger, &dependency_ids).await?;
     upsert_dependencies(&conn, &hook_id, &dependency_ids).await?;
     ensure_no_dependency_cycle(&conn, &hook_id).await?;
 
@@ -1215,7 +1236,6 @@ pub async fn update_workspace_hook(
         script: hook.script,
         enabled: hook.enabled,
         critical: hook.critical,
-        parallel_group: hook.parallel_group,
         timeout_seconds: hook.timeout_seconds,
         created_at: hook.created_at,
         updated_at: hook.updated_at,
@@ -1278,4 +1298,67 @@ pub async fn toggle_workspace_hook(
         .map_err(|e| format!("Failed to toggle workspace hook: {e}"))?;
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{
+        ensure_dependency_triggers_compatible, normalize_hook_script, read_limited_output,
+    };
+    use std::collections::HashMap;
+    use tokio::io::{duplex, AsyncWriteExt};
+
+    #[test]
+    fn normalize_hook_script_allows_multiline_scripts() {
+        let script = "echo first line\n\t echo second line";
+        match normalize_hook_script(script) {
+            Ok(normalized) => assert_eq!(normalized, script),
+            Err(err) => panic!("script should be accepted: {err}"),
+        }
+    }
+
+    #[test]
+    fn normalize_hook_script_rejects_invalid_control_chars() {
+        let script = "echo hello\u{0000}";
+        match normalize_hook_script(script) {
+            Ok(_) => panic!("NUL should be rejected"),
+            Err(err) => assert!(err.contains("invalid control")),
+        }
+    }
+
+    #[test]
+    fn read_limited_output_caps_bytes() {
+        let runtime = match tokio::runtime::Runtime::new() {
+            Ok(runtime) => runtime,
+            Err(err) => panic!("runtime should initialize: {err}"),
+        };
+        runtime.block_on(async {
+            let (mut writer, mut reader) = duplex(1024);
+            let payload = vec![b'a'; 200];
+            tokio::spawn(async move {
+                if let Err(err) = writer.write_all(&payload).await {
+                    panic!("write should succeed: {err}");
+                }
+            });
+
+            let bytes = read_limited_output(&mut reader, 64).await;
+            assert_eq!(bytes.len(), 64);
+        });
+    }
+
+    #[test]
+    fn dependency_trigger_validation_rejects_cross_trigger_dependency() {
+        let dependency_ids = vec!["dep-1".to_string()];
+        let dependency_triggers =
+            HashMap::from([("dep-1".to_string(), "after_worktree_create".to_string())]);
+
+        match ensure_dependency_triggers_compatible(
+            "before_worktree_create",
+            &dependency_ids,
+            &dependency_triggers,
+        ) {
+            Ok(_) => panic!("cross-trigger dependency should be rejected"),
+            Err(err) => assert!(err.contains("does not match hook trigger")),
+        }
+    }
 }
