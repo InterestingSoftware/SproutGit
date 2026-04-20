@@ -8,9 +8,12 @@ mod workspace;
 
 #[tauri::command]
 fn get_home_dir() -> Result<String, String> {
-    std::env::var("HOME")
+    let home = std::env::var("HOME")
         .or_else(|_| std::env::var("USERPROFILE"))
-        .map_err(|_| "Cannot determine home directory".to_string())
+        .map_err(|_| "Cannot determine home directory".to_string())?;
+    // Normalize to forward slashes so the frontend can safely join paths
+    // with '/' on all platforms (Windows accepts forward slashes too).
+    Ok(home.replace('\\', "/"))
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
