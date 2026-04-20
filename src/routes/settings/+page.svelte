@@ -2,6 +2,7 @@
   import { goto } from "$app/navigation";
   import { openUrl } from "@tauri-apps/plugin-opener";
   import Spinner from "$lib/components/Spinner.svelte";
+  import WindowControls from "$lib/components/WindowControls.svelte";
   import {
     getGitInfo,
     getGithubAuthStatus,
@@ -153,12 +154,15 @@
 </script>
 
 <main class="flex h-screen flex-col">
-  <header data-tauri-drag-region class="flex shrink-0 items-center gap-3 border-b border-[var(--sg-border)] bg-[var(--sg-surface)] pt-1 pr-1 pb-1 pl-[76px]">
+  <header data-tauri-drag-region class="flex shrink-0 items-center gap-3 border-b border-[var(--sg-border)] bg-[var(--sg-surface)] pt-1 pr-1 pb-1 pl-[var(--sg-titlebar-inset)]">
     <button onclick={() => goto("/")} class="rounded px-2 py-0.5 text-xs text-[var(--sg-text-dim)] hover:bg-[var(--sg-surface-raised)] hover:text-[var(--sg-text)]">
       &larr; Projects
     </button>
     <div class="h-3 w-px bg-[var(--sg-border)]"></div>
     <span class="text-xs font-medium text-[var(--sg-text)]">Settings</span>
+    <div class="ml-auto">
+      <WindowControls />
+    </div>
   </header>
 
   <div class="flex-1 overflow-auto p-6">
