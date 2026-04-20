@@ -52,4 +52,3 @@ trivially_copy_pass_by_ref = "warn"
 [lints.rust]
 # Warn on unsafe code
 unsafe_code = "warn"  # Pragmatic for internal code
-
