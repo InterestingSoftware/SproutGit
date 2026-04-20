@@ -58,7 +58,6 @@ html {
   line-height: 1.6;
   color: var(--sg-text);
   background: var(--sg-bg);
-  scroll-behavior: smooth;
   -webkit-font-smoothing: antialiased;
 }
 
@@ -66,13 +65,22 @@ body { margin: 0; overflow-x: hidden; }
 
 /* ── Scroll-driven entrance animations ── */
 [data-animate] {
+  opacity: 1;
+  transform: none;
+}
+
+html.js {
+  scroll-behavior: smooth;
+}
+
+html.js [data-animate] {
   opacity: 0;
   transform: translateY(28px);
   transition: opacity 0.65s cubic-bezier(0.16, 1, 0.3, 1),
               transform 0.65s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
-[data-animate].is-visible {
+html.js [data-animate].is-visible {
   opacity: 1;
   transform: none;
 }
@@ -234,9 +242,11 @@ body { margin: 0; overflow-x: hidden; }
 
 /* ── Reduced motion ── */
 @media (prefers-reduced-motion: reduce) {
-  [data-animate] { opacity: 1; transform: none; transition: none; }
+  html { scroll-behavior: auto; }
+  html.js [data-animate] { opacity: 1; transform: none; transition: none; }
   .blob { animation: none !important; }
   .graph-path { animation: none; stroke-dashoffset: 0; }
   .graph-node { animation: none; opacity: 1; }
+  #site-nav { animation: none; transform: none; transition: none; }
   .btn-primary:hover, .btn-ghost:hover, .feature-card:hover { transform: none; }
 }

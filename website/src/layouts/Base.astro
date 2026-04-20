@@ -38,19 +38,51 @@ const canonical = new URL(Astro.url.pathname, Astro.site);
 
     <!-- Scroll animation observer -->
     <script is:inline>
+      document.documentElement.classList.add('js');
+
       document.addEventListener('DOMContentLoaded', () => {
-        const observer = new IntersectionObserver(
-          (entries) => {
-            entries.forEach((e) => {
-              if (e.isIntersecting) {
-                e.target.classList.add('is-visible');
-                observer.unobserve(e.target);
-              }
-            });
-          },
-          { threshold: 0.12 }
-        );
-        document.querySelectorAll('[data-animate]').forEach((el) => observer.observe(el));
+        const revealAll = () => {
+          document.querySelectorAll('[data-animate]').forEach((el) => el.classList.add('is-visible'));
+          document
+            .querySelectorAll('[data-graph] .graph-path, [data-graph] .graph-node')
+            .forEach((el) => el.classList.add('is-visible'));
+        };
+
+        if (typeof IntersectionObserver === 'undefined') {
+          revealAll();
+        } else {
+          try {
+            const observer = new IntersectionObserver(
+              (entries) => {
+                entries.forEach((e) => {
+                  if (e.isIntersecting) {
+                    e.target.classList.add('is-visible');
+                    observer.unobserve(e.target);
+                  }
+                });
+              },
+              { threshold: 0.12 }
+            );
+            document.querySelectorAll('[data-animate]').forEach((el) => observer.observe(el));
+
+            const graphObserver = new IntersectionObserver(
+              (entries) => {
+                entries.forEach((e) => {
+                  if (e.isIntersecting) {
+                    e.target.querySelectorAll('.graph-path, .graph-node').forEach((el) =>
+                      el.classList.add('is-visible')
+                    );
+                    graphObserver.unobserve(e.target);
+                  }
+                });
+              },
+              { threshold: 0.3 }
+            );
+            document.querySelectorAll('[data-graph]').forEach((el) => graphObserver.observe(el));
+          } catch {
+            revealAll();
+          }
+        }
 
         // Nav scroll state
         const nav = document.getElementById('site-nav');
@@ -59,22 +91,6 @@ const canonical = new URL(Astro.url.pathname, Astro.site);
           window.addEventListener('scroll', onScroll, { passive: true });
           onScroll();
         }
-
-        // Graph animation trigger
-        const graphObserver = new IntersectionObserver(
-          (entries) => {
-            entries.forEach((e) => {
-              if (e.isIntersecting) {
-                e.target.querySelectorAll('.graph-path, .graph-node').forEach((el) =>
-                  el.classList.add('is-visible')
-                );
-                graphObserver.unobserve(e.target);
-              }
-            });
-          },
-          { threshold: 0.3 }
-        );
-        document.querySelectorAll('[data-graph]').forEach((el) => graphObserver.observe(el));
       });
     </script>
   </head>
