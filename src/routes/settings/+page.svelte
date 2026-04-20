@@ -2,6 +2,7 @@
   import { goto } from "$app/navigation";
   import { openUrl } from "@tauri-apps/plugin-opener";
   import Spinner from "$lib/components/Spinner.svelte";
+  import WindowControls from "$lib/components/WindowControls.svelte";
   import {
     getGitInfo,
     getGithubAuthStatus,
@@ -159,6 +160,9 @@
     </button>
     <div class="h-3 w-px bg-[var(--sg-border)]"></div>
     <span class="text-xs font-medium text-[var(--sg-text)]">Settings</span>
+    <div class="ml-auto">
+      <WindowControls />
+    </div>
   </header>
 
   <div class="flex-1 overflow-auto p-6">
