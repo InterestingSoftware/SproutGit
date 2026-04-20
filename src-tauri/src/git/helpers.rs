@@ -16,6 +16,7 @@ pub enum GitAction {
     DeleteManagedWorktree,
     PruneWorktrees,
     CurrentBranch,
+    RevParse,
     StatusPorcelain,
     StashPush,
     StashPop,
@@ -32,7 +33,7 @@ pub enum GitAction {
 
 impl GitAction {
     #[cfg(test)]
-    pub const ALL: [GitAction; 20] = [
+    pub const ALL: [GitAction; 21] = [
         GitAction::GitInfo,
         GitAction::WorktreeList,
         GitAction::ListRefs,
@@ -41,6 +42,7 @@ impl GitAction {
         GitAction::DeleteManagedWorktree,
         GitAction::PruneWorktrees,
         GitAction::CurrentBranch,
+        GitAction::RevParse,
         GitAction::StatusPorcelain,
         GitAction::StashPush,
         GitAction::StashPop,
@@ -65,6 +67,7 @@ impl GitAction {
             GitAction::DeleteManagedWorktree => "delete_managed_worktree",
             GitAction::PruneWorktrees => "prune_worktrees",
             GitAction::CurrentBranch => "current_branch",
+            GitAction::RevParse => "rev_parse",
             GitAction::StatusPorcelain => "status_porcelain",
             GitAction::StashPush => "stash_push",
             GitAction::StashPop => "stash_pop",

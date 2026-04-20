@@ -7,7 +7,7 @@
 <p align="center">
   A fast, open-source, cross-platform Git desktop app with a <strong>worktree-first</strong> workflow.<br/>
   Optimized for AI-driven software development.<br/>
-  Built with <a href="https://v2.tauri.app">Tauri v2</a> + <a href="https://svelte.dev">SvelteKit</a> + TypeScript + Rust.
+  Built with <a href="https://v2.tauri.app">Tauri v2</a> + <a href="https://svelte.dev">SvelteKit</a> + <a href="https://www.typescriptlang.org">TypeScript</a> + <a href="https://www.rust-lang.org">Rust</a>.
 </p>
 
 <p align="center">

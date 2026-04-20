@@ -38,7 +38,7 @@ fn validate_clean_git_repo(repo_path: &std::path::Path) -> Result<(), String> {
     let repo_str = repo_path.to_string_lossy().to_string();
 
     let inside_output = git_command(
-        GitAction::CurrentBranch,
+        GitAction::RevParse,
         &["-C", &repo_str, "rev-parse", "--is-inside-work-tree"],
     )
     .output()
