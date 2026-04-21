@@ -153,6 +153,29 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
 
+      - name: Validate updater signing key
+        shell: bash
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+        run: |
+          set -euo pipefail
+
+          if [[ -z "${TAURI_SIGNING_PRIVATE_KEY:-}" ]]; then
+            echo "::error::Missing TAURI_SIGNING_PRIVATE_KEY secret."
+            exit 1
+          fi
+
+          if [[ "${TAURI_SIGNING_PRIVATE_KEY}" != *$'\n'* ]]; then
+            echo "::error::TAURI_SIGNING_PRIVATE_KEY appears to be single-line. Paste the full private key file contents (including comment line and encoded key line)."
+            exit 1
+          fi
+
+          first_line="$(printf '%s' "${TAURI_SIGNING_PRIVATE_KEY}" | head -n 1)"
+          if [[ ! "${first_line}" =~ ^untrusted\ comment:\ minisign\ .*secret\ key ]]; then
+            echo "::error::TAURI_SIGNING_PRIVATE_KEY does not look like a minisign secret key. Ensure this is the private key file, not the public key."
+            exit 1
+          fi
+
       - name: Set version
         shell: bash
         run: |
