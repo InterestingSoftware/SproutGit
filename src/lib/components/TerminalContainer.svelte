@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { tick } from 'svelte';
+  import { onMount, tick } from 'svelte';
   import TerminalPanel from './TerminalPanel.svelte';
   import ContextMenu, { type MenuItem } from './ContextMenu.svelte';
 
@@ -28,7 +28,9 @@
 
   // Panel component refs — used to forward focus() and refit().
   // Plain object (not $state) because we don't need reactivity on the refs themselves.
-  const panelInstances: Record<string, { focus: () => void; refit: () => void }> = {};
+  const panelInstances: Partial<Record<string, { focus: () => void; refit: () => void } | null>> =
+    {};
+  const tabButtons: Partial<Record<string, HTMLButtonElement | null>> = {};
 
   // Focus the active panel whenever activeId changes.
   $effect(() => {
@@ -58,7 +60,7 @@
   }
 
   function addSession(shell: string) {
-    const count = sessions.filter((s) => s.shell === shell).length;
+    const count = sessions.filter(s => s.shell === shell).length;
     const label = count === 0 ? shell : `${shell} (${count + 1})`;
     const id = newId();
     sessions = [...sessions, { id, shell, label }];
@@ -67,31 +69,32 @@
   }
 
   function closeSession(id: string) {
-    const idx = sessions.findIndex((s) => s.id === id);
-    sessions = sessions.filter((s) => s.id !== id);
+    const idx = sessions.findIndex(s => s.id === id);
+    sessions = sessions.filter(s => s.id !== id);
+    delete panelInstances[id];
+    delete tabButtons[id];
     if (activeId === id) {
       activeId = sessions[Math.max(0, idx - 1)]?.id ?? sessions[0]?.id ?? null;
     }
   }
 
   function closeToRight(id: string) {
-    const idx = sessions.findIndex((s) => s.id === id);
-    const toRemove = new Set(sessions.slice(idx + 1).map((s) => s.id));
+    const idx = sessions.findIndex(s => s.id === id);
+    const toRemove = new Set(sessions.slice(idx + 1).map(s => s.id));
+    for (const sessionId of toRemove) {
+      delete panelInstances[sessionId];
+      delete tabButtons[sessionId];
+    }
     if (toRemove.has(activeId ?? '')) activeId = id;
-    sessions = sessions.filter((s) => !toRemove.has(s.id));
+    sessions = sessions.filter(s => !toRemove.has(s.id));
   }
 
   // Spawn the initial session on first mount.
-  $effect(() => {
-    if (defaultShell && sessions.length === 0) {
+  onMount(() => {
+    if (defaultShell) {
       addSession(defaultShell);
     }
   });
-
-  function onWindowClick() {
-    showAddMenu = false;
-    ctxMenu = null;
-  }
 
   // ── Context menu ──────────────────────────────────────────────────────────
   type CtxMenu = { sessionId: string; x: number; y: number };
@@ -104,13 +107,13 @@
   }
 
   function ctxMenuItems(sessionId: string): MenuItem[] {
-    const idx = sessions.findIndex((s) => s.id === sessionId);
+    const idx = sessions.findIndex(s => s.id === sessionId);
     const items: MenuItem[] = [
       {
         label: 'Rename',
         action: () => {
           renamingId = sessionId;
-          renameValue = sessions.find((s) => s.id === sessionId)?.label ?? '';
+          renameValue = sessions.find(s => s.id === sessionId)?.label ?? '';
         },
       },
       { separator: true },
@@ -138,7 +141,7 @@
     if (!renamingId) return;
     const trimmed = renameValue.trim();
     if (trimmed) {
-      sessions = sessions.map((s) => (s.id === renamingId ? { ...s, label: trimmed } : s));
+      sessions = sessions.map(s => (s.id === renamingId ? { ...s, label: trimmed } : s));
     }
     renamingId = null;
   }
@@ -160,6 +163,7 @@
   let dragFromId = $state<string | null>(null);
   let dragToId = $state<string | null>(null);
   let dragToSide = $state<'before' | 'after'>('after');
+  let dragPointerId = $state<number | null>(null);
 
   // Walk up the DOM from a point to find the nearest tab's session id.
   function getSessionIdAt(x: number, y: number): string | null {
@@ -177,9 +181,11 @@
   function onTabPointerDown(e: PointerEvent, id: string) {
     if (e.button !== 0) return;
     dragFromId = id;
+    dragPointerId = e.pointerId;
+    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
   }
 
-  function onGlobalPointerMove(e: PointerEvent) {
+  function onTabPointerMove(e: PointerEvent) {
     if (!dragFromId) return;
     e.preventDefault(); // prevent text selection while dragging
     const targetId = getSessionIdAt(e.clientX, e.clientY);
@@ -196,7 +202,7 @@
       // Pointer is in the tab strip area but not over any tab — treat as append-to-end.
       const rect = tabStripEl.getBoundingClientRect();
       if (e.clientY >= rect.top && e.clientY <= rect.bottom && e.clientX >= rect.left) {
-        const last = sessions.findLast((s) => s.id !== dragFromId);
+        const last = sessions.findLast(s => s.id !== dragFromId);
         if (last) {
           dragToId = last.id;
           dragToSide = 'after';
@@ -209,18 +215,73 @@
     }
   }
 
-  function onGlobalPointerUp() {
+  function onTabPointerUp(e: PointerEvent) {
+    if (
+      dragPointerId !== null &&
+      (e.currentTarget as HTMLElement).hasPointerCapture(dragPointerId)
+    ) {
+      (e.currentTarget as HTMLElement).releasePointerCapture(dragPointerId);
+    }
     if (dragFromId && dragToId && dragFromId !== dragToId) {
-      const fromIdx = sessions.findIndex((s) => s.id === dragFromId);
+      const fromIdx = sessions.findIndex(s => s.id === dragFromId);
       const arr = [...sessions];
       const [moved] = arr.splice(fromIdx, 1);
-      let insertAt = arr.findIndex((s) => s.id === dragToId);
+      let insertAt = arr.findIndex(s => s.id === dragToId);
       if (dragToSide === 'after') insertAt += 1;
       arr.splice(insertAt, 0, moved);
       sessions = arr;
     }
     dragFromId = null;
     dragToId = null;
+    dragPointerId = null;
+  }
+
+  function focusTabButton(sessionId: string) {
+    tabButtons[sessionId]?.focus();
+  }
+
+  function onTabKeyDown(e: KeyboardEvent, sessionId: string) {
+    const idx = sessions.findIndex(s => s.id === sessionId);
+    if (idx === -1) return;
+
+    if (e.key === 'ArrowRight') {
+      e.preventDefault();
+      const next = sessions[(idx + 1) % sessions.length];
+      if (next) {
+        activeId = next.id;
+        focusTabButton(next.id);
+      }
+      return;
+    }
+
+    if (e.key === 'ArrowLeft') {
+      e.preventDefault();
+      const prev = sessions[(idx - 1 + sessions.length) % sessions.length];
+      if (prev) {
+        activeId = prev.id;
+        focusTabButton(prev.id);
+      }
+      return;
+    }
+
+    if (e.key === 'Home') {
+      e.preventDefault();
+      const first = sessions[0];
+      if (first) {
+        activeId = first.id;
+        focusTabButton(first.id);
+      }
+      return;
+    }
+
+    if (e.key === 'End') {
+      e.preventDefault();
+      const last = sessions[sessions.length - 1];
+      if (last) {
+        activeId = last.id;
+        focusTabButton(last.id);
+      }
+    }
   }
 
   // ── Layout helpers ────────────────────────────────────────────────────────
@@ -243,12 +304,6 @@
   }
 </script>
 
-<svelte:window
-  onclick={onWindowClick}
-  onpointermove={onGlobalPointerMove}
-  onpointerup={onGlobalPointerUp}
-/>
-
 <div class="flex min-h-0 flex-1 flex-col overflow-hidden bg-[#1e1e2e]">
   <!-- ── Toolbar ─────────────────────────────────────────────────────────── -->
   <div
@@ -256,25 +311,31 @@
     style="min-height: 32px;"
   >
     <!-- Session tab strip -->
-    <div bind:this={tabStripEl} class="flex min-w-0 flex-1 items-center gap-0.5 overflow-x-auto py-0.5">
+    <div
+      bind:this={tabStripEl}
+      role="tablist"
+      aria-label="Terminal sessions"
+      class="flex min-w-0 flex-1 items-center gap-0.5 overflow-x-auto py-0.5"
+    >
       {#each sessions as session (session.id)}
         {@const isActive = activeId === session.id}
         {@const isDragTarget = dragToId === session.id}
         <!-- svelte-ignore a11y_no_static_element_interactions -->
         <div
-          role="tab"
-          tabindex="-1"
-          aria-selected={isActive}
           data-session-id={session.id}
           class="relative flex shrink-0 items-stretch overflow-hidden rounded transition-colors
             {isActive ? 'bg-[#252535]' : 'hover:bg-[#1e1e30]'}
             {dragFromId === session.id ? 'opacity-50' : ''}"
-          onpointerdown={(e) => onTabPointerDown(e, session.id)}
-          oncontextmenu={(e) => openCtxMenu(e, session.id)}
+          onpointerdown={e => onTabPointerDown(e, session.id)}
+          onpointermove={onTabPointerMove}
+          onpointerup={onTabPointerUp}
+          oncontextmenu={e => openCtxMenu(e, session.id)}
         >
           <!-- Drop indicator: left edge -->
           {#if isDragTarget && dragToSide === 'before'}
-            <span class="pointer-events-none absolute top-0 left-0 h-full w-0.5 rounded-full bg-[#74c7a4]"></span>
+            <span
+              class="pointer-events-none absolute top-0 left-0 h-full w-0.5 rounded-full bg-[#74c7a4]"
+            ></span>
           {/if}
 
           <!-- Tab label (or inline rename input) -->
@@ -285,12 +346,12 @@
               type="text"
               bind:value={renameValue}
               onblur={commitRename}
-              onkeydown={(e) => {
+              onkeydown={e => {
                 if (e.key === 'Enter') commitRename();
                 if (e.key === 'Escape') cancelRename();
                 e.stopPropagation();
               }}
-              onclick={(e) => e.stopPropagation()}
+              onclick={e => e.stopPropagation()}
               class="min-w-0 w-[100px] rounded bg-[#1e1e2e] px-2 py-1 text-[11px] font-medium text-[#cdd6f4] outline outline-1 outline-[#74c7a4] focus:outline-[#74c7a4]"
             />
           {:else}
@@ -300,8 +361,15 @@
               instead of the parent div's HTML5 drag operation.
             -->
             <button
+              bind:this={tabButtons[session.id]}
               draggable="false"
-              onclick={(e) => {
+              role="tab"
+              id={`terminal-tab-${session.id}`}
+              tabindex={isActive ? 0 : -1}
+              aria-selected={isActive}
+              aria-controls={`terminal-panel-${session.id}`}
+              onkeydown={e => onTabKeyDown(e, session.id)}
+              onclick={e => {
                 e.stopPropagation();
                 activeId = session.id;
               }}
@@ -318,19 +386,22 @@
 
           <!-- Close button -->
           <button
-              draggable="false"
-              onpointerdown={(e) => e.stopPropagation()}
-              onclick={(e) => {
-                e.stopPropagation();
-                closeSession(session.id);
-              }}
-              title="Close {session.label}"
-              class="select-none flex items-center px-1.5 text-[11px] leading-none text-[#a6adc8] transition-colors hover:text-[#f38ba8]"
-            >✕</button>
+            draggable="false"
+            onpointerdown={e => e.stopPropagation()}
+            onclick={e => {
+              e.stopPropagation();
+              closeSession(session.id);
+            }}
+            title="Close {session.label}"
+            class="select-none flex items-center px-1.5 text-[11px] leading-none text-[#a6adc8] transition-colors hover:text-[#f38ba8]"
+            >✕</button
+          >
 
           <!-- Drop indicator: right edge -->
           {#if isDragTarget && dragToSide === 'after'}
-            <span class="pointer-events-none absolute top-0 right-0 h-full w-0.5 rounded-full bg-[#74c7a4]"></span>
+            <span
+              class="pointer-events-none absolute top-0 right-0 h-full w-0.5 rounded-full bg-[#74c7a4]"
+            ></span>
           {/if}
         </div>
       {/each}
@@ -339,7 +410,7 @@
     <!-- Add terminal button + shell picker -->
     <div class="relative shrink-0">
       <button
-        onclick={(e) => {
+        onclick={e => {
           e.stopPropagation();
           if (availableShells.length <= 1) {
             addSession(defaultShell);
@@ -351,11 +422,21 @@
         class="flex items-center gap-0.5 rounded px-2 py-1 text-[#6c7086] transition-colors hover:bg-[#252535] hover:text-[#a6adc8]"
       >
         <svg width="13" height="13" viewBox="0 0 13 13" fill="none">
-          <path d="M6.5 2v9M2 6.5h9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" />
+          <path
+            d="M6.5 2v9M2 6.5h9"
+            stroke="currentColor"
+            stroke-width="1.5"
+            stroke-linecap="round"
+          />
         </svg>
         {#if availableShells.length > 1}
           <svg width="8" height="8" viewBox="0 0 8 8" fill="none" class="opacity-60">
-            <path d="M1 2.5l3 3 3-3" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" />
+            <path
+              d="M1 2.5l3 3 3-3"
+              stroke="currentColor"
+              stroke-width="1.2"
+              stroke-linecap="round"
+            />
           </svg>
         {/if}
       </button>
@@ -367,12 +448,13 @@
         >
           {#each availableShells as shell}
             <button
-              onclick={(e) => {
+              onclick={e => {
                 e.stopPropagation();
                 addSession(shell);
               }}
               class="block w-full px-3 py-1.5 text-left font-mono text-xs text-[var(--sg-text-dim)] hover:bg-[var(--sg-surface-raised)] hover:text-[var(--sg-text)]"
-            >{shell}</button>
+              >{shell}</button
+            >
           {/each}
         </div>
       {/if}
@@ -392,7 +474,12 @@
       >
         <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
           <rect x="1" y="5" width="12" height="8" rx="1" stroke="currentColor" stroke-width="1.2" />
-          <path d="M1 5h3v-2a1 1 0 011-1h0a1 1 0 011 1v2" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round" />
+          <path
+            d="M1 5h3v-2a1 1 0 011-1h0a1 1 0 011 1v2"
+            stroke="currentColor"
+            stroke-width="1.2"
+            stroke-linejoin="round"
+          />
         </svg>
       </button>
       <button
@@ -403,8 +490,24 @@
           : 'text-[#6c7086] hover:bg-[#252535] hover:text-[#a6adc8]'}"
       >
         <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
-          <rect x="1" y="1.5" width="5" height="11" rx="1" stroke="currentColor" stroke-width="1.2" />
-          <rect x="8" y="1.5" width="5" height="11" rx="1" stroke="currentColor" stroke-width="1.2" />
+          <rect
+            x="1"
+            y="1.5"
+            width="5"
+            height="11"
+            rx="1"
+            stroke="currentColor"
+            stroke-width="1.2"
+          />
+          <rect
+            x="8"
+            y="1.5"
+            width="5"
+            height="11"
+            rx="1"
+            stroke="currentColor"
+            stroke-width="1.2"
+          />
         </svg>
       </button>
       <button
@@ -415,10 +518,42 @@
           : 'text-[#6c7086] hover:bg-[#252535] hover:text-[#a6adc8]'}"
       >
         <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
-          <rect x="1" y="1" width="5" height="5" rx="0.8" stroke="currentColor" stroke-width="1.2" />
-          <rect x="8" y="1" width="5" height="5" rx="0.8" stroke="currentColor" stroke-width="1.2" />
-          <rect x="1" y="8" width="5" height="5" rx="0.8" stroke="currentColor" stroke-width="1.2" />
-          <rect x="8" y="8" width="5" height="5" rx="0.8" stroke="currentColor" stroke-width="1.2" />
+          <rect
+            x="1"
+            y="1"
+            width="5"
+            height="5"
+            rx="0.8"
+            stroke="currentColor"
+            stroke-width="1.2"
+          />
+          <rect
+            x="8"
+            y="1"
+            width="5"
+            height="5"
+            rx="0.8"
+            stroke="currentColor"
+            stroke-width="1.2"
+          />
+          <rect
+            x="1"
+            y="8"
+            width="5"
+            height="5"
+            rx="0.8"
+            stroke="currentColor"
+            stroke-width="1.2"
+          />
+          <rect
+            x="8"
+            y="8"
+            width="5"
+            height="5"
+            rx="0.8"
+            stroke="currentColor"
+            stroke-width="1.2"
+          />
         </svg>
       </button>
     </div>
@@ -438,6 +573,10 @@
       {#each sessions as session (session.id)}
         <!-- svelte-ignore a11y_no_static_element_interactions -->
         <div
+          id={`terminal-panel-${session.id}`}
+          role="tabpanel"
+          tabindex={activeId === session.id ? 0 : -1}
+          aria-labelledby={`terminal-tab-${session.id}`}
           style={panelStyle(session.id)}
           onpointerdown={() => (activeId = session.id)}
           class:border-l={layout === 'split' && sessions.indexOf(session) > 0}
@@ -445,7 +584,7 @@
           class:border={layout === 'grid'}
           class:border-[#252535]={layout === 'grid'}
         >
-          <TerminalPanel bind:this={panelInstances[session.id]} shell={session.shell} cwd={cwd} />
+          <TerminalPanel bind:this={panelInstances[session.id]} shell={session.shell} {cwd} />
         </div>
       {/each}
     </div>
@@ -461,4 +600,3 @@
     onclose={() => (ctxMenu = null)}
   />
 {/if}
-

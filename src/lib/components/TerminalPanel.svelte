@@ -21,6 +21,7 @@
   };
 
   let { shell, cwd }: Props = $props();
+  const isWindows = typeof navigator !== 'undefined' && /windows/i.test(navigator.userAgent);
 
   // ── DOM & xterm refs ──────────────────────────────────────────────────────
   let containerEl = $state<HTMLDivElement | null>(null);
@@ -70,7 +71,7 @@
     const { Terminal } = await import('@xterm/xterm');
     const { FitAddon } = await import('@xterm/addon-fit');
 
-    term = new Terminal({
+    const options: ConstructorParameters<typeof Terminal>[0] & { windowsMode?: boolean } = {
       theme: THEME,
       fontFamily: '"Cascadia Code", "JetBrains Mono", "Fira Code", Menlo, monospace',
       fontSize: 13,
@@ -78,9 +79,11 @@
       cursorBlink: true,
       allowTransparency: false,
       scrollback: 5000,
-      // @ts-expect-error - Available in xterm but may be missing from types
-      windowsMode: true, // Solves the ConPTY resize history-cropping bug
-    });
+    };
+    if (isWindows) {
+      options.windowsMode = true; // Solves the ConPTY resize history-cropping bug on ConPTY
+    }
+    term = new Terminal(options);
 
     fitAddon = new FitAddon();
     term.loadAddon(fitAddon);
@@ -88,19 +91,22 @@
     fitAddon.fit();
 
     // Forward keyboard input to PTY
-    term.onData((data) => {
+    term.onData(data => {
       if (ptyId) void terminalInput(ptyId, data);
     });
 
     // Observe container resize and notify PTY.
     // Uses a small debounce to avoid flooding ConPTY with resize events
     // while the user is actively dragging the window.
-    resizeObserver = new ResizeObserver((entries) => {
+    resizeObserver = new ResizeObserver(entries => {
       if (!fitAddon || !term || !ptyId) return;
       const entry = entries[0];
       if (!entry || entry.contentRect.width === 0 || entry.contentRect.height === 0) {
         // Panel hidden — cancel any pending timer so fit doesn't fire at zero size.
-        if (resizeTimer) { clearTimeout(resizeTimer); resizeTimer = null; }
+        if (resizeTimer) {
+          clearTimeout(resizeTimer);
+          resizeTimer = null;
+        }
         return;
       }
       if (resizeTimer) clearTimeout(resizeTimer);
@@ -116,7 +122,7 @@
       const id = await spawnTerminal(shell, cwd, term.cols, term.rows);
       ptyId = id;
 
-      unlistenOutput = await onTerminalOutput(id, (data) => {
+      unlistenOutput = await onTerminalOutput(id, data => {
         term?.write(data);
       });
 
@@ -130,7 +136,10 @@
   }
 
   async function teardown() {
-    if (resizeTimer) { clearTimeout(resizeTimer); resizeTimer = null; }
+    if (resizeTimer) {
+      clearTimeout(resizeTimer);
+      resizeTimer = null;
+    }
     resizeObserver?.disconnect();
     resizeObserver = null;
 
