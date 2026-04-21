@@ -4,6 +4,7 @@ mod editor;
 mod git;
 mod github;
 mod hooks;
+mod terminal;
 mod watcher;
 mod workspace;
 
@@ -25,6 +26,7 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
+        .manage(terminal::TerminalManager::new())
         .manage(watcher::WatcherState(std::sync::Mutex::new(None)))
         .setup(|_app| {
             #[cfg(target_os = "windows")]
@@ -78,6 +80,11 @@ pub fn run() {
             github::github_logout,
             github::list_github_repos,
             get_home_dir,
+            terminal::list_available_shells,
+            terminal::spawn_terminal,
+            terminal::terminal_input,
+            terminal::terminal_resize,
+            terminal::close_terminal,
             watcher::start_watching_worktrees,
             watcher::stop_watching_worktrees,
         ])

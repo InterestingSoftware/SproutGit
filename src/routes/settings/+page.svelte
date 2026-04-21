@@ -15,6 +15,9 @@
     detectEditors,
     getGitConfig,
     setGitConfig,
+    getAppSetting,
+    setAppSetting,
+    listAvailableShells,
     type GitInfo,
     type GitHubAuthStatus,
     type DeviceCodeResponse,
@@ -33,6 +36,11 @@
   let currentEditor = $state("");
   let customEditor = $state("");
   let editorsLoading = $state(true);
+
+  // ── Shell State ──
+  let availableShells = $state<string[]>([]);
+  let currentShell = $state("");
+  let shellsLoading = $state(true);
 
   // ── Git State ──
   let gitInfo = $state<GitInfo | null>(null);
@@ -107,6 +115,27 @@
   }).catch(() => {
     editorsLoading = false;
   });
+
+  Promise.all([
+    listAvailableShells(),
+    getAppSetting("default_shell"),
+  ]).then(([shells, savedShell]) => {
+    availableShells = shells;
+    currentShell = savedShell ?? shells[0] ?? "";
+    shellsLoading = false;
+  }).catch(() => {
+    shellsLoading = false;
+  });
+
+  async function selectShell(shell: string) {
+    currentShell = shell;
+    try {
+      await setAppSetting("default_shell", shell);
+      toast.success(`Default shell set to ${shell}`);
+    } catch (err) {
+      toast.error(String(err));
+    }
+  }
 
   function matchesEditor(editor: EditorInfo, configured: string): boolean {
     // Strip quotes and extract the command portion (before --wait etc)
@@ -353,9 +382,42 @@
         {/if}
       </section>
 
+      <!-- Terminal Shell -->
+      <section>
+        <h2 class="mb-1 text-sm font-semibold text-[var(--sg-text)]">Terminal Shell</h2>
+        <p class="mb-4 text-xs text-[var(--sg-text-faint)]">Choose the default shell for the built-in terminal. Opens in the selected worktree directory.</p>
+
+        {#if shellsLoading}
+          <div class="flex items-center gap-2 text-xs text-[var(--sg-text-dim)]">
+            <Spinner size="sm" />
+            Detecting shells…
+          </div>
+        {:else if availableShells.length === 0}
+          <div class="rounded-lg border border-[var(--sg-border)] bg-[var(--sg-surface)] px-4 py-3 text-xs text-[var(--sg-text-dim)]">
+            No supported shells detected on this system.
+          </div>
+        {:else}
+          <div class="flex flex-wrap gap-2">
+            {#each availableShells as shell}
+              {@const isActive = currentShell === shell}
+              <button
+                class="rounded-md border px-3 py-1.5 text-xs transition-colors {isActive
+                  ? 'border-[var(--sg-primary)] bg-[var(--sg-primary)]/10 font-medium text-[var(--sg-primary)]'
+                  : 'border-[var(--sg-border)] text-[var(--sg-text-dim)] hover:border-[var(--sg-text-faint)] hover:text-[var(--sg-text)]'}"
+                onclick={() => selectShell(shell)}
+              >
+                {shell}
+              </button>
+            {/each}
+          </div>
+          <p class="mt-2 text-[11px] text-[var(--sg-text-faint)]">
+            Current: <span class="font-mono text-[var(--sg-text-dim)]">{currentShell || "not set"}</span>
+          </p>
+        {/if}
+      </section>
+
       <section>
         <h2 class="mb-1 text-sm font-semibold text-[var(--sg-text)]">Workspace hooks</h2>
-        <p class="mb-4 text-xs text-[var(--sg-text-faint)]">Hook management moved to the workspace screen for better context.</p>
         <div class="rounded-lg border border-[var(--sg-border)] bg-[var(--sg-surface)] px-4 py-3 text-xs text-[var(--sg-text-dim)]">
           Open a workspace and use the <span class="font-semibold text-[var(--sg-text)]">Hooks</span> button in the top bar.
         </div>

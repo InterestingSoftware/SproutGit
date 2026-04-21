@@ -423,3 +423,27 @@ export const stopWatchingWorktrees = () => invoke<void>('stop_watching_worktrees
 
 export const onWorktreeChanged = (callback: (worktreePath: string) => void): Promise<UnlistenFn> =>
   listen<string>('worktree-changed', event => callback(event.payload));
+
+// ── Terminal ──
+
+export const listAvailableShells = () => invoke<string[]>('list_available_shells');
+
+export const spawnTerminal = (shell: string, cwd: string, cols: number, rows: number) =>
+  invoke<string>('spawn_terminal', { shell, cwd, cols, rows });
+
+export const terminalInput = (ptyId: string, data: string) =>
+  invoke<void>('terminal_input', { ptyId, data });
+
+export const terminalResize = (ptyId: string, cols: number, rows: number) =>
+  invoke<void>('terminal_resize', { ptyId, cols, rows });
+
+export const closeTerminal = (ptyId: string) => invoke<void>('close_terminal', { ptyId });
+
+export const onTerminalOutput = (
+  ptyId: string,
+  callback: (data: string) => void
+): Promise<UnlistenFn> =>
+  listen<string>(`terminal-output-${ptyId}`, event => callback(event.payload));
+
+export const onTerminalClosed = (ptyId: string, callback: () => void): Promise<UnlistenFn> =>
+  listen<void>(`terminal-closed-${ptyId}`, () => callback());
