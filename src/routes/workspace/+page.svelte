@@ -663,7 +663,7 @@
           ...graph,
           commits: [...graph.commits, ...newCommits],
         };
-        graphSkip += nextPage.commits.length;
+        graphSkip += newCommits.length;
         graphHasMore = nextPage.commits.length === GRAPH_PAGE_SIZE;
       }
     } catch (err) {
