@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="SproutGit logo">
+  <circle cx="32" cy="32" r="30" fill="#e8f5ef" />
+  <path d="M32 50V28" stroke="#1a8a5c" stroke-width="4" stroke-linecap="round" />
+  <path d="M32 32c0 0-9-6-9-15 0 0 9-3 9 11Z" fill="#1a8a5c" opacity="0.85" />
+  <path d="M32 36c0 0 9-6 9-15 0 0-9-3-9 11Z" fill="#1a8a5c" />
+</svg>

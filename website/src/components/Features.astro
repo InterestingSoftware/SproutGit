@@ -1,0 +1,135 @@
+---
+const features = [
+  {
+    icon: `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><line x1="12" y1="2" x2="12" y2="5"/><line x1="12" y1="19" x2="12" y2="22"/><line x1="4.22" y1="4.22" x2="6.34" y2="6.34"/><line x1="17.66" y1="17.66" x2="19.78" y2="19.78"/><line x1="2" y1="12" x2="5" y2="12"/><line x1="19" y1="12" x2="22" y2="12"/><line x1="4.22" y1="19.78" x2="6.34" y2="17.66"/><line x1="17.66" y1="6.34" x2="19.78" y2="4.22"/></svg>`,
+    title: 'Worktree-first workflow',
+    desc: 'Create, switch, and manage Git worktrees in a clean prescribed directory layout. Managed vs external worktrees are visually distinct. The primary checkout is protected.',
+    tag: 'Core',
+  },
+  {
+    icon: `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>`,
+    title: 'Interactive commit graph',
+    desc: 'Lane-based SVG commit graph with search, selection, ref badges, and context menus. Worktree branches are highlighted with distinct markers.',
+    tag: 'Core',
+  },
+  {
+    icon: `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>`,
+    title: 'Diff viewer',
+    desc: 'Single-commit and multi-commit range diffs with file list and syntax-highlighted unified diff. Built with Monaco and highlight.js.',
+    tag: 'Core',
+  },
+  {
+    icon: `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>`,
+    title: 'Branch management',
+    desc: 'Checkout, reset (soft, mixed, hard), and create branches from any ref. Default action creates a branch and a managed worktree together.',
+    tag: 'Core',
+  },
+  {
+    icon: `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>`,
+    title: 'Workspace lifecycle hooks',
+    desc: 'Run scripts before and after worktree create, remove, and switch operations. Hooks have dependency ordering, critical/non-critical policy, parallel execution, and per-hook log output.',
+    tag: 'Automation',
+  },
+  {
+    icon: `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>`,
+    title: 'Editor integration',
+    desc: 'Open any worktree in your configured editor. Respects GIT_EDITOR, core.editor, VISUAL, and EDITOR in that order — your preference, not ours.',
+    tag: 'Workflow',
+  },
+  {
+    icon: `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="5"/><path d="M12 1v4M12 19v4M4.22 4.22l2.83 2.83M16.95 16.95l2.83 2.83M1 12h4M19 12h4M4.22 19.78l2.83-2.83M16.95 7.05l2.83-2.83"/></svg>`,
+    title: 'Automatic dark mode',
+    desc: 'Follows system preference. Light and dark themes with the same brand palette and full contrast compliance. No toggle required.',
+    tag: 'UI',
+  },
+  {
+    icon: `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2" width="20" height="20" rx="5"/><path d="M8 12h8M12 8v8"/></svg>`,
+    title: 'Lightweight native app',
+    desc: 'Built with Tauri v2 — a Rust backend and native webview. Small bundle, fast startup, low memory. No Electron, no extra runtime.',
+    tag: 'Platform',
+  },
+];
+---
+
+<section id="features" style="padding: 6rem 2rem; background: color-mix(in srgb, var(--sg-surface-raised) 50%, var(--sg-bg));">
+  <div style="max-width: 1200px; margin: 0 auto;">
+
+    <div data-animate style="text-align:center;margin-bottom:3.5rem;">
+      <p style="font-size:0.75rem;font-weight:600;letter-spacing:0.1em;text-transform:uppercase;color:var(--sg-primary);margin:0 0 0.75rem;">
+        What's in the box
+      </p>
+      <h2 style="font-size:clamp(1.9rem,4vw,2.8rem);font-weight:700;letter-spacing:-0.03em;color:var(--sg-text);margin:0 0 1rem;">
+        Everything you need for parallel Git work.
+      </h2>
+      <p style="max-width:520px;margin:0 auto;color:var(--sg-text-dim);font-size:1.05rem;line-height:1.7;">
+        No AI gimmicks, no subscription. Just a fast, honest Git client that
+        treats worktrees as a first-class concept.
+      </p>
+    </div>
+
+    <div style="
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+      gap: 1.25rem;
+    " data-stagger>
+      {features.map(f => (
+        <div class="feature-card" data-animate>
+          <div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:0.875rem;">
+            <span style="
+              display:inline-flex;align-items:center;justify-content:center;
+              width:38px;height:38px;border-radius:9px;
+              background:color-mix(in srgb, var(--sg-primary) 12%, transparent);
+              color:var(--sg-primary);flex-shrink:0;
+            " set:html={f.icon} />
+            <span style="
+              font-size:0.65rem;font-weight:700;letter-spacing:0.07em;
+              text-transform:uppercase;padding:2px 7px;border-radius:999px;
+              background:color-mix(in srgb, var(--sg-primary) 10%, transparent);
+              color:var(--sg-primary);
+            ">{f.tag}</span>
+          </div>
+          <h3 style="font-size:0.95rem;font-weight:700;color:var(--sg-text);margin:0 0 0.5rem;letter-spacing:-0.01em;">
+            {f.title}
+          </h3>
+          <p style="font-size:0.85rem;color:var(--sg-text-dim);margin:0;line-height:1.65;">
+            {f.desc}
+          </p>
+        </div>
+      ))}
+    </div>
+
+    <!-- Platform support strip -->
+    <div data-animate style="
+      margin-top: 3rem;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 2.5rem;
+      flex-wrap: wrap;
+      padding: 1.5rem;
+      border: 1px solid var(--sg-border-subtle);
+      border-radius: 12px;
+      background: var(--sg-surface);
+    ">
+      {[
+        { name: 'macOS', note: '11+' },
+        { name: 'Linux', note: 'x64 / arm64' },
+        { name: 'Windows', note: '10+' },
+      ].map(p => (
+        <div style="text-align:center;">
+          <div style="font-size:0.9rem;font-weight:600;color:var(--sg-text);">{p.name}</div>
+          <div style="font-size:0.75rem;color:var(--sg-text-faint);">{p.note}</div>
+        </div>
+      ))}
+      <div style="width:1px;height:32px;background:var(--sg-border-subtle);"></div>
+      <div style="text-align:center;">
+        <div style="font-size:0.9rem;font-weight:600;color:var(--sg-text);">MIT License</div>
+        <div style="font-size:0.75rem;color:var(--sg-text-faint);">Open source forever</div>
+      </div>
+      <div style="text-align:center;">
+        <div style="font-size:0.9rem;font-weight:600;color:var(--sg-text);">Rust + Tauri v2</div>
+        <div style="font-size:0.75rem;color:var(--sg-text-faint);">No Electron</div>
+      </div>
+    </div>
+  </div>
+</section>

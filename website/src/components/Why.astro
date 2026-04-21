@@ -1,0 +1,119 @@
+---
+---
+
+<section id="why" style="padding: 6rem 2rem; position: relative; overflow: hidden;">
+  <div style="max-width: 1200px; margin: 0 auto;">
+
+    <!-- Section header -->
+    <div data-animate style="text-align: center; margin-bottom: 4rem;">
+      <p style="font-size:0.75rem;font-weight:600;letter-spacing:0.1em;text-transform:uppercase;color:var(--sg-primary);margin:0 0 0.75rem;">
+        The problem with branch-first tools
+      </p>
+      <h2 style="font-size:clamp(1.9rem,4vw,2.8rem);font-weight:700;letter-spacing:-0.03em;color:var(--sg-text);margin:0 0 1rem;">
+        Your working directory is a shared resource.<br>
+        <span style="color:var(--sg-primary);">It shouldn't be.</span>
+      </h2>
+      <p style="max-width:560px;margin:0 auto;color:var(--sg-text-dim);font-size:1.05rem;line-height:1.7;">
+        Traditional Git clients treat branches as the unit of work. But branches are just pointers —
+        they all share the same directory. So context-switching means stashing, checking out, losing state.
+      </p>
+    </div>
+
+    <!-- Before / After grid -->
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:2rem;align-items:start;" class="why-grid">
+
+      <!-- Before -->
+      <div data-animate style="
+        background: color-mix(in srgb, #f38ba8 6%, var(--sg-surface));
+        border: 1px solid color-mix(in srgb, #f38ba8 20%, var(--sg-border-subtle));
+        border-radius: 12px;
+        padding: 1.75rem;
+      ">
+        <div style="display:flex;align-items:center;gap:0.5rem;margin-bottom:1.25rem;">
+          <span aria-hidden="true" style="font-size:1rem;">😤</span>
+          <span style="font-size:0.8rem;font-weight:700;color:#f38ba8;letter-spacing:0.05em;text-transform:uppercase;">Without SproutGit</span>
+        </div>
+        <div class="dir-tree">
+          <div><span class="dim">~/projects/myapp/</span></div>
+          <div>├── <span style="color:var(--sg-text);">src/</span></div>
+          <div>├── <span style="color:var(--sg-text);">node_modules/</span></div>
+          <div>└── <span style="color:var(--sg-text);">.git/</span></div>
+        </div>
+        <ul style="margin:1.25rem 0 0;padding:0;list-style:none;display:flex;flex-direction:column;gap:0.75rem;">
+          {[
+            'Switch branch → stash everything first',
+            'Two features? Hope you remember context',
+            'AI agent running? Collides with your edits',
+            'Merge conflicts from unrelated changes',
+          ].map(item => (
+            <li style="display:flex;align-items:flex-start;gap:0.5rem;font-size:0.875rem;color:var(--sg-text-dim);">
+              <span style="color:#f38ba8;margin-top:2px;flex-shrink:0;">✕</span>
+              {item}
+            </li>
+          ))}
+        </ul>
+      </div>
+
+      <!-- After -->
+      <div data-animate style="
+        background: color-mix(in srgb, var(--sg-primary) 6%, var(--sg-surface));
+        border: 1px solid color-mix(in srgb, var(--sg-primary) 20%, var(--sg-border-subtle));
+        border-radius: 12px;
+        padding: 1.75rem;
+      ">
+        <div style="display:flex;align-items:center;gap:0.5rem;margin-bottom:1.25rem;">
+          <span aria-hidden="true" style="font-size:1rem;">🌱</span>
+          <span style="font-size:0.8rem;font-weight:700;color:var(--sg-primary);letter-spacing:0.05em;text-transform:uppercase;">With SproutGit</span>
+        </div>
+        <div class="dir-tree">
+          <div><span class="dim">~/projects/myapp/</span></div>
+          <div>├── <span class="hl">root/</span>          <span class="dim"># protected main checkout</span></div>
+          <div>├── <span class="hl">worktrees/</span></div>
+          <div>│   ├── <span class="hl">feature-auth/</span>   <span class="dim"># you</span></div>
+          <div>│   ├── <span class="hl">bugfix-nav/</span>     <span class="dim"># teammate</span></div>
+          <div>│   └── <span class="hl">agent-refactor/</span> <span class="dim"># AI agent</span></div>
+          <div>└── <span class="dim">.sproutgit/</span></div>
+        </div>
+        <ul style="margin:1.25rem 0 0;padding:0;list-style:none;display:flex;flex-direction:column;gap:0.75rem;">
+          {[
+            'Every task gets its own isolated directory',
+            'Switch instantly — no stash, no lost state',
+            'Agents work in parallel without collision',
+            'Merge when ready, from a clean foundation',
+          ].map(item => (
+            <li style="display:flex;align-items:flex-start;gap:0.5rem;font-size:0.875rem;color:var(--sg-text-dim);">
+              <span style="color:var(--sg-primary);margin-top:2px;flex-shrink:0;">✓</span>
+              {item}
+            </li>
+          ))}
+        </ul>
+      </div>
+    </div>
+
+    <!-- Callout -->
+    <div data-animate style="
+      margin-top: 2.5rem;
+      padding: 1.25rem 1.75rem;
+      background: color-mix(in srgb, var(--sg-primary) 8%, var(--sg-surface));
+      border: 1px solid color-mix(in srgb, var(--sg-primary) 25%, transparent);
+      border-radius: 10px;
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+    ">
+      <span aria-hidden="true" style="font-size:1.5rem;flex-shrink:0;">💡</span>
+      <p style="margin:0;font-size:0.9rem;color:var(--sg-text-dim);line-height:1.6;">
+        <strong style="color:var(--sg-text);">This is native Git.</strong>
+        <code style="background:color-mix(in srgb, var(--sg-primary) 10%, transparent);color:var(--sg-primary);padding:1px 5px;border-radius:4px;font-size:0.85em;">git worktree</code>
+        has been in Git since 2.5 (2015). SproutGit makes it the default workflow with
+        a clean directory layout, visual management, and lifecycle hooks — no terminal required.
+      </p>
+    </div>
+  </div>
+</section>
+
+<style>
+  @media (max-width: 640px) {
+    .why-grid { grid-template-columns: 1fr !important; }
+  }
+</style>
