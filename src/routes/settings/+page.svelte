@@ -60,8 +60,20 @@
     .catch(() => {
       appVersion = "unknown";
     });
-  getGitInfo().then((info) => { gitInfo = info; });
-  getGithubAuthStatus().then((s) => { githubAuth = s; });
+  getGitInfo()
+    .then((info) => {
+      gitInfo = info;
+    })
+    .catch(() => {
+      gitInfo = { installed: false, version: "Unavailable" };
+    });
+  getGithubAuthStatus()
+    .then((s) => {
+      githubAuth = s;
+    })
+    .catch(() => {
+      githubAuth = { authenticated: false, username: null, provider: "github" };
+    });
 
   Promise.all([
     detectEditors(),
