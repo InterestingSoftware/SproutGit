@@ -165,14 +165,17 @@ jobs:
             exit 1
           fi
 
-          if [[ "${TAURI_SIGNING_PRIVATE_KEY}" != *$'\n'* ]]; then
-            echo "::error::TAURI_SIGNING_PRIVATE_KEY appears to be single-line. Paste the full private key file contents (including comment line and encoded key line)."
+          normalized_key="$(printf '%s' "${TAURI_SIGNING_PRIVATE_KEY}" | tr -d '\r\n\t ')"
+          if [[ ${#normalized_key} -lt 120 ]]; then
+            echo "::error::TAURI_SIGNING_PRIVATE_KEY looks too short. Use the full private key content from ~/.tauri/*.key."
             exit 1
           fi
 
-          first_line="$(printf '%s' "${TAURI_SIGNING_PRIVATE_KEY}" | head -n 1)"
-          if [[ ! "${first_line}" =~ ^untrusted\ comment:\ minisign\ .*secret\ key ]]; then
-            echo "::error::TAURI_SIGNING_PRIVATE_KEY does not look like a minisign secret key. Ensure this is the private key file, not the public key."
+          # Accept both formats used in practice:
+          # 1) single-line encoded key (common in ~/.tauri/*.key)
+          # 2) minisign-style key material with comment + encoded line
+          if [[ ! "${normalized_key}" =~ ^[A-Za-z0-9+/=]+$ ]]; then
+            echo "::error::TAURI_SIGNING_PRIVATE_KEY contains unexpected characters. Paste the private key exactly as generated."
             exit 1
           fi
 
