@@ -6,6 +6,15 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Output, Stdio};
 use std::time::{SystemTime, UNIX_EPOCH};
 
+/// Strip the `\\?\` extended-length path prefix that Windows `canonicalize()` adds.
+/// Git for Windows cannot handle these prefixed paths correctly.
+fn strip_win_prefix(p: PathBuf) -> PathBuf {
+    #[cfg(target_os = "windows")]
+    return dunce::simplified(&p).to_path_buf();
+    #[cfg(not(target_os = "windows"))]
+    p
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum GitAction {
     GitInfo,
@@ -29,11 +38,14 @@ pub enum GitAction {
     ReadGitConfig,
     SetGitConfig,
     UnsetGitConfig,
+    StageFiles,
+    UnstageFiles,
+    CreateCommit,
 }
 
 impl GitAction {
     #[cfg(test)]
-    pub const ALL: [GitAction; 21] = [
+    pub const ALL: [GitAction; 24] = [
         GitAction::GitInfo,
         GitAction::WorktreeList,
         GitAction::ListRefs,
@@ -55,6 +67,9 @@ impl GitAction {
         GitAction::ReadGitConfig,
         GitAction::SetGitConfig,
         GitAction::UnsetGitConfig,
+        GitAction::StageFiles,
+        GitAction::UnstageFiles,
+        GitAction::CreateCommit,
     ];
 
     pub fn label(self) -> &'static str {
@@ -80,6 +95,9 @@ impl GitAction {
             GitAction::ReadGitConfig => "read_git_config",
             GitAction::SetGitConfig => "set_git_config",
             GitAction::UnsetGitConfig => "unset_git_config",
+            GitAction::StageFiles => "stage_files",
+            GitAction::UnstageFiles => "unstage_files",
+            GitAction::CreateCommit => "create_commit",
         }
     }
 }
@@ -164,7 +182,7 @@ pub fn augmented_path() -> String {
 }
 
 pub fn validate_no_control_chars(value: &str, field_name: &str) -> Result<(), String> {
-    if value.chars().any(|ch| ch.is_control()) {
+    if value.chars().any(|ch| ch.is_control() && ch != '\n' && ch != '\r') {
         return Err(format!(
             "{field_name} contains unsupported control characters"
         ));
@@ -287,6 +305,7 @@ pub fn normalize_existing_path(input: &str) -> Result<PathBuf, String> {
     }
 
     path.canonicalize()
+        .map(strip_win_prefix)
         .map_err(|_| "Failed to resolve repository path".to_string())
 }
 
@@ -307,6 +326,7 @@ pub fn normalize_or_create_dir(input: &str) -> Result<PathBuf, String> {
     }
 
     path.canonicalize()
+        .map(strip_win_prefix)
         .map_err(|_| "Failed to resolve workspace path".to_string())
 }
 
@@ -613,6 +633,12 @@ mod tests {
     #[test]
     fn control_chars_accepts_empty_string() {
         assert!(validate_no_control_chars("", "field").is_ok());
+    }
+
+    #[test]
+    fn control_chars_accepts_newlines() {
+        assert!(validate_no_control_chars("subject\n\nbody paragraph", "field").is_ok());
+        assert!(validate_no_control_chars("subject\r\nbody", "field").is_ok());
     }
 
     // ── ensure_git_success ──

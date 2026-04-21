@@ -8,6 +8,7 @@
 pub mod diff;
 pub mod helpers;
 pub mod operations;
+pub mod staging;
 
 // Re-export only what's used by Tauri handlers and other modules
 #[allow(unused_imports)]

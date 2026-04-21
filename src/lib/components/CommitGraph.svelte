@@ -659,10 +659,9 @@
           <!-- Subject + refs -->
           <div class="min-w-0 flex-1 truncate">
             {#each row.refs as ref}
-              <span
-                class="mr-1 inline-block cursor-pointer rounded px-1 py-px text-[10px] font-medium transition-opacity hover:opacity-80 {refBadgeClass(ref)}"
-                role="button"
-                tabindex="0"
+              <button
+                type="button"
+                class="mr-1 inline-block cursor-pointer appearance-none rounded px-1 py-px text-[10px] font-medium transition-opacity hover:opacity-80 {refBadgeClass(ref)}"
                 aria-label="Copy ref {ref}"
                 onclick={(e) => handleRefClick(ref, e)}
                 onkeydown={(e) => handleRefKeydown(ref, e)}
@@ -673,7 +672,7 @@
                   <GitBranch class="mr-0.5 inline h-2.5 w-2.5" />
                 {/if}
                 {ref}
-              </span>
+              </button>
             {/each}
             <span class="text-xs text-[var(--sg-text)]">{row.subject}</span>
           </div>

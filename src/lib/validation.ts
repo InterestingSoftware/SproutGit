@@ -75,3 +75,26 @@ export function validateSourceRef(ref: string): string | null {
   }
   return null;
 }
+
+/**
+ * Validate a commit message.
+ * Returns null if valid, or an error message string if invalid.
+ */
+export function validateCommitMessage(message: string): string | null {
+  const trimmed = message.trim();
+
+  if (!trimmed) {
+    return "Commit message is required.";
+  }
+
+  // eslint-disable-next-line no-control-regex
+  if (/[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]/.test(trimmed)) {
+    return "Commit message contains unsupported control characters.";
+  }
+
+  if (trimmed.length > 10_000) {
+    return "Commit message is too long (max 10,000 characters).";
+  }
+
+  return null;
+}

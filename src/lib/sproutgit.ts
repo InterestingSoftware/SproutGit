@@ -235,11 +235,7 @@ export const listWorktrees = (repoPath: string) =>
 
 export const listRefs = (repoPath: string) => invoke<RefsResult>('list_refs', { repoPath });
 
-export const getCommitGraph = (
-  repoPath: string,
-  limit?: number | null,
-  skip?: number | null
-) =>
+export const getCommitGraph = (repoPath: string, limit?: number | null, skip?: number | null) =>
   invoke<CommitGraphResult>('get_commit_graph', {
     repoPath,
     limit: limit ?? null,
@@ -317,11 +313,8 @@ export const toggleWorkspaceHook = (workspacePath: string, hookId: string, enabl
 export const getAvailableHookShells = () =>
   invoke<WorkspaceHookShell[]>('get_available_hook_shells');
 
-export const runWorkspaceHook = (
-  workspacePath: string,
-  hookId: string,
-  worktreePath: string
-) => invoke<void>('run_workspace_hook', { workspacePath, hookId, worktreePath });
+export const runWorkspaceHook = (workspacePath: string, hookId: string, worktreePath: string) =>
+  invoke<void>('run_workspace_hook', { workspacePath, hookId, worktreePath });
 
 export const openInEditor = (worktreePath: string) =>
   invoke<string>('open_in_editor', { worktreePath });
@@ -376,3 +369,57 @@ export const getGitConfig = (key: string) => invoke<string>('get_git_config', { 
 
 export const setGitConfig = (key: string, value: string) =>
   invoke<void>('set_git_config', { key, value });
+
+export type StatusFileEntry = {
+  path: string;
+  origPath?: string;
+  indexStatus: string;
+  workTreeStatus: string;
+};
+
+export type WorktreeStatusResult = {
+  worktreePath: string;
+  files: StatusFileEntry[];
+};
+
+export type CommitResult = {
+  hash: string;
+  shortHash: string;
+  subject: string;
+};
+
+export type WorkingDiffResult = {
+  worktreePath: string;
+  filePath: string | null;
+  staged: boolean;
+  diff: string;
+};
+
+export const getWorktreeStatus = (worktreePath: string) =>
+  invoke<WorktreeStatusResult>('get_worktree_status', { worktreePath });
+
+export const stageFiles = (worktreePath: string, paths: string[]) =>
+  invoke<WorktreeStatusResult>('stage_files', { worktreePath, paths });
+
+export const unstageFiles = (worktreePath: string, paths: string[]) =>
+  invoke<WorktreeStatusResult>('unstage_files', { worktreePath, paths });
+
+export const createCommit = (worktreePath: string, message: string) =>
+  invoke<CommitResult>('create_commit', { worktreePath, message });
+
+export const getWorkingDiff = (worktreePath: string, staged: boolean, filePath?: string) =>
+  invoke<WorkingDiffResult>('get_working_diff', {
+    worktreePath,
+    staged,
+    filePath: filePath || null,
+  });
+
+// ── File Watcher ──
+
+export const startWatchingWorktrees = (paths: string[], rootPath?: string | null) =>
+  invoke<void>('start_watching_worktrees', { paths, rootPath: rootPath ?? null });
+
+export const stopWatchingWorktrees = () => invoke<void>('stop_watching_worktrees');
+
+export const onWorktreeChanged = (callback: (worktreePath: string) => void): Promise<UnlistenFn> =>
+  listen<string>('worktree-changed', event => callback(event.payload));

@@ -4,6 +4,7 @@ mod editor;
 mod git;
 mod github;
 mod hooks;
+mod watcher;
 mod workspace;
 
 #[tauri::command]
@@ -24,6 +25,7 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
+        .manage(watcher::WatcherState(std::sync::Mutex::new(None)))
         .setup(|_app| {
             #[cfg(target_os = "windows")]
             {
@@ -45,6 +47,11 @@ pub fn run() {
             git::operations::reset_worktree_branch,
             git::diff::get_diff_files,
             git::diff::get_diff_content,
+            git::staging::get_worktree_status,
+            git::staging::stage_files,
+            git::staging::unstage_files,
+            git::staging::create_commit,
+            git::staging::get_working_diff,
             editor::open_in_editor,
             editor::detect_editors,
             editor::get_git_config,
@@ -71,6 +78,8 @@ pub fn run() {
             github::github_logout,
             github::list_github_repos,
             get_home_dir,
+            watcher::start_watching_worktrees,
+            watcher::stop_watching_worktrees,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

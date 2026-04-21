@@ -141,6 +141,14 @@
     importFolderNameManual =
       importFolderName !== "" && importFolderName !== repoNameFromPath(importRepoPath);
   }
+  
+  async function browseProjectsFolder() {
+    const dir = await open({ directory: true, title: "Choose projects folder" });
+    if (dir) {
+      projectsFolder = dir;
+      saveProjectsFolder();
+    }
+  }
 
   async function saveProjectsFolder() {
     await setAppSetting(PROJECTS_FOLDER_SETTING_KEY, projectsFolder);
@@ -422,7 +430,7 @@
             />
             <button
               type="button"
-              onclick={async () => { const dir = await open({ directory: true, title: "Choose projects folder" }); if (dir) { projectsFolder = dir; saveProjectsFolder(); } }}
+              onclick={browseProjectsFolder}
               class="shrink-0 rounded border border-[var(--sg-border)] bg-[var(--sg-surface-raised)] px-2.5 py-1.5 text-xs text-[var(--sg-text-dim)] hover:bg-[var(--sg-border)] hover:text-[var(--sg-text)]"
             >Browse</button>
           </div>

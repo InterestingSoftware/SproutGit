@@ -31,26 +31,34 @@
   hljs.registerLanguage("go", go);
 
   type Props = {
-    files: DiffFileEntry[];
-    selectedFile: string | null;
     diff: string;
     loading: boolean;
-    commitLabel: string;
-    commits: CommitEntry[];
-    onselectfile: (path: string) => void;
-    onclose: () => void;
+    // Optional: path of the displayed file (used for syntax-language detection in minimal mode).
+    filePath?: string | null;
+    // Full history-mode props (all optional – omit to use minimal/standalone mode).
+    files?: DiffFileEntry[];
+    selectedFile?: string | null;
+    commitLabel?: string;
+    commits?: CommitEntry[];
+    onselectfile?: (path: string) => void;
+    onclose?: () => void;
   };
 
   let {
-    files,
-    selectedFile,
     diff,
     loading,
-    commitLabel,
-    commits,
+    filePath = null,
+    files,
+    selectedFile = null,
+    commitLabel = "",
+    commits = [],
     onselectfile,
     onclose,
   }: Props = $props();
+
+  // Effective path for syntax language detection: prefers the explicit filePath prop
+  // (used by the staging panel) and falls back to the history-mode selectedFile.
+  const effectivePath = $derived(filePath ?? selectedFile ?? null);
 
   function statusIcon(status: string): string {
     switch (status) {
@@ -156,7 +164,7 @@
   // Pre-highlight all code lines together for consistent tokenization
   const highlightedLines = $derived.by((): Map<number, string> => {
     const map = new Map<number, string>();
-    const lang = langForFile(selectedFile);
+    const lang = langForFile(effectivePath);
     if (!lang) return map;
 
     // Collect code lines with their indices
@@ -173,12 +181,11 @@
     if (codeLines.length === 0) return map;
 
     try {
-      // Highlight as a single block for consistent state tracking
-      const joined = codeLines.join("\n");
-      const result = hljs.highlight(joined, { language: lang, ignoreIllegals: true });
-      const htmlLines = result.value.split("\n");
-      for (let i = 0; i < codeIndices.length && i < htmlLines.length; i++) {
-        map.set(codeIndices[i], htmlLines[i]);
+      // Highlight line by line to avoid broken unclosed span tags across lines.
+      // Svelte {@html} won't work correctly with split multiline span tags.
+      for (let i = 0; i < codeIndices.length; i++) {
+        const result = hljs.highlight(codeLines[i], { language: lang, ignoreIllegals: true });
+        map.set(codeIndices[i], result.value);
       }
     } catch {
       // Highlighting failed, return empty map (will fall back to plain text)
@@ -187,7 +194,76 @@
   });
 </script>
 
-<div class="flex h-full flex-col">
+{#snippet diffPane()}
+  <div class="min-w-0 flex-1 overflow-auto bg-[var(--sg-bg)]">
+    {#if loading}
+      <div class="flex h-full items-center justify-center">
+        <Spinner size="md" label="Loading diff…" />
+      </div>
+    {:else if files && !selectedFile}
+      <div class="flex h-full items-center justify-center text-xs text-[var(--sg-text-faint)]">
+        Select a file to view its diff
+      </div>
+    {:else if parsedDiff.length === 0}
+      <div class="flex h-full items-center justify-center text-xs text-[var(--sg-text-faint)]">
+        No diff content (file may be binary or empty)
+      </div>
+    {:else}
+      <table class="w-full border-collapse font-mono text-[11px] leading-[18px]">
+        <tbody>
+          {#each parsedDiff as line, idx}
+            {@const hl = highlightedLines.get(idx)}
+            {#if line.type === "header"}
+              <tr class="bg-[var(--sg-surface)]">
+                <td class="select-none px-1 text-right text-[var(--sg-text-faint)]" colspan="2"></td>
+                <td class="px-2 text-[var(--sg-text-faint)]">{line.content}</td>
+              </tr>
+            {:else if line.type === "hunk"}
+              <tr class="bg-[var(--sg-primary)]/5">
+                <td class="select-none px-1 text-right text-[var(--sg-primary)]" colspan="2">···</td>
+                <td class="px-2 text-[var(--sg-primary)]">{line.content}</td>
+              </tr>
+            {:else if line.type === "add"}
+              <tr class="bg-green-500/10">
+                <td class="w-[1px] select-none whitespace-nowrap border-r border-[var(--sg-border-subtle)] px-1 text-right text-[var(--sg-text-faint)]"></td>
+                <td class="w-[1px] select-none whitespace-nowrap border-r border-[var(--sg-border-subtle)] px-1 text-right text-[var(--sg-text-faint)]">{line.newNum}</td>
+                {#if hl}
+                  <td class="diff-hl-add whitespace-pre-wrap break-all px-2">+{@html hl}</td>
+                {:else}
+                  <td class="whitespace-pre-wrap break-all px-2 text-green-400">+{line.content}</td>
+                {/if}
+              </tr>
+            {:else if line.type === "del"}
+              <tr class="bg-red-500/10">
+                <td class="w-[1px] select-none whitespace-nowrap border-r border-[var(--sg-border-subtle)] px-1 text-right text-[var(--sg-text-faint)]">{line.oldNum}</td>
+                <td class="w-[1px] select-none whitespace-nowrap border-r border-[var(--sg-border-subtle)] px-1 text-right text-[var(--sg-text-faint)]"></td>
+                {#if hl}
+                  <td class="diff-hl-del whitespace-pre-wrap break-all px-2">-{@html hl}</td>
+                {:else}
+                  <td class="whitespace-pre-wrap break-all px-2 text-red-400">-{line.content}</td>
+                {/if}
+              </tr>
+            {:else if line.type === "context"}
+              <tr>
+                <td class="w-[1px] select-none whitespace-nowrap border-r border-[var(--sg-border-subtle)] px-1 text-right text-[var(--sg-text-faint)]">{line.oldNum}</td>
+                <td class="w-[1px] select-none whitespace-nowrap border-r border-[var(--sg-border-subtle)] px-1 text-right text-[var(--sg-text-faint)]">{line.newNum}</td>
+                {#if hl}
+                  <td class="diff-hl whitespace-pre-wrap break-all px-2"> {@html hl}</td>
+                {:else}
+                  <td class="whitespace-pre-wrap break-all px-2 text-[var(--sg-text-dim)]"> {line.content}</td>
+                {/if}
+              </tr>
+            {/if}
+          {/each}
+        </tbody>
+      </table>
+    {/if}
+  </div>
+{/snippet}
+
+{#if files}
+  <!-- Full history mode: commit header + file list sidebar + diff content -->
+  <div class="flex h-full flex-col">
   <!-- Header -->
   <div class="flex shrink-0 items-center gap-2 border-b border-[var(--sg-border)] bg-[var(--sg-surface)] px-3 py-1.5">
     <div class="min-w-0 flex-1">
@@ -221,7 +297,7 @@
         {#each files as file}
           <button
             class="flex w-full items-center gap-1.5 px-2 py-1 text-left text-[11px] hover:bg-[var(--sg-surface-raised)] {selectedFile === file.path ? 'bg-[var(--sg-surface-raised)] text-[var(--sg-text)]' : 'text-[var(--sg-text-dim)]'}"
-            onclick={() => onselectfile(file.path)}
+            onclick={() => onselectfile?.(file.path)}
           >
             <span class="shrink-0 font-mono text-[10px] font-bold {statusColor(file.status)}" title={file.status}>{statusIcon(file.status)}</span>
             <span class="min-w-0 truncate">
@@ -233,69 +309,11 @@
     </div>
 
     <!-- Diff content -->
-    <div class="min-w-0 flex-1 overflow-auto bg-[var(--sg-bg)]">
-      {#if loading}
-        <div class="flex h-full items-center justify-center">
-          <Spinner size="md" label="Loading diff…" />
-        </div>
-      {:else if !selectedFile}
-        <div class="flex h-full items-center justify-center text-xs text-[var(--sg-text-faint)]">
-          Select a file to view its diff
-        </div>
-      {:else if parsedDiff.length === 0}
-        <div class="flex h-full items-center justify-center text-xs text-[var(--sg-text-faint)]">
-          No diff content
-        </div>
-      {:else}
-        <table class="w-full border-collapse font-mono text-[11px] leading-[18px]">
-          <tbody>
-            {#each parsedDiff as line, idx}
-              {@const hl = highlightedLines.get(idx)}
-              {#if line.type === "header"}
-                <tr class="bg-[var(--sg-surface)]">
-                  <td class="select-none px-1 text-right text-[var(--sg-text-faint)]" colspan="2"></td>
-                  <td class="px-2 text-[var(--sg-text-faint)]">{line.content}</td>
-                </tr>
-              {:else if line.type === "hunk"}
-                <tr class="bg-[var(--sg-primary)]/5">
-                  <td class="select-none px-1 text-right text-[var(--sg-primary)]" colspan="2">···</td>
-                  <td class="px-2 text-[var(--sg-primary)]">{line.content}</td>
-                </tr>
-              {:else if line.type === "add"}
-                <tr class="bg-green-500/10">
-                  <td class="w-[1px] select-none whitespace-nowrap border-r border-[var(--sg-border-subtle)] px-1 text-right text-[var(--sg-text-faint)]"></td>
-                  <td class="w-[1px] select-none whitespace-nowrap border-r border-[var(--sg-border-subtle)] px-1 text-right text-[var(--sg-text-faint)]">{line.newNum}</td>
-                  {#if hl}
-                    <td class="diff-hl-add whitespace-pre-wrap break-all px-2">+{@html hl}</td>
-                  {:else}
-                    <td class="whitespace-pre-wrap break-all px-2 text-green-400">+{line.content}</td>
-                  {/if}
-                </tr>
-              {:else if line.type === "del"}
-                <tr class="bg-red-500/10">
-                  <td class="w-[1px] select-none whitespace-nowrap border-r border-[var(--sg-border-subtle)] px-1 text-right text-[var(--sg-text-faint)]">{line.oldNum}</td>
-                  <td class="w-[1px] select-none whitespace-nowrap border-r border-[var(--sg-border-subtle)] px-1 text-right text-[var(--sg-text-faint)]"></td>
-                  {#if hl}
-                    <td class="diff-hl-del whitespace-pre-wrap break-all px-2">-{@html hl}</td>
-                  {:else}
-                    <td class="whitespace-pre-wrap break-all px-2 text-red-400">-{line.content}</td>
-                  {/if}
-                </tr>
-              {:else if line.type === "context"}
-                <tr>
-                  <td class="w-[1px] select-none whitespace-nowrap border-r border-[var(--sg-border-subtle)] px-1 text-right text-[var(--sg-text-faint)]">{line.oldNum}</td>
-                  <td class="w-[1px] select-none whitespace-nowrap border-r border-[var(--sg-border-subtle)] px-1 text-right text-[var(--sg-text-faint)]">{line.newNum}</td>
-                  {#if hl}
-                    <td class="diff-hl whitespace-pre-wrap break-all px-2"> {@html hl}</td>
-                  {:else}
-                    <td class="whitespace-pre-wrap break-all px-2 text-[var(--sg-text-dim)]"> {line.content}</td>
-                  {/if}
-                </tr>
-              {/if}
-            {/each}
-          </tbody>
-        </table>
-      {/if}
-    </div>
+    {@render diffPane()}
   </div>
 </div>
+{:else}
+  <!-- Minimal/standalone mode: just the highlighted diff pane, no header or file list.
+       The parent is responsible for providing its own header above this component. -->
+  {@render diffPane()}
+{/if}

@@ -24,6 +24,16 @@
     onHookProgress,
     resetWorktreeBranch,
     runWorkspaceHook,
+    getWorktreeStatus,
+    getWorkingDiff,
+    stageFiles,
+    unstageFiles,
+    createCommit,
+    startWatchingWorktrees,
+    stopWatchingWorktrees,
+    onWorktreeChanged,
+    type StatusFileEntry,
+    type WorktreeStatusResult,
     type CommitEntry,
     type CommitGraphResult,
     type DiffFileEntry,
@@ -399,6 +409,331 @@
     graphSeenHashes = new Set(nextGraph.commits.map((commit) => commit.hash));
   }
 
+  // ── Staging/Unstaging State ──
+  let worktreeStatus = $state<StatusFileEntry[]>([]);
+  let stagedFiles = $derived(worktreeStatus.filter((f) => f.indexStatus !== " " && f.indexStatus !== "?"));
+  let unstagedFiles = $derived(worktreeStatus.filter((f) => f.workTreeStatus !== " "));
+  let commitMessage = $state("");
+  let statusLoading = $state(false);
+  let stagingAction = $state<string | null>(null);
+  let committing = $state(false);
+  // Initialise from sessionStorage so it survives HMR reloads.
+  // (Must be set here, before the persisting $effect, to avoid the effect
+  // overwriting a saved "false" before loadWorkspace() can read it.)
+  let showHistory = $state<boolean>(
+    typeof sessionStorage !== "undefined"
+      ? sessionStorage.getItem("sg_show_history") !== "false"
+      : true,
+  );
+
+  // Per-worktree change counts for sidebar badges
+  let worktreeChangeCounts = $state<Record<string, number>>({});
+
+  // ── Panel split state ──
+  // Percentage (0–100) of the file-list area given to the unstaged panel.
+  let splitPct = $state(50);
+  let isSplitDragging = $state(false);
+  let splitContainerEl = $state<HTMLElement | null>(null);
+
+  function onSplitPointerDown(e: PointerEvent) {
+    e.preventDefault();
+    isSplitDragging = true;
+    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+  }
+
+  function onSplitPointerMove(e: PointerEvent) {
+    if (!isSplitDragging || !splitContainerEl) return;
+    const rect = splitContainerEl.getBoundingClientRect();
+    const raw = ((e.clientY - rect.top) / rect.height) * 100;
+    splitPct = Math.min(85, Math.max(15, raw));
+  }
+
+  function onSplitPointerUp(e: PointerEvent) {
+    isSplitDragging = false;
+    (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId);
+  }
+
+  // ── Multi-select State ──
+  // Keys are composite strings: "staged:<path>" or "unstaged:<path>".
+  // This prevents the same filename appearing in both lists from being co-selected.
+  let selectedFilePaths = $state<Set<string>>(new Set());
+  let lastClickedKey = $state<string | null>(null);
+  let isDragSelecting = $state(false);
+  let dragStartKey = $state<string | null>(null);
+  let didDragExpand = false; // non-reactive: set during drag, cleared in onclick
+  const hasMultiSelection = $derived(selectedFilePaths.size > 1);
+  // Ordered composite keys for range/drag selection spanning both sections.
+  const allFileKeys = $derived([
+    ...unstagedFiles.map((f) => `unstaged:${f.path}`),
+    ...stagedFiles.map((f) => `staged:${f.path}`),
+  ]);
+
+  async function loadAllWorktreeChangeCounts(paths: string[]) {
+    const results = await Promise.all(
+      paths.map(async (p) => {
+        try {
+          const r = await getWorktreeStatus(p);
+          return [p, r.files.length] as [string, number];
+        } catch {
+          return [p, 0] as [string, number];
+        }
+      }),
+    );
+    worktreeChangeCounts = Object.fromEntries(results);
+  }
+
+  // ── Staging Diff State ──
+  let stagingDiffFile = $state<string | null>(null);
+  let stagingDiffStaged = $state(false);
+  let stagingDiffContent = $state("");
+  let stagingDiffLoading = $state(false);
+
+  // Original (pre-rename) path for the currently-previewed file, if it is a rename.
+  const stagingDiffOrigPath = $derived.by(() => {
+    if (!stagingDiffFile) return null;
+    const entry = worktreeStatus.find((f) => f.path === stagingDiffFile);
+    return entry?.origPath ?? null;
+  });
+
+  async function loadStagingDiff(path: string, staged: boolean) {
+    if (!selectedWorktree) return;
+    stagingDiffFile = path;
+    stagingDiffStaged = staged;
+    stagingDiffLoading = true;
+    try {
+      const result = await getWorkingDiff(selectedWorktree.path, staged, path);
+      stagingDiffContent = result.diff;
+    } catch (err) {
+      toast.error(`Failed to load diff: ${err}`);
+      stagingDiffContent = "";
+    } finally {
+      stagingDiffLoading = false;
+    }
+  }
+
+  async function loadWorktreeStatus() {
+    if (!selectedWorktree) {
+      worktreeStatus = [];
+      return;
+    }
+    statusLoading = true;
+    try {
+      const result = await getWorktreeStatus(selectedWorktree.path);
+      worktreeStatus = result.files;
+      worktreeChangeCounts[selectedWorktree.path] = result.files.length;
+      // Prune selected keys that no longer exist after an external status change.
+      if (selectedFilePaths.size > 0) {
+        const validKeys = new Set<string>([
+          ...result.files
+            .filter((f) => f.indexStatus !== " " && f.indexStatus !== "?")
+            .map((f) => `staged:${f.path}`),
+          ...result.files
+            .filter((f) => f.workTreeStatus !== " ")
+            .map((f) => `unstaged:${f.path}`),
+        ]);
+        selectedFilePaths = new Set([...selectedFilePaths].filter((k) => validKeys.has(k)));
+      }
+    } catch (err) {
+      toast.error(`Failed to load status: ${err}`);
+    } finally {
+      statusLoading = false;
+    }
+  }
+
+  async function handleStageFiles(paths: string[]) {
+    if (!selectedWorktree) return;
+    stagingAction = paths[0];
+    try {
+      const result = await stageFiles(selectedWorktree.path, paths);
+      worktreeStatus = result.files;
+      // Refresh diff if the staged file is currently shown as unstaged
+      if (stagingDiffFile && paths.includes(stagingDiffFile) && !stagingDiffStaged) {
+        await loadStagingDiff(stagingDiffFile, true);
+      }
+    } catch (err) {
+      toast.error(String(err));
+    } finally {
+      stagingAction = null;
+    }
+  }
+
+  async function handleUnstageFiles(paths: string[]) {
+    if (!selectedWorktree) return;
+    stagingAction = paths[0];
+    try {
+      const result = await unstageFiles(selectedWorktree.path, paths);
+      worktreeStatus = result.files;
+      // Refresh diff if the unstaged file is currently shown as staged
+      if (stagingDiffFile && paths.includes(stagingDiffFile) && stagingDiffStaged) {
+        await loadStagingDiff(stagingDiffFile, false);
+      }
+    } catch (err) {
+      toast.error(String(err));
+    } finally {
+      stagingAction = null;
+    }
+  }
+
+  async function handleCreateCommit() {
+    if (!selectedWorktree || !commitMessage.trim()) {
+      toast.error("Commit message is required");
+      return;
+    }
+    committing = true;
+    try {
+      const result = await createCommit(selectedWorktree.path, commitMessage);
+      toast.success(`Committed: ${result.subject}`);
+      commitMessage = "";
+      stagingDiffFile = null;
+      stagingDiffContent = "";
+      refreshWorkspaceData();
+    } catch (err) {
+      toast.error(String(err));
+    } finally {
+      committing = false;
+    }
+  }
+
+  // ── File interaction handlers for multi-select ──
+
+  function handleFileMouseDown(e: MouseEvent, key: string) {
+    // Only initiate drag for plain clicks (not modifier-key selections).
+    if (e.shiftKey || e.ctrlKey || e.metaKey) return;
+    isDragSelecting = true;
+    dragStartKey = key;
+    didDragExpand = false;
+  }
+
+  function handleFileMouseEnter(key: string) {
+    if (!isDragSelecting || !dragStartKey) return;
+    const start = allFileKeys.indexOf(dragStartKey);
+    const end = allFileKeys.indexOf(key);
+    if (start === -1 || end === -1 || start === end) return;
+    const [from, to] = start < end ? [start, end] : [end, start];
+    selectedFilePaths = new Set(allFileKeys.slice(from, to + 1));
+    lastClickedKey = dragStartKey;
+    didDragExpand = true;
+    // No diff to show while multiple files are being drag-selected.
+    stagingDiffFile = null;
+    stagingDiffContent = "";
+  }
+
+  function handleFileClick(e: MouseEvent, key: string) {
+    isDragSelecting = false;
+    if (didDragExpand) {
+      // Selection was already expanded during drag; just finalize.
+      didDragExpand = false;
+      return;
+    }
+    if (e.shiftKey && lastClickedKey) {
+      // Range-select from the last clicked file to this one.
+      const start = allFileKeys.indexOf(lastClickedKey);
+      const end = allFileKeys.indexOf(key);
+      const [from, to] = start < end ? [start, end] : [end, start];
+      const range = allFileKeys.slice(from, to + 1);
+      if (e.ctrlKey || e.metaKey) {
+        // Ctrl/Cmd+Shift: append range to the existing selection.
+        selectedFilePaths = new Set([...selectedFilePaths, ...range]);
+      } else {
+        // Plain Shift: replace selection with range.
+        selectedFilePaths = new Set(range);
+      }
+      // Keep lastClickedKey as the range anchor for chained shift+clicks.
+    } else if (e.ctrlKey || e.metaKey) {
+      // Toggle this file's presence in the selection.
+      const next = new Set(selectedFilePaths);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      selectedFilePaths = next;
+      lastClickedKey = key;
+    } else {
+      // Plain click: select only this file.
+      selectedFilePaths = new Set([key]);
+      lastClickedKey = key;
+    }
+    // Show diff for a single selection; clear it for zero or multiple.
+    if (selectedFilePaths.size === 1) {
+      const onlyKey = [...selectedFilePaths][0];
+      const isStaged = onlyKey.startsWith("staged:");
+      const onlyPath = onlyKey.slice(isStaged ? 7 : 9); // "staged:".length=7, "unstaged:".length=9
+      void loadStagingDiff(onlyPath, isStaged);
+    } else {
+      stagingDiffFile = null;
+      stagingDiffContent = "";
+    }
+  }
+
+  // End drag selection on any mouseup (even outside the list).
+  $effect(() => {
+    function endDrag() {
+      isDragSelecting = false;
+      dragStartKey = null;
+    }
+    window.addEventListener("mouseup", endDrag);
+    return () => window.removeEventListener("mouseup", endDrag);
+  });
+
+  $effect(() => {
+    if (selectedWorktree) {
+      // Reset file selection whenever the active worktree changes.
+      selectedFilePaths = new Set();
+      lastClickedKey = null;
+      loadWorktreeStatus();
+    }
+  });
+
+  // ── File Watcher ──
+
+  let unlistenWorktreeChanged: (() => void) | null = null;
+
+  async function handleWorktreeChanged(changedPathRaw: string) {
+    // Normalize path separators: the Rust watcher emits OS-native paths
+    // (backslashes on Windows) while listWorktrees returns git-output forward slashes.
+    const changedPath = changedPathRaw.replace(/\\/g, "/");
+    // Update the change count and file list for the specific worktree that changed.
+    // Never resets activeWorktreePath or showHistory, and never touches the graph
+    // (to avoid a visible full re-render while the user is on the Changes tab).
+    try {
+      const result = await getWorktreeStatus(changedPath);
+      worktreeChangeCounts[changedPath] = result.files.length;
+      if (changedPath === selectedWorktree?.path) {
+        worktreeStatus = result.files;
+        // Refresh active diff to reflect the new working tree / index state.
+        if (stagingDiffFile && !showHistory) {
+          void loadStagingDiff(stagingDiffFile, stagingDiffStaged);
+        }
+      }
+    } catch {
+      // Ignore — worktree may have been deleted.
+    }
+  }
+
+  async function setupWatcher() {
+    if (!workspace) return;
+    const allPaths = worktrees.map((wt) => wt.path);
+    try {
+      await startWatchingWorktrees(allPaths, workspace.rootPath);
+      if (unlistenWorktreeChanged) unlistenWorktreeChanged();
+      unlistenWorktreeChanged = await onWorktreeChanged(handleWorktreeChanged);
+    } catch (e) {
+      console.warn("Failed to start file watcher:", e);
+    }
+  }
+
+  onDestroy(() => {
+    unlistenWorktreeChanged?.();
+    void stopWatchingWorktrees();
+  });
+
+  // ── Session state persistence (survives HMR reloads in dev mode) ──
+
+  $effect(() => {
+    if (activeWorktreePath) sessionStorage.setItem("sg_active_wt", activeWorktreePath);
+  });
+  $effect(() => {
+    sessionStorage.setItem("sg_show_history", String(showHistory));
+  });
+
   async function loadWorkspace() {
     loading = true;
     error = "";
@@ -426,7 +761,23 @@
       refs = refsData.refs;
       initializeGraphState(graphData);
       selectedRef = refsData.refs[0]?.name ?? "HEAD";
-      activeWorktreePath = worktreeData.worktrees[0]?.path ?? null;
+
+      // Restore the previously active worktree and tab if still valid (survives HMR).
+      const savedWt = sessionStorage.getItem("sg_active_wt");
+      const savedTab = sessionStorage.getItem("sg_show_history");
+      if (savedWt && worktreeData.worktrees.some((wt) => wt.path === savedWt)) {
+        activeWorktreePath = savedWt;
+      } else {
+        activeWorktreePath = worktreeData.worktrees[0]?.path ?? null;
+      }
+      // (showHistory is already initialised from sessionStorage at declaration time.)
+
+      // Load change counts for all non-root worktrees
+      const nonRoot = worktreeData.worktrees
+        .filter((wt) => wt.path !== status.rootPath)
+        .map((wt) => wt.path);
+      void loadAllWorktreeChangeCounts(nonRoot);
+      void setupWatcher();
     } catch (err) {
       error = String(err);
     } finally {
@@ -646,6 +997,13 @@
     worktrees = refreshedWt.worktrees;
     initializeGraphState(refreshedGraph);
     refs = refreshedRefs.refs;
+    // Refresh change counts for all non-root worktrees
+    const nonRoot = refreshedWt.worktrees
+      .filter((wt) => wt.path !== workspace!.rootPath)
+      .map((wt) => wt.path);
+    void loadAllWorktreeChangeCounts(nonRoot);
+    // Restart watcher so any newly created/deleted worktrees are included.
+    void setupWatcher();
   }
 
   async function loadMoreGraphCommits() {
@@ -858,6 +1216,35 @@
   }
 </script>
 
+{#snippet fileStatusIcon(status: string)}
+  {#if status === "A" || status === "?"}
+    <!-- Added / Untracked: green + -->
+    <svg class="h-3 w-3 shrink-0 text-green-400" viewBox="0 0 16 16" fill="currentColor">
+      <path d="M8 2a.75.75 0 0 1 .75.75v4.5h4.5a.75.75 0 0 1 0 1.5h-4.5v4.5a.75.75 0 0 1-1.5 0v-4.5h-4.5a.75.75 0 0 1 0-1.5h4.5v-4.5A.75.75 0 0 1 8 2Z"/>
+    </svg>
+  {:else if status === "D"}
+    <!-- Deleted: red − -->
+    <svg class="h-3 w-3 shrink-0 text-red-400" viewBox="0 0 16 16" fill="currentColor">
+      <path d="M2 8.75a.75.75 0 0 1 .75-.75h10.5a.75.75 0 0 1 0 1.5H2.75A.75.75 0 0 1 2 8.75Z"/>
+    </svg>
+  {:else if status === "R"}
+    <!-- Renamed: accent → -->
+    <svg class="h-3 w-3 shrink-0 text-[var(--sg-accent)]" viewBox="0 0 16 16" fill="currentColor">
+      <path d="M9.78 4.22a.75.75 0 0 1 1.06 0l3 3a.75.75 0 0 1 0 1.06l-3 3a.75.75 0 0 1-1.06-1.06l1.72-1.72H2.75a.75.75 0 0 1 0-1.5h8.75L9.78 5.28a.75.75 0 0 1 0-1.06Z"/>
+    </svg>
+  {:else if status === "U"}
+    <!-- Conflict: red ! -->
+    <svg class="h-3 w-3 shrink-0 text-red-400" viewBox="0 0 16 16" fill="currentColor">
+      <path d="M8 1a7 7 0 1 1 0 14A7 7 0 0 1 8 1Zm0 3.5a.75.75 0 0 0-.75.75v3.5a.75.75 0 0 0 1.5 0v-3.5A.75.75 0 0 0 8 4.5Zm0 6.5a1 1 0 1 0 0-2 1 1 0 0 0 0 2Z"/>
+    </svg>
+  {:else}
+    <!-- Modified (M, C, or other): amber dot -->
+    <svg class="h-3 w-3 shrink-0 text-amber-400" viewBox="0 0 16 16" fill="currentColor">
+      <path d="M11.013 1.427a1.75 1.75 0 0 1 2.474 0l1.086 1.086a1.75 1.75 0 0 1 0 2.474l-8.61 8.61c-.21.21-.47.364-.756.445l-3.251.93a.75.75 0 0 1-.927-.928l.929-3.25c.081-.286.235-.547.445-.756l8.61-8.61Z"/>
+    </svg>
+  {/if}
+{/snippet}
+
 <main class="flex h-screen flex-col">
   <!-- Context header -->
   <header data-tauri-drag-region class="flex shrink-0 items-center gap-3 border-b border-[var(--sg-border)] bg-[var(--sg-surface)] pt-1 pr-1 pb-1 pl-[var(--sg-titlebar-inset)]">
@@ -984,20 +1371,22 @@
             {:else}
               {#each nonRootWorktrees as wt}
                 <!-- svelte-ignore a11y_no_static_element_interactions -->
+                <!-- svelte-ignore a11y_click_events_have_key_events -->
                 <div
-                  class="group mb-0.5 flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-xs {activeWorktreePath === wt.path ? 'bg-[var(--sg-surface-raised)] text-[var(--sg-primary)]' : 'text-[var(--sg-text-dim)] hover:bg-[var(--sg-surface-raised)]'}"
+                  class="group mb-0.5 flex w-full cursor-pointer items-center gap-2 rounded px-2 py-1.5 text-left text-xs {activeWorktreePath === wt.path ? 'bg-[var(--sg-surface-raised)] text-[var(--sg-primary)]' : 'text-[var(--sg-text-dim)] hover:bg-[var(--sg-surface-raised)]'}"
+                  onclick={() => { activeWorktreePath = activeWorktreePath === wt.path ? null : wt.path; }}
                   oncontextmenu={(e) => handleWorktreeContextMenu(wt, e)}
                 >
-                  <button
-                    class="flex min-w-0 flex-1 items-center gap-2"
-                    onclick={() => {
-                      activeWorktreePath = activeWorktreePath === wt.path ? null : wt.path;
-                    }}
-                  >
-                    <span class="h-1.5 w-1.5 shrink-0 rounded-full {activeWorktreePath === wt.path ? 'bg-[var(--sg-primary)]' : 'bg-[var(--sg-border)]'}"></span>
-                    <span class="truncate">{wt.branch ?? (wt.detached ? "detached" : "unknown")}</span>
-                  </button>
-                  <div class="flex shrink-0 items-center gap-0.5 opacity-0 group-hover:opacity-100">
+                  <span class="h-1.5 w-1.5 shrink-0 rounded-full {activeWorktreePath === wt.path ? 'bg-[var(--sg-primary)]' : 'bg-[var(--sg-border)]'}"></span>
+                  <span class="min-w-0 flex-1 truncate">{wt.branch ?? (wt.detached ? "detached" : "unknown")}</span>
+                  {#if (worktreeChangeCounts[wt.path] ?? 0) > 0}
+                    <span class="shrink-0 rounded-full bg-[var(--sg-warning)]/20 px-1.5 py-0.5 font-mono text-[9px] font-bold text-[var(--sg-warning)] group-hover:hidden">
+                      {worktreeChangeCounts[wt.path]}
+                    </span>
+                  {/if}
+                  <!-- svelte-ignore a11y_no_static_element_interactions -->
+                  <!-- svelte-ignore a11y_click_events_have_key_events -->
+                  <div class="hidden shrink-0 items-center gap-0.5 group-hover:flex" role="none" onclick={(e) => e.stopPropagation()}>
                     <button
                       onclick={(event) => openRunHookMenu(wt, event.currentTarget as HTMLElement)}
                       class="rounded p-0.5 text-[var(--sg-text-faint)] hover:bg-[var(--sg-surface)] hover:text-[var(--sg-text)]"
@@ -1093,59 +1482,283 @@
 
       <!-- Main content area -->
       <section class="flex min-w-0 flex-1 flex-col overflow-hidden">
-        <!-- Commit graph -->
-        <div class="flex min-h-0 overflow-hidden {selectedCommits.length > 0 ? 'h-1/2' : 'flex-1'} flex-col">
-          <div class="flex items-center justify-between border-b border-[var(--sg-border-subtle)] bg-[var(--sg-surface)] px-4 py-2">
-            <div class="flex items-center gap-2">
-              <p class="text-[10px] font-semibold uppercase tracking-wider text-[var(--sg-text-faint)]">Commit graph</p>
-              {#if selectedCommits.length > 0}
-                <span class="text-[10px] text-[var(--sg-primary)]">
-                  {selectedCommits.length === 1 ? "1 commit selected" : `${selectedCommits.length} commits selected`}
+        <!-- View toggles (staging vs history) -->
+        {#if selectedWorktree && activeWorktreePath !== workspace?.rootPath}
+          <div class="flex items-center gap-1 border-b border-[var(--sg-border)] bg-[var(--sg-surface)] px-4">
+            <button
+              onclick={() => (showHistory = true)}
+              class="border-b-2 px-3 py-2 text-xs font-medium transition {showHistory
+                ? 'border-[var(--sg-primary)] text-[var(--sg-primary)]'
+                : 'border-transparent text-[var(--sg-text-dim)] hover:text-[var(--sg-text)]'}"
+            >
+              History
+            </button>
+            <button
+              onclick={() => (showHistory = false)}
+              class="flex items-center gap-1.5 border-b-2 px-3 py-2 text-xs font-medium transition {!showHistory
+                ? 'border-[var(--sg-primary)] text-[var(--sg-primary)]'
+                : 'border-transparent text-[var(--sg-text-dim)] hover:text-[var(--sg-text)]'}"
+            >
+              Changes
+              {#if worktreeStatus.length > 0}
+                <span class="rounded-full bg-[var(--sg-warning)]/20 px-1.5 py-0.5 text-[9px] font-bold text-[var(--sg-warning)]">
+                  {worktreeStatus.length}
                 </span>
               {/if}
+            </button>
+          </div>
+        {/if}
+
+        {#if !showHistory && selectedWorktree && activeWorktreePath !== workspace?.rootPath}
+          <!-- Staging View: left = file lists + commit form, right = always-visible diff panel -->
+          <div class="flex min-h-0 flex-1">
+            <!-- Left column: file lists + commit form -->
+            <div class="flex w-[260px] shrink-0 flex-col overflow-hidden border-r border-[var(--sg-border-subtle)]">
+              {#if statusLoading}
+                <div class="flex flex-1 items-center justify-center gap-2">
+                  <Spinner size="md" />
+                  <p class="text-xs text-[var(--sg-text-faint)]">Loading changes…</p>
+                </div>
+              {:else}
+                <div
+                  bind:this={splitContainerEl}
+                  class="flex min-h-0 flex-1 flex-col overflow-hidden"
+                  style:user-select={isDragSelecting || isSplitDragging ? 'none' : ''}
+                >
+                  <!-- Unstaged files -->
+                  <div class="flex flex-col overflow-hidden" style:height="{splitPct}%">
+                  <div class="flex min-h-0 flex-1 flex-col overflow-y-auto">
+                    <div class="sticky top-0 z-10 flex items-center justify-between bg-[var(--sg-surface)] px-3 py-1.5">
+                      <p class="text-[10px] font-semibold uppercase tracking-wider text-[var(--sg-text-faint)]">
+                        Changes ({unstagedFiles.length})
+                      </p>
+                      {#if unstagedFiles.length > 0}
+                        <button
+                          onclick={() => hasMultiSelection
+                            ? handleStageFiles([...selectedFilePaths].filter((k) => k.startsWith("unstaged:")).map((k) => k.slice(9)))
+                            : handleStageFiles(unstagedFiles.map((f) => f.path))}
+                          disabled={!!stagingAction}
+                          class="text-[9px] text-[var(--sg-text-dim)] hover:text-[var(--sg-text)] disabled:opacity-40"
+                        >{hasMultiSelection ? "Stage selected" : "Stage all"}</button>
+                      {/if}
+                    </div>
+                    {#if unstagedFiles.length === 0}
+                      <p class="px-3 pb-2 text-[10px] text-[var(--sg-text-faint)]">No unstaged changes</p>
+                    {:else}
+                      {#each unstagedFiles as file}
+                        <!-- svelte-ignore a11y_no_static_element_interactions -->
+                        <!-- svelte-ignore a11y_click_events_have_key_events -->
+                        <div
+                          class="group flex cursor-pointer items-center gap-1 px-2 py-0.5 {selectedFilePaths.has(`unstaged:${file.path}`) ? 'bg-[var(--sg-primary)]/10' : stagingDiffFile === file.path && !stagingDiffStaged ? 'bg-[var(--sg-surface-raised)]' : 'hover:bg-[var(--sg-surface-raised)]'}"
+                          onmousedown={(e) => handleFileMouseDown(e, `unstaged:${file.path}`)}
+                          onmouseenter={() => handleFileMouseEnter(`unstaged:${file.path}`)}
+                          onclick={(e) => handleFileClick(e, `unstaged:${file.path}`)}
+                          title={file.path}
+                        >
+                          <div class="flex min-w-0 flex-1 items-center gap-1.5">
+                            {@render fileStatusIcon(file.workTreeStatus)}
+                            <span class="truncate text-[11px] text-[var(--sg-text-dim)]">{file.path}</span>
+                          </div>
+                          <button
+                            onclick={(e) => { e.stopPropagation(); handleStageFiles([file.path]); }}
+                            disabled={stagingAction === file.path}
+                            class="shrink-0 rounded p-0.5 text-[var(--sg-text-faint)] opacity-0 hover:bg-[var(--sg-surface)] hover:text-[var(--sg-primary)] group-hover:opacity-100 disabled:opacity-40"
+                            title="Stage"
+                          >
+                            {#if stagingAction === file.path}
+                              <Spinner size="sm" />
+                            {:else}
+                              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                            {/if}
+                          </button>
+                        </div>
+                      {/each}
+                    {/if}
+                  </div>
+                  </div>
+
+                  <!-- Draggable divider -->
+                  <!-- svelte-ignore a11y_no_static_element_interactions -->
+                  <div
+                    class="group relative z-10 flex h-[5px] shrink-0 cursor-row-resize items-center justify-center border-y border-[var(--sg-border-subtle)] bg-[var(--sg-surface)] hover:border-[var(--sg-primary)]/40 hover:bg-[var(--sg-primary)]/5 {isSplitDragging ? 'border-[var(--sg-primary)]/40 bg-[var(--sg-primary)]/5' : ''}"
+                    onpointerdown={onSplitPointerDown}
+                    onpointermove={onSplitPointerMove}
+                    onpointerup={onSplitPointerUp}
+                  >
+                    <div class="h-[3px] w-6 rounded-full bg-[var(--sg-border)] transition-colors group-hover:bg-[var(--sg-primary)]/50 {isSplitDragging ? 'bg-[var(--sg-primary)]/50' : ''}"></div>
+                  </div>
+
+                  <!-- Staged files -->
+                  <div class="flex min-h-0 flex-1 flex-col overflow-hidden">
+                  <div class="flex min-h-0 flex-1 flex-col overflow-y-auto">
+                    <div class="sticky top-0 z-10 flex items-center justify-between bg-[var(--sg-surface)] px-3 py-1.5">
+                      <p class="text-[10px] font-semibold uppercase tracking-wider text-[var(--sg-text-faint)]">
+                        Staged ({stagedFiles.length})
+                      </p>
+                      {#if stagedFiles.length > 0}
+                        <button
+                          onclick={() => hasMultiSelection
+                            ? handleUnstageFiles([...selectedFilePaths].filter((k) => k.startsWith("staged:")).map((k) => k.slice(7)))
+                            : handleUnstageFiles(stagedFiles.map((f) => f.path))}
+                          disabled={!!stagingAction}
+                          class="text-[9px] text-[var(--sg-text-dim)] hover:text-[var(--sg-text)] disabled:opacity-40"
+                        >{hasMultiSelection ? "Unstage selected" : "Unstage all"}</button>
+                      {/if}
+                    </div>
+                    {#if stagedFiles.length === 0}
+                      <p class="px-3 pb-2 text-[10px] text-[var(--sg-text-faint)]">No staged changes</p>
+                    {:else}
+                      {#each stagedFiles as file}
+                        <!-- svelte-ignore a11y_no_static_element_interactions -->
+                        <!-- svelte-ignore a11y_click_events_have_key_events -->
+                        <div
+                          class="group flex cursor-pointer items-center gap-1 px-2 py-0.5 {selectedFilePaths.has(`staged:${file.path}`) ? 'bg-[var(--sg-primary)]/10' : stagingDiffFile === file.path && stagingDiffStaged ? 'bg-[var(--sg-surface-raised)]' : 'hover:bg-[var(--sg-surface-raised)]'}"
+                          onmousedown={(e) => handleFileMouseDown(e, `staged:${file.path}`)}
+                          onmouseenter={() => handleFileMouseEnter(`staged:${file.path}`)}
+                          onclick={(e) => handleFileClick(e, `staged:${file.path}`)}
+                          title={file.path}
+                        >
+                          <div class="flex min-w-0 flex-1 items-center gap-1.5">
+                            {@render fileStatusIcon(file.indexStatus)}
+                            <span class="truncate text-[11px] text-[var(--sg-text-dim)]">{file.path}</span>
+                          </div>
+                          <button
+                            onclick={(e) => { e.stopPropagation(); handleUnstageFiles([file.path]); }}
+                            disabled={stagingAction === file.path}
+                            class="shrink-0 rounded p-0.5 text-[var(--sg-text-faint)] opacity-0 hover:bg-[var(--sg-surface)] hover:text-[var(--sg-warning)] group-hover:opacity-100 disabled:opacity-40"
+                            title="Unstage"
+                          >
+                            {#if stagingAction === file.path}
+                              <Spinner size="sm" />
+                            {:else}
+                              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                            {/if}
+                          </button>
+                        </div>
+                      {/each}
+                    {/if}
+                  </div>
+                  </div>
+                </div>
+
+                <!-- Commit form -->
+                <div class="shrink-0 border-t border-[var(--sg-border)] px-3 py-2">
+                  <textarea
+                    bind:value={commitMessage}
+                    placeholder="Commit message"
+                    rows="3"
+                    onkeydown={(e) => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); handleCreateCommit(); } }}
+                    class="w-full resize-none rounded border border-[var(--sg-input-border)] bg-[var(--sg-input-bg)] px-2 py-1.5 text-xs text-[var(--sg-text)] placeholder-[var(--sg-text-faint)] outline-none focus:border-[var(--sg-input-focus)]"
+                  ></textarea>
+                  <button
+                    onclick={handleCreateCommit}
+                    disabled={committing || !commitMessage.trim() || stagedFiles.length === 0}
+                    class="mt-1.5 flex w-full items-center justify-center gap-2 rounded bg-[var(--sg-primary)] px-2.5 py-1.5 text-xs font-semibold text-[var(--sg-bg)] hover:bg-[var(--sg-primary-hover)] disabled:cursor-not-allowed disabled:opacity-40"
+                    title={stagedFiles.length === 0 ? "Stage changes first" : "Commit staged changes"}
+                  >
+                    {#if committing}
+                      <Spinner size="sm" /> Committing…
+                    {:else}
+                      Commit{stagedFiles.length > 0 ? ` (${stagedFiles.length})` : ""}
+                    {/if}
+                  </button>
+                  <p class="mt-1 text-center text-[9px] text-[var(--sg-text-faint)]">Ctrl+Enter to commit · Enter for new line</p>
+                </div>
+              {/if}
             </div>
-            <span class="text-[10px] text-[var(--sg-text-faint)]">{graph?.commits.length ?? 0} commits</span>
-          </div>
 
-          <div class="flex flex-1 flex-col overflow-hidden bg-[var(--sg-bg)]">
-            {#if loading}
-              <div class="flex flex-1 items-center justify-center gap-2" style="animation: sg-fade-in 0.3s ease-out">
-                <Spinner size="md" />
-                <p class="text-xs text-[var(--sg-text-faint)]">Loading commit history…</p>
+            <!-- Right column: always-visible diff panel -->
+            <div class="flex min-w-0 flex-1 flex-col overflow-hidden bg-[var(--sg-bg)]">
+              {#if hasMultiSelection}
+                <div class="flex flex-1 flex-col items-center justify-center gap-1.5 px-4 text-center">
+                  <p class="text-xs font-medium text-[var(--sg-text-dim)]">{selectedFilePaths.size} files selected</p>
+                  <p class="text-[10px] text-[var(--sg-text-faint)]">Use "Stage selected" or "Unstage selected" to act on all selected files at once.</p>
+                </div>
+              {:else if stagingDiffFile}
+                <!-- Diff header -->
+                <div class="flex shrink-0 items-center gap-2 border-b border-[var(--sg-border-subtle)] bg-[var(--sg-surface)] px-3 py-1.5">
+                  <span class="rounded-sm px-1 py-px text-[9px] font-bold {stagingDiffStaged ? 'bg-[var(--sg-primary)]/15 text-[var(--sg-primary)]' : 'bg-[var(--sg-warning)]/15 text-[var(--sg-warning)]'}">
+                    {stagingDiffStaged ? "STAGED" : "UNSTAGED"}
+                  </span>
+                  {#if stagingDiffOrigPath}
+                    <span class="truncate font-mono text-[11px] text-[var(--sg-text-faint)]">{stagingDiffOrigPath}</span>
+                    <svg class="h-3 w-3 shrink-0 text-[var(--sg-text-faint)]" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8h10M9 4l4 4-4 4"/></svg>
+                    <span class="truncate font-mono text-[11px] text-[var(--sg-text-dim)]">{stagingDiffFile}</span>
+                  {:else}
+                    <span class="truncate font-mono text-[11px] text-[var(--sg-text-dim)]">{stagingDiffFile}</span>
+                  {/if}
+                </div>
+                <!-- Syntax-highlighted diff content (shared DiffViewer component, minimal mode) -->
+                <DiffViewer diff={stagingDiffContent} loading={stagingDiffLoading} filePath={stagingDiffFile} />
+              {:else}
+                <div class="flex flex-1 items-center justify-center">
+                  <p class="text-xs text-[var(--sg-text-faint)]">Select a file to view its diff</p>
+                </div>
+              {/if}
+            </div>
+          </div>
+        {:else if showHistory}
+          <!-- Commit graph -->
+          <div class="flex min-h-0 {selectedCommits.length > 0 ? "h-1/2" : "flex-1"} flex-col">
+            <div class="flex items-center justify-between border-b border-[var(--sg-border-subtle)] bg-[var(--sg-surface)] px-4 py-2">
+              <div class="flex items-center gap-2">
+                <p class="text-[10px] font-semibold uppercase tracking-wider text-[var(--sg-text-faint)]">Commit graph</p>
+                {#if selectedCommits.length > 0}
+                  <span class="text-[10px] text-[var(--sg-primary)]">
+                    {selectedCommits.length === 1 ? "1 commit selected" : `${selectedCommits.length} commits selected`}
+                  </span>
+                {/if}
               </div>
-            {:else}
-              <CommitGraph
-                commits={graph?.commits ?? []}
-                worktrees={worktrees}
-                activeWorktree={selectedWorktree && activeWorktreePath !== workspace?.rootPath ? selectedWorktree : null}
-                oncreateworktree={handleCreateWorktreeFromGraph}
-                oncheckout={handleGraphCheckout}
-                onreset={handleGraphReset}
-                onselect={handleCommitSelect}
-                hasmore={graphHasMore}
-                loadingmore={graphLoadingMore}
-                onloadmore={loadMoreGraphCommits}
-              />
-            {/if}
-          </div>
-        </div>
+              <span class="text-[10px] text-[var(--sg-text-faint)]">{graph?.commits.length ?? 0} commits</span>
+            </div>
 
-        <!-- Diff viewer (shown when commits selected) -->
-        {#if selectedCommits.length > 0}
-          <div class="flex min-h-0 flex-1 flex-col border-t border-[var(--sg-border)]" style="animation: sg-slide-up 0.15s ease-out">
-            <DiffViewer
-              files={diffFiles}
-              selectedFile={diffSelectedFile}
-              diff={diffContent}
-              loading={diffLoading}
-              commitLabel={diffCommitLabel}
-              commits={selectedCommits}
-              onselectfile={handleDiffFileSelect}
-              onclose={closeDiffViewer}
-            />
+            <div class="flex flex-1 flex-col overflow-hidden bg-[var(--sg-bg)]">
+              {#if loading}
+                <div class="flex flex-1 items-center justify-center gap-2" style="animation: sg-fade-in 0.3s ease-out">
+                  <Spinner size="md" />
+                  <p class="text-xs text-[var(--sg-text-faint)]">Loading commit history…</p>
+                </div>
+              {:else}
+                <CommitGraph
+                  commits={graph?.commits ?? []}
+                  worktrees={worktrees}
+                  activeWorktree={selectedWorktree && activeWorktreePath !== workspace?.rootPath ? selectedWorktree : null}
+                  oncreateworktree={handleCreateWorktreeFromGraph}
+                  oncheckout={handleGraphCheckout}
+                  onreset={handleGraphReset}
+                  onselect={handleCommitSelect}
+                  hasmore={graphHasMore}
+                  loadingmore={graphLoadingMore}
+                  onloadmore={loadMoreGraphCommits}
+                />
+              {/if}
+            </div>
+          </div>
+
+          <!-- Diff viewer (shown when commits selected) -->
+          {#if selectedCommits.length > 0}
+            <div class="flex min-h-0 flex-1 flex-col border-t border-[var(--sg-border)]" style="animation: sg-slide-up 0.15s ease-out">
+              <DiffViewer
+                files={diffFiles}
+                selectedFile={diffSelectedFile}
+                diff={diffContent}
+                loading={diffLoading}
+                commitLabel={diffCommitLabel}
+                commits={selectedCommits}
+                onselectfile={handleDiffFileSelect}
+                onclose={closeDiffViewer}
+              />
+            </div>
+          {/if}
+        {:else}
+          <!-- Root worktree (protected) message -->
+          <div class="flex flex-1 items-center justify-center">
+            <p class="text-sm text-[var(--sg-text-faint)]">Select a worktree to view changes</p>
           </div>
         {/if}
       </section>
+
+
     </div>
   {/if}
 </main>
