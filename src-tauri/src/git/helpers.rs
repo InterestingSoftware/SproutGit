@@ -11,10 +11,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 fn strip_win_prefix(p: PathBuf) -> PathBuf {
     #[cfg(target_os = "windows")]
     {
-        let s = p.to_string_lossy();
-        if let Some(stripped) = s.strip_prefix(r"\\?\") {
-            return PathBuf::from(stripped);
-        }
+        return dunce::simplified(&p).to_path_buf();
     }
     p
 }

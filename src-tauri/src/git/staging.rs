@@ -386,3 +386,73 @@ fn generate_fake_add_diff(rel_path: &str, full_path: &std::path::Path) -> Result
     }
     Ok(out)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::{parse_porcelain_status, validate_commit_message};
+
+    #[test]
+    fn parse_porcelain_status_parses_untracked_file() {
+        let parsed = parse_porcelain_status("?? notes.txt\n");
+        assert_eq!(parsed.len(), 1);
+        assert_eq!(parsed[0].index_status, "?");
+        assert_eq!(parsed[0].work_tree_status, "?");
+        assert_eq!(parsed[0].path, "notes.txt");
+        assert_eq!(parsed[0].orig_path, None);
+    }
+
+    #[test]
+    fn parse_porcelain_status_parses_rename_and_copy_entries() {
+        let parsed = parse_porcelain_status(
+            "R  src/old name.txt -> src/new name.txt\nC  src/base.rs -> src/base-copy.rs\n",
+        );
+
+        assert_eq!(parsed.len(), 2);
+        assert_eq!(parsed[0].index_status, "R");
+        assert_eq!(parsed[0].path, "src/new name.txt");
+        assert_eq!(parsed[0].orig_path.as_deref(), Some("src/old name.txt"));
+
+        assert_eq!(parsed[1].index_status, "C");
+        assert_eq!(parsed[1].path, "src/base-copy.rs");
+        assert_eq!(parsed[1].orig_path.as_deref(), Some("src/base.rs"));
+    }
+
+    #[test]
+    fn parse_porcelain_status_keeps_paths_with_quotes_and_spaces() {
+        let parsed = parse_porcelain_status(" M \"a folder/quoted name.txt\"\n");
+        assert_eq!(parsed.len(), 1);
+        assert_eq!(parsed[0].index_status, " ");
+        assert_eq!(parsed[0].work_tree_status, "M");
+        assert_eq!(parsed[0].path, "\"a folder/quoted name.txt\"");
+    }
+
+    #[test]
+    fn validate_commit_message_rejects_empty() {
+        let result = validate_commit_message("   ");
+        assert!(matches!(result, Err(ref e) if e == "Commit message is required"));
+    }
+
+    #[test]
+    fn validate_commit_message_rejects_overly_long_messages() {
+        let message = "a".repeat(10_001);
+        let result = validate_commit_message(&message);
+        assert!(matches!(
+            result,
+            Err(ref e) if e == "Commit message is too long (max 10,000 characters)"
+        ));
+    }
+
+    #[test]
+    fn validate_commit_message_rejects_other_control_characters() {
+        assert!(validate_commit_message("hello\tworld").is_err());
+    }
+
+    #[test]
+    fn validate_commit_message_accepts_multiline_message() {
+        let result = validate_commit_message("Subject line\n\nBody paragraph");
+        assert!(matches!(
+            result,
+            Ok(ref value) if value == "Subject line\n\nBody paragraph"
+        ));
+    }
+}

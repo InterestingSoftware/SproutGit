@@ -33,10 +33,10 @@ fn is_git_internal(path: &Path) -> bool {
 ///   `<git_dir>/index`               → parent of git_dir (the root worktree)
 ///   `<git_dir>/worktrees/<name>/index` → the linked worktree path whose last
 ///                                        component equals `<name>`
-fn match_git_index_to_worktree<'a>(
+fn match_git_index_to_worktree(
     event_path: &Path,
     git_dir: &Path,
-    worktree_paths: &'a [String],
+    worktree_paths: &[String],
 ) -> Option<String> {
     if event_path.file_name() != Some(OsStr::new("index")) {
         return None;
@@ -94,6 +94,11 @@ pub async fn start_watching_worktrees(
         .collect::<Result<Vec<_>, _>>()?;
 
     if validated.is_empty() {
+        let mut guard = state
+            .0
+            .lock()
+            .map_err(|_| "Watcher state lock poisoned".to_string())?;
+        *guard = None;
         return Ok(());
     }
 
