@@ -21,6 +21,7 @@
   };
 
   let { shell, cwd }: Props = $props();
+  const isWindows = typeof navigator !== 'undefined' && /windows/i.test(navigator.userAgent);
 
   // ── DOM & xterm refs ──────────────────────────────────────────────────────
   let containerEl = $state<HTMLDivElement | null>(null);
@@ -36,6 +37,7 @@
   let unlistenOutput: UnlistenFn | null = null;
   let unlistenClosed: UnlistenFn | null = null;
   let resizeObserver: ResizeObserver | null = null;
+  let resizeTimer: ReturnType<typeof setTimeout> | null = null;
 
   // ── Catppuccin-mocha terminal theme (matches SproutGit dark palette) ──────
   const THEME = {
@@ -69,7 +71,7 @@
     const { Terminal } = await import('@xterm/xterm');
     const { FitAddon } = await import('@xterm/addon-fit');
 
-    term = new Terminal({
+    const options: ConstructorParameters<typeof Terminal>[0] & { windowsMode?: boolean } = {
       theme: THEME,
       fontFamily: '"Cascadia Code", "JetBrains Mono", "Fira Code", Menlo, monospace',
       fontSize: 13,
@@ -77,7 +79,11 @@
       cursorBlink: true,
       allowTransparency: false,
       scrollback: 5000,
-    });
+    };
+    if (isWindows) {
+      options.windowsMode = true; // Solves the ConPTY resize history-cropping bug on ConPTY
+    }
+    term = new Terminal(options);
 
     fitAddon = new FitAddon();
     term.loadAddon(fitAddon);
@@ -85,15 +91,29 @@
     fitAddon.fit();
 
     // Forward keyboard input to PTY
-    term.onData((data) => {
+    term.onData(data => {
       if (ptyId) void terminalInput(ptyId, data);
     });
 
-    // Observe container resize and notify PTY
-    resizeObserver = new ResizeObserver(() => {
+    // Observe container resize and notify PTY.
+    // Uses a small debounce to avoid flooding ConPTY with resize events
+    // while the user is actively dragging the window.
+    resizeObserver = new ResizeObserver(entries => {
       if (!fitAddon || !term || !ptyId) return;
-      fitAddon.fit();
-      void terminalResize(ptyId, term.cols, term.rows);
+      const entry = entries[0];
+      if (!entry || entry.contentRect.width === 0 || entry.contentRect.height === 0) {
+        // Panel hidden — cancel any pending timer so fit doesn't fire at zero size.
+        if (resizeTimer) {
+          clearTimeout(resizeTimer);
+          resizeTimer = null;
+        }
+        return;
+      }
+      if (resizeTimer) clearTimeout(resizeTimer);
+      resizeTimer = setTimeout(() => {
+        resizeTimer = null;
+        fitAndResize();
+      }, 50);
     });
     resizeObserver.observe(containerEl);
 
@@ -102,7 +122,7 @@
       const id = await spawnTerminal(shell, cwd, term.cols, term.rows);
       ptyId = id;
 
-      unlistenOutput = await onTerminalOutput(id, (data) => {
+      unlistenOutput = await onTerminalOutput(id, data => {
         term?.write(data);
       });
 
@@ -116,6 +136,10 @@
   }
 
   async function teardown() {
+    if (resizeTimer) {
+      clearTimeout(resizeTimer);
+      resizeTimer = null;
+    }
     resizeObserver?.disconnect();
     resizeObserver = null;
 
@@ -142,6 +166,32 @@
   onDestroy(() => {
     void teardown();
   });
+
+  /** Focus the underlying xterm instance so keyboard input works immediately. */
+  export function focus() {
+    term?.focus();
+  }
+
+  /**
+   * Fit xterm to the current container size and tell the PTY.
+   */
+  function fitAndResize() {
+    if (!fitAddon || !term || !ptyId) return;
+    const dims = fitAddon.proposeDimensions();
+    if (!dims || dims.cols <= 0 || dims.rows <= 0) return;
+
+    fitAddon.fit();
+    void terminalResize(ptyId, term.cols, term.rows);
+  }
+
+  /**
+   * Force a fit+resize after revealing a previously-hidden panel
+   * (e.g. switching layout from tabs to split).
+   * Waits for the next animation frame so the container has its final dimensions.
+   */
+  export function refit() {
+    requestAnimationFrame(() => fitAndResize());
+  }
 </script>
 
 <!-- xterm.css is imported at the top of the script block via Vite -->
