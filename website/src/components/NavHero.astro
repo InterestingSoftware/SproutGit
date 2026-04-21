@@ -1,0 +1,200 @@
+---
+// Stitch baseline: dark hero screen codegen, adapted for Astro + Fontsource + truthful content
+const GITHUB = 'https://github.com/Shutter-Share/SproutGit';
+---
+
+<!-- Nav -->
+<header class="fixed top-0 left-0 right-0 z-50 transition-all duration-300" id="site-nav">
+  <nav class="flex justify-between items-center w-full px-12 py-5 max-w-screen-2xl mx-auto">
+    <a href="/" class="flex items-center gap-2.5 no-underline text-[var(--sg-text)]">
+      <img src="/logo.svg" alt="SproutGit logo" width="28" height="28" class="w-7 h-7"/>
+      <span class="font-bold text-lg tracking-tight" style="letter-spacing:-0.025em;">SproutGit</span>
+    </a>
+
+    <div class="hidden md:flex items-center gap-10">
+      <a href="#features" class="text-sm font-medium text-[var(--sg-text-dim)] hover:text-[var(--sg-text)] transition-colors">Features</a>
+      <a href="#why" class="text-sm font-medium text-[var(--sg-text-dim)] hover:text-[var(--sg-text)] transition-colors">Why worktrees?</a>
+      <a href={GITHUB} target="_blank" rel="noopener noreferrer"
+         class="flex items-center gap-2 text-sm font-medium px-4 py-2 rounded-lg border border-[var(--sg-border)] text-[var(--sg-text-dim)] hover:border-[var(--sg-primary)] hover:text-[var(--sg-primary)] transition-all">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+          <path d="M12 2C6.477 2 2 6.477 2 12c0 4.42 2.865 8.166 6.839 9.489.5.092.682-.217.682-.482 0-.237-.008-.866-.013-1.7-2.782.603-3.369-1.342-3.369-1.342-.454-1.155-1.11-1.462-1.11-1.462-.908-.62.069-.608.069-.608 1.003.07 1.531 1.03 1.531 1.03.892 1.529 2.341 1.087 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.11-4.555-4.943 0-1.091.39-1.984 1.029-2.683-.103-.253-.446-1.27.098-2.647 0 0 .84-.269 2.75 1.025A9.578 9.578 0 0 1 12 6.836c.85.004 1.705.114 2.504.336 1.909-1.294 2.747-1.025 2.747-1.025.546 1.377.203 2.394.1 2.647.64.699 1.028 1.592 1.028 2.683 0 3.842-2.339 4.687-4.566 4.935.359.309.678.919.678 1.852 0 1.336-.012 2.415-.012 2.743 0 .267.18.578.688.48C19.138 20.163 22 16.418 22 12c0-5.523-4.477-10-10-10z"/>
+        </svg>
+        GitHub
+      </a>
+    </div>
+  </nav>
+</header>
+
+<!-- Hero -->
+<main class="relative pt-24 min-h-svh flex flex-col justify-center items-center overflow-hidden">
+  <!-- Background mesh gradients — from Stitch design -->
+  <div class="absolute inset-0 z-0 overflow-hidden pointer-events-none">
+    <div class="blob blob-a absolute top-[-10%] right-[-5%] w-[55%] h-[75%] rounded-full"
+         style="background: color-mix(in srgb, var(--sg-primary) 12%, transparent); filter: blur(110px);"></div>
+    <div class="blob blob-b absolute bottom-[-20%] left-[-10%] w-[45%] h-[65%] rounded-full"
+         style="background: color-mix(in srgb, var(--sg-accent) 8%, transparent); filter: blur(90px); animation-delay:-6s;"></div>
+    <!-- Grain texture from Stitch -->
+    <div class="absolute inset-0" style="
+      background-image: url(&quot;data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.65' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E&quot;);
+      opacity: 0.03;
+    "></div>
+  </div>
+
+  <!-- Hero content grid -->
+  <section class="relative z-10 w-full max-w-screen-2xl mx-auto px-12 grid grid-cols-1 lg:grid-cols-12 gap-12 items-center py-16">
+
+    <!-- Left: Copy -->
+    <div class="lg:col-span-7 flex flex-col items-start gap-6" data-stagger>
+
+      <!-- Status badge -->
+      <div data-animate class="inline-flex items-center gap-2 px-3 py-1.5 rounded-full border"
+           style="background: color-mix(in srgb, var(--sg-primary) 10%, transparent); border-color: color-mix(in srgb, var(--sg-primary) 25%, transparent);">
+        <span class="w-2 h-2 rounded-full" style="background:var(--sg-primary);animation:pulse-glow 2s ease-in-out infinite;"></span>
+        <span class="text-xs font-semibold uppercase tracking-widest" style="color:var(--sg-primary);">Early Preview · Open Source</span>
+      </div>
+
+      <!-- Headline — Stitch layout with gradient text -->
+      <h1 data-animate class="font-bold leading-[0.92] tracking-tighter text-[var(--sg-text)]"
+          style="font-size: clamp(3rem, 7vw, 5.5rem); letter-spacing: -0.045em;">
+        Git built for<br>
+        <span style="background: linear-gradient(135deg, var(--sg-primary) 0%, var(--sg-mint) 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;">
+          parallel work.
+        </span>
+      </h1>
+
+      <p data-animate class="text-xl leading-relaxed max-w-xl" style="color: var(--sg-text-dim);">
+        SproutGit makes worktrees the default — so humans and AI agents
+        can build in parallel without context collisions.
+      </p>
+
+      <!-- CTAs -->
+      <div data-animate class="flex flex-wrap gap-4 mt-2">
+        <a href={GITHUB} target="_blank" rel="noopener noreferrer"
+           class="flex items-center gap-3 px-8 py-4 rounded-xl text-lg font-bold text-white transition-all hover:-translate-y-0.5"
+           style="background: var(--sg-primary); box-shadow: 0 0 0 0 color-mix(in srgb, var(--sg-primary) 30%, transparent);">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+            <path d="M12 2C6.477 2 2 6.477 2 12c0 4.42 2.865 8.166 6.839 9.489.5.092.682-.217.682-.482 0-.237-.008-.866-.013-1.7-2.782.603-3.369-1.342-3.369-1.342-.454-1.155-1.11-1.462-1.11-1.462-.908-.62.069-.608.069-.608 1.003.07 1.531 1.03 1.531 1.03.892 1.529 2.341 1.087 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.11-4.555-4.943 0-1.091.39-1.984 1.029-2.683-.103-.253-.446-1.27.098-2.647 0 0 .84-.269 2.75 1.025A9.578 9.578 0 0 1 12 6.836c.85.004 1.705.114 2.504.336 1.909-1.294 2.747-1.025 2.747-1.025.546 1.377.203 2.394.1 2.647.64.699 1.028 1.592 1.028 2.683 0 3.842-2.339 4.687-4.566 4.935.359.309.678.919.678 1.852 0 1.336-.012 2.415-.012 2.743 0 .267.18.578.688.48C19.138 20.163 22 16.418 22 12c0-5.523-4.477-10-10-10z"/>
+          </svg>
+          View on GitHub
+        </a>
+        <a href="#features"
+           class="flex items-center gap-2 px-8 py-4 rounded-xl text-lg font-bold transition-all"
+           style="color: var(--sg-primary); border: 1.5px solid color-mix(in srgb, var(--sg-primary) 30%, transparent);">
+          See features ↓
+        </a>
+      </div>
+
+      <!-- Meta strip -->
+      <div data-animate class="flex items-center gap-8 mt-6 opacity-60">
+        <div class="flex flex-col">
+          <span class="text-xs uppercase tracking-widest" style="color:var(--sg-text-faint);">Platform</span>
+          <span class="font-bold">macOS · Linux · Windows</span>
+        </div>
+        <div class="w-px h-8" style="background:var(--sg-border-subtle);"></div>
+        <div class="flex flex-col">
+          <span class="text-xs uppercase tracking-widest" style="color:var(--sg-text-faint);">License</span>
+          <span class="font-bold">MIT · Open Source</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Right: Graph panel — adapted from Stitch SVG + floating cards -->
+    <div class="lg:col-span-5 relative flex justify-center items-center h-[560px]" data-animate data-graph>
+
+      <!-- Panel -->
+      <div class="absolute inset-0 rounded-3xl overflow-hidden border flex items-center justify-center p-6"
+           style="background: color-mix(in srgb, var(--sg-surface) 75%, transparent); border-color: color-mix(in srgb, var(--sg-border) 50%, transparent); backdrop-filter: blur(16px); box-shadow: 0 24px 64px color-mix(in srgb, #000 25%, transparent);">
+
+        <!-- Window chrome -->
+        <div class="absolute top-0 left-0 right-0 flex items-center gap-2 px-5 py-3.5 border-b" style="border-color: var(--sg-border-subtle);">
+          <span class="w-3 h-3 rounded-full" style="background:#f38ba8;"></span>
+          <span class="w-3 h-3 rounded-full" style="background:#f9e2af;"></span>
+          <span class="w-3 h-3 rounded-full" style="background:#a6e3a1;"></span>
+          <span class="ml-3 text-xs font-mono" style="color:var(--sg-text-faint);">my-project · 3 worktrees active</span>
+        </div>
+
+        <!-- Commit graph SVG — from Stitch baseline, extended -->
+        <svg class="w-full h-full mt-8" viewBox="0 0 400 480" fill="none" xmlns="http://www.w3.org/2000/svg"
+             role="img" aria-label="Animated commit graph showing three parallel worktrees">
+          <!-- Guide rail -->
+          <path d="M50 460V40" stroke="var(--sg-border)" stroke-dasharray="4 4" stroke-width="1.5"/>
+
+          <!-- Lane paths — from Stitch, extended with more branching -->
+          <path class="graph-path" d="M50 400 C150 400 150 340 150 280 L150 100" stroke="var(--lane-0)" stroke-width="2.5" stroke-linecap="round"/>
+          <path class="graph-path" d="M50 300 C250 300 250 240 250 180 L250 60" stroke="var(--lane-1)" stroke-width="2.5" stroke-linecap="round" style="animation-delay:0.35s;"/>
+          <path class="graph-path" d="M150 200 C340 200 340 150 340 110" stroke="var(--lane-2)" stroke-width="2.5" stroke-linecap="round" style="animation-delay:0.7s;"/>
+
+          <!-- Main spine -->
+          <path class="graph-path" d="M50 460 L50 40" stroke="color-mix(in srgb, var(--sg-border) 60%, transparent)" stroke-width="1.5" style="animation-delay:0s;"/>
+
+          <!-- Commit nodes — main -->
+          <g class="graph-node"><circle cx="50" cy="440" r="6" fill="var(--sg-text-faint)"/></g>
+          <g class="graph-node"><circle cx="50" cy="380" r="6" fill="var(--sg-text-faint)"/></g>
+          <g class="graph-node"><circle cx="50" cy="300" r="7" fill="var(--lane-0)" style="filter:drop-shadow(0 0 6px var(--lane-0));"/></g>
+          <g class="graph-node"><circle cx="50" cy="220" r="6" fill="var(--sg-text-faint)"/></g>
+          <g class="graph-node"><circle cx="50" cy="140" r="6" fill="var(--sg-text-faint)"/></g>
+          <g class="graph-node"><circle cx="50" cy="60"  r="8" fill="var(--lane-0)" stroke="color-mix(in srgb, var(--sg-bg) 80%, transparent)" stroke-width="2.5" style="filter:drop-shadow(0 0 8px var(--lane-0));"/></g>
+
+          <!-- Lane 0 nodes -->
+          <g class="graph-node"><circle cx="150" cy="280" r="6" fill="var(--lane-0)"/></g>
+          <g class="graph-node"><circle cx="150" cy="180" r="7" fill="var(--lane-0)" style="filter:drop-shadow(0 0 5px var(--lane-0));"/></g>
+          <g class="graph-node"><circle cx="150" cy="100" r="6" fill="var(--lane-0)"/></g>
+
+          <!-- Lane 1 nodes -->
+          <g class="graph-node"><circle cx="250" cy="180" r="6" fill="var(--lane-1)"/></g>
+          <g class="graph-node"><circle cx="250" cy="100" r="7" fill="var(--lane-1)" style="filter:drop-shadow(0 0 5px var(--lane-1));"/></g>
+          <g class="graph-node"><circle cx="250" cy="60"  r="6" fill="var(--lane-1)"/></g>
+
+          <!-- Lane 2 nodes -->
+          <g class="graph-node"><circle cx="340" cy="160" r="6" fill="var(--lane-2)"/></g>
+          <g class="graph-node"><circle cx="340" cy="110" r="7" fill="var(--lane-2)" style="filter:drop-shadow(0 0 5px var(--lane-2));"/></g>
+
+          <!-- Branch name labels -->
+          <rect x="170" y="270" width="130" height="22" rx="4" fill="color-mix(in srgb, var(--sg-surface-raised) 90%, transparent)"/>
+          <text x="178" y="285" font-family="Space Grotesk, sans-serif" font-size="11" font-weight="600" fill="var(--lane-0)">feature/auth</text>
+
+          <rect x="268" y="90" width="130" height="22" rx="4" fill="color-mix(in srgb, var(--sg-surface-raised) 90%, transparent)"/>
+          <text x="276" y="105" font-family="Space Grotesk, sans-serif" font-size="11" font-weight="600" fill="var(--lane-1)">bugfix/nav</text>
+
+          <rect x="268" y="150" width="130" height="22" rx="4" fill="color-mix(in srgb, var(--sg-surface-raised) 90%, transparent)"/>
+          <text x="276" y="165" font-family="Space Grotesk, sans-serif" font-size="11" font-weight="600" fill="var(--lane-2)">agent/refactor</text>
+
+          <!-- HEAD badge -->
+          <rect x="60" y="50" width="46" height="18" rx="3" fill="color-mix(in srgb, var(--lane-0) 20%, transparent)"/>
+          <text x="64" y="63" font-family="Space Grotesk, sans-serif" font-size="9" font-weight="700" fill="var(--lane-0)">HEAD</text>
+        </svg>
+      </div>
+
+      <!-- Floating worktree card 1 — from Stitch -->
+      <div class="absolute top-12 right-0 translate-x-4 p-4 rounded-xl border shadow-xl w-56 backdrop-blur-xl"
+           style="background: color-mix(in srgb, var(--sg-surface-raised) 85%, transparent); border-color: color-mix(in srgb, var(--sg-border) 40%, transparent);"
+           data-animate>
+        <div class="flex items-center gap-2 mb-2">
+          <span class="w-2.5 h-2.5 rounded-full" style="background: var(--lane-0);"></span>
+          <span class="text-[10px] font-semibold uppercase tracking-widest" style="color:var(--sg-text-faint);">Active Worktree</span>
+        </div>
+        <div class="text-xs font-semibold mb-0.5" style="color:var(--sg-text);">feature/auth</div>
+        <div class="text-[10px]" style="color:var(--sg-text-faint);">~/worktrees/feature-auth</div>
+      </div>
+
+      <!-- Floating worktree card 2 — from Stitch -->
+      <div class="absolute bottom-16 left-0 -translate-x-4 p-4 rounded-xl border shadow-lg w-52 backdrop-blur-md"
+           style="background: color-mix(in srgb, var(--sg-surface) 80%, transparent); border-color: var(--sg-border-subtle);"
+           data-animate>
+        <div class="flex items-center gap-2 mb-2">
+          <span class="w-2.5 h-2.5 rounded-full" style="background: var(--lane-2);"></span>
+          <span class="text-[10px] font-semibold uppercase tracking-widest" style="color:var(--sg-text-faint);">Background Task</span>
+        </div>
+        <div class="text-xs font-semibold mb-0.5" style="color:var(--sg-text);">agent/refactor</div>
+        <div class="text-[10px]" style="color:var(--sg-text-faint);">Running hooks…</div>
+      </div>
+    </div>
+  </section>
+</main>
+
+<style>
+  @media (max-width: 768px) {
+    .lg\:col-span-5 { display: none; }
+    .px-12 { padding-left: 1.5rem; padding-right: 1.5rem; }
+  }
+</style>
