@@ -69,8 +69,11 @@
 
   const selectedSet = $derived(selectedIndices);
 
-  function handleCommitClick(idx: number, e: MouseEvent) {
-    if (e.shiftKey && lastClickedIdx !== null) {
+  function updateCommitSelection(
+    idx: number,
+    modifiers: { shiftKey: boolean; metaKey: boolean; ctrlKey: boolean },
+  ) {
+    if (modifiers.shiftKey && lastClickedIdx !== null) {
       // Range select from last clicked to current
       const start = Math.min(lastClickedIdx, idx);
       const end = Math.max(lastClickedIdx, idx);
@@ -79,7 +82,7 @@
         newSet.add(i);
       }
       selectedIndices = newSet;
-    } else if (e.metaKey || e.ctrlKey) {
+    } else if (modifiers.metaKey || modifiers.ctrlKey) {
       // Toggle individual
       const newSet = new Set(selectedIndices);
       if (newSet.has(idx)) {
@@ -108,6 +111,27 @@
         .filter(Boolean);
       onselect(selected);
     }
+  }
+
+  function handleCommitClick(idx: number, e: MouseEvent) {
+    updateCommitSelection(idx, {
+      shiftKey: e.shiftKey,
+      metaKey: e.metaKey,
+      ctrlKey: e.ctrlKey,
+    });
+  }
+
+  function handleCommitKeydown(idx: number, e: KeyboardEvent) {
+    if (e.key !== "Enter" && e.key !== " ") {
+      return;
+    }
+
+    e.preventDefault();
+    updateCommitSelection(idx, {
+      shiftKey: e.shiftKey,
+      metaKey: e.metaKey,
+      ctrlKey: e.ctrlKey,
+    });
   }
 
   // Derive the active worktree label for context menus
@@ -202,6 +226,17 @@
   }
 
   function handleRefClick(ref: string, e: MouseEvent) {
+    e.stopPropagation();
+    const cleanRef = ref.startsWith("tag: ") ? ref.replace("tag: ", "") : ref;
+    copyToClipboard(cleanRef, cleanRef);
+  }
+
+  function handleRefKeydown(ref: string, e: KeyboardEvent) {
+    if (e.key !== "Enter" && e.key !== " ") {
+      return;
+    }
+
+    e.preventDefault();
     e.stopPropagation();
     const cleanRef = ref.startsWith("tag: ") ? ref.replace("tag: ", "") : ref;
     copyToClipboard(cleanRef, cleanRef);
@@ -536,20 +571,26 @@
           {@const dimmed = matchSet.size > 0 && !isMatch}
           {@const isSelected = selectedSet.has(i)}
           {@const isWtRow = !!row.worktreeBranch}
-          <!-- svelte-ignore a11y_no_static_element_interactions a11y_click_events_have_key_events -->
           <div
             class="flex cursor-pointer select-none items-center gap-2 border-b border-[var(--sg-border-subtle)] px-3 {dimmed ? 'opacity-30' : ''} {isSelected ? 'bg-[var(--sg-primary)]/15' : isActive ? 'bg-[var(--sg-primary)]/10' : isWtRow ? 'bg-[var(--sg-accent)]/5' : 'hover:bg-[var(--sg-surface-raised)]'}"
             style="height: {ROW_H}px"
+            role="button"
+            tabindex="0"
+            aria-label="Select commit {row.shortHash}"
             onclick={(e) => handleCommitClick(i, e)}
+            onkeydown={(e) => handleCommitKeydown(i, e)}
             oncontextmenu={(e) => commitContextMenu(row, e)}
           >
           <!-- Subject + refs -->
           <div class="min-w-0 flex-1 truncate">
             {#each row.refs as ref}
-              <!-- svelte-ignore a11y_no_static_element_interactions a11y_click_events_have_key_events -->
               <span
                 class="mr-1 inline-block cursor-pointer rounded px-1 py-px text-[10px] font-medium transition-opacity hover:opacity-80 {refBadgeClass(ref)}"
+                role="button"
+                tabindex="0"
+                aria-label="Copy ref {ref}"
                 onclick={(e) => handleRefClick(ref, e)}
+                onkeydown={(e) => handleRefKeydown(ref, e)}
                 oncontextmenu={(e) => refContextMenu(ref, e)}
                 title="Click to copy, right-click for more"
               >

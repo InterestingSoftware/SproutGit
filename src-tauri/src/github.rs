@@ -1,11 +1,15 @@
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::PathBuf;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 const GITHUB_CLIENT_ID: &str = "Ov23lifguAkeqGXQaZFS";
+const GITHUB_KEYCHAIN_SERVICE: &str = "dev.sproutgit.github";
+const GITHUB_KEYCHAIN_ACCOUNT: &str = "oauth-token";
 
 // ── Auth Storage ──
-// Token and username are stored in ~/.sproutgit/auth.json with 0600 permissions.
+// Token is stored in OS keychain when available, with file fallback.
+// Username is stored in ~/.sproutgit/auth.json with 0600 permissions.
 
 #[derive(Serialize, Deserialize, Default)]
 struct AuthData {
@@ -49,22 +53,133 @@ fn write_auth_data(data: &AuthData) -> Result<(), String> {
     Ok(())
 }
 
-pub fn get_stored_token() -> Option<String> {
-    read_auth_data().token
+fn keychain_entry() -> Result<keyring::Entry, String> {
+    keyring::Entry::new(GITHUB_KEYCHAIN_SERVICE, GITHUB_KEYCHAIN_ACCOUNT)
+        .map_err(|e| format!("Failed to initialize secure credential storage: {e}"))
 }
 
-fn store_token(token: &str) -> Result<(), String> {
+fn read_token_from_keychain() -> Option<String> {
+    let entry = keychain_entry().ok()?;
+    entry.get_password().ok().filter(|token| !token.is_empty())
+}
+
+fn write_token_to_keychain(token: &str) -> Result<(), String> {
+    let entry = keychain_entry()?;
+    entry
+        .set_password(token)
+        .map_err(|e| format!("Failed to store token in secure credential storage: {e}"))
+}
+
+fn delete_token_from_keychain() {
+    if let Ok(entry) = keychain_entry() {
+        let _ = entry.delete_credential();
+    }
+}
+
+fn write_token_to_file(token: &str) -> Result<(), String> {
     let mut data = read_auth_data();
     data.token = Some(token.to_string());
     write_auth_data(&data)
 }
 
-fn delete_token() -> Result<(), String> {
-    let path = auth_file_path()?;
-    if path.exists() {
-        fs::remove_file(&path).map_err(|e| format!("Failed to remove auth file: {e}"))?;
+fn clear_token_from_file() -> Result<(), String> {
+    let mut data = read_auth_data();
+    data.token = None;
+    write_auth_data(&data)
+}
+
+fn validate_github_token_for_transport(token: &str) -> Result<(), String> {
+    if token.trim().is_empty() {
+        return Err("Stored token is empty".to_string());
     }
+
+    let valid = token
+        .chars()
+        .all(|ch| ch.is_ascii_alphanumeric() || ch == '_' || ch == '-');
+
+    if !valid {
+        return Err("Stored token contains unsupported characters".to_string());
+    }
+
     Ok(())
+}
+
+fn auth_dir() -> Result<PathBuf, String> {
+    auth_file_path()?
+        .parent()
+        .map(|parent| parent.to_path_buf())
+        .ok_or("Failed to resolve auth directory".to_string())
+}
+
+fn unique_suffix() -> u128 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_nanos())
+        .unwrap_or(0)
+}
+
+fn create_clone_credential_file(token: &str) -> Result<PathBuf, String> {
+    let dir = auth_dir()?;
+    fs::create_dir_all(&dir).map_err(|e| format!("Failed to create auth directory: {e}"))?;
+
+    let file_path = dir.join(format!(
+        "github-credentials-{}-{}.tmp",
+        std::process::id(),
+        unique_suffix()
+    ));
+
+    let content = format!("https://x-access-token:{token}@github.com\n");
+    fs::write(&file_path, content).map_err(|e| format!("Failed to prepare clone credentials: {e}"))?;
+
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let _ = fs::set_permissions(&file_path, fs::Permissions::from_mode(0o600));
+    }
+
+    Ok(file_path)
+}
+
+pub struct GitCloneAuthContext {
+    pub envs: Vec<(String, String)>,
+    credential_file_path: Option<PathBuf>,
+}
+
+impl Drop for GitCloneAuthContext {
+    fn drop(&mut self) {
+        if let Some(path) = self.credential_file_path.take() {
+            let _ = fs::remove_file(path);
+        }
+    }
+}
+
+fn git_helper_value_for_file(path: &std::path::Path) -> String {
+    let normalized = path.to_string_lossy().replace('\\', "/").replace('"', "\\\"");
+    format!("store --file=\"{normalized}\"")
+}
+
+pub fn get_stored_token() -> Option<String> {
+    if let Some(token) = read_token_from_keychain() {
+        return Some(token);
+    }
+
+    read_auth_data().token
+}
+
+fn store_token(token: &str) -> Result<(), String> {
+    validate_github_token_for_transport(token)?;
+
+    if write_token_to_keychain(token).is_ok() {
+        let _ = clear_token_from_file();
+        return Ok(());
+    }
+
+    write_token_to_file(token)
+}
+
+fn delete_token() -> Result<(), String> {
+    delete_token_from_keychain();
+    clear_token_from_file()
 }
 
 fn get_stored_username() -> Option<String> {
@@ -77,32 +192,32 @@ fn store_username(username: &str) -> Result<(), String> {
     write_auth_data(&data)
 }
 
-// ── Git Credential Injection ──
+// ── Git Clone Auth Context ──
 // Used by workspace clone to authenticate via stored GitHub token.
 
-pub fn git_auth_env() -> Vec<(String, String)> {
-    let mut envs = Vec::new();
-    if let Some(token) = get_stored_token() {
-        envs.push(("GIT_CONFIG_COUNT".to_string(), "1".to_string()));
-        envs.push((
-            "GIT_CONFIG_KEY_0".to_string(),
-            "credential.helper".to_string(),
-        ));
-        #[cfg(unix)]
-        envs.push((
-            "GIT_CONFIG_VALUE_0".to_string(),
-            format!(
-                "!f() {{ echo \"username=x-access-token\"; echo \"password={}\"; }}; f",
-                token.replace('"', "\\\"")
+pub fn git_clone_auth_context() -> Result<Option<GitCloneAuthContext>, String> {
+    let _ = migrate_legacy_token_to_keychain();
+
+    let Some(token) = get_stored_token() else {
+        return Ok(None);
+    };
+
+    validate_github_token_for_transport(&token)?;
+
+    let credential_file = create_clone_credential_file(&token)?;
+    let helper_value = git_helper_value_for_file(&credential_file);
+
+    Ok(Some(GitCloneAuthContext {
+        envs: vec![
+            ("GIT_CONFIG_COUNT".to_string(), "1".to_string()),
+            (
+                "GIT_CONFIG_KEY_0".to_string(),
+                "credential.helper".to_string(),
             ),
-        ));
-        #[cfg(not(unix))]
-        envs.push((
-            "GIT_CONFIG_VALUE_0".to_string(),
-            format!("!echo username=x-access-token& echo password={}", token),
-        ));
-    }
-    envs
+            ("GIT_CONFIG_VALUE_0".to_string(), helper_value),
+        ],
+        credential_file_path: Some(credential_file),
+    }))
 }
 
 // ── API Structs ──
@@ -155,6 +270,15 @@ pub struct GitHubAuthStatus {
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
+pub struct GitHubAuthStorageMigration {
+    pub migrated: bool,
+    pub storage_backend: String,
+    pub had_legacy_file_token: bool,
+    pub error: Option<String>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct GitHubRepo {
     pub full_name: String,
     pub clone_url: String,
@@ -162,7 +286,62 @@ pub struct GitHubRepo {
     pub description: Option<String>,
 }
 
+fn migrate_legacy_token_to_keychain() -> GitHubAuthStorageMigration {
+    let legacy_file_token = read_auth_data().token;
+    let had_legacy_file_token = legacy_file_token.is_some();
+
+    if read_token_from_keychain().is_some() {
+        return GitHubAuthStorageMigration {
+            migrated: false,
+            storage_backend: "keychain".to_string(),
+            had_legacy_file_token,
+            error: None,
+        };
+    }
+
+    let Some(token) = legacy_file_token else {
+        return GitHubAuthStorageMigration {
+            migrated: false,
+            storage_backend: "none".to_string(),
+            had_legacy_file_token: false,
+            error: None,
+        };
+    };
+
+    if let Err(err) = validate_github_token_for_transport(&token) {
+        return GitHubAuthStorageMigration {
+            migrated: false,
+            storage_backend: "file".to_string(),
+            had_legacy_file_token: true,
+            error: Some(err),
+        };
+    }
+
+    match write_token_to_keychain(&token) {
+        Ok(()) => {
+            let clear_error = clear_token_from_file().err();
+            GitHubAuthStorageMigration {
+                migrated: clear_error.is_none(),
+                storage_backend: "keychain".to_string(),
+                had_legacy_file_token: true,
+                error: clear_error,
+            }
+        },
+        Err(err) => GitHubAuthStorageMigration {
+            migrated: false,
+            storage_backend: "file".to_string(),
+            had_legacy_file_token: true,
+            error: Some(err),
+        },
+    }
+}
+
 // ── Commands ──
+
+#[tauri::command]
+pub fn migrate_github_auth_storage() -> GitHubAuthStorageMigration {
+    migrate_legacy_token_to_keychain()
+}
 
 #[tauri::command]
 pub async fn github_device_flow_start() -> Result<DeviceCodeResponse, String> {
@@ -279,6 +458,8 @@ async fn fetch_github_username(token: &str) -> Result<String, String> {
 
 #[tauri::command]
 pub async fn get_github_auth_status() -> GitHubAuthStatus {
+    let _ = migrate_legacy_token_to_keychain();
+
     let token = get_stored_token();
     let username = get_stored_username();
 

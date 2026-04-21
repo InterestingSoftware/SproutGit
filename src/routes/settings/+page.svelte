@@ -8,6 +8,7 @@
   import {
     getGitInfo,
     getGithubAuthStatus,
+    migrateGithubAuthStorage,
     githubDeviceFlowStart,
     githubDeviceFlowPoll,
     githubLogout,
@@ -67,12 +68,29 @@
     .catch(() => {
       gitInfo = { installed: false, version: "Unavailable" };
     });
-  getGithubAuthStatus()
-    .then((s) => {
-      githubAuth = s;
+  migrateGithubAuthStorage()
+    .then((migration) => {
+      if (migration.migrated && migration.hadLegacyFileToken) {
+        toast.success("Migrated GitHub token storage to OS keychain");
+      } else if (migration.storageBackend === "file" && migration.hadLegacyFileToken) {
+        toast.warning(
+          migration.error
+            ? `Secure token migration unavailable, using file fallback: ${migration.error}`
+            : "Secure token migration unavailable, using file fallback"
+        );
+      }
     })
     .catch(() => {
-      githubAuth = { authenticated: false, username: null, provider: "github" };
+      // Ignore migration errors here; auth status call below remains source of truth.
+    })
+    .finally(() => {
+      getGithubAuthStatus()
+        .then((s) => {
+          githubAuth = s;
+        })
+        .catch(() => {
+          githubAuth = { authenticated: false, username: null, provider: "github" };
+        });
     });
 
   Promise.all([

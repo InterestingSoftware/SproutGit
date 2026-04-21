@@ -43,7 +43,6 @@ jobs:
     runs-on: ${{ matrix.os }}
     permissions:
       contents: read
-      id-token: write
     strategy:
       fail-fast: false
       matrix:
@@ -72,30 +71,47 @@ jobs:
         working-directory: src-tauri
         run: cargo test --all-targets --verbose
 
+      - name: Cargo clippy
+        working-directory: src-tauri
+        run: cargo clippy -- -D warnings
+
+  rust-coverage:
+    name: Rust Coverage (Linux)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - name: Install system dependencies (Linux)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
+
       - name: Install cargo-tarpaulin
-        if: runner.os == 'Linux'
         run: cargo install cargo-tarpaulin
 
-      - name: Generate coverage (Linux only)
-        if: runner.os == 'Linux'
+      - name: Generate coverage
         working-directory: src-tauri
         run: |
           cargo tarpaulin --out Xml --output-dir coverage --timeout 300 --all-targets
 
-      - name: Upload coverage to Codecov (Linux only)
-        if: runner.os == 'Linux'
+      - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v4
         with:
           directory: ./src-tauri/coverage
           flags: rust-backend
-          os: ${{ matrix.os }}
+          os: ubuntu-latest
           files: ./src-tauri/coverage/cobertura.xml
           fail_ci_if_error: false
           verbose: true
-
-      - name: Cargo clippy
-        working-directory: src-tauri
-        run: cargo clippy -- -D warnings
 
   build:
     name: Build (${{ matrix.os }})

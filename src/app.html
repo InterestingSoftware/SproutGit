@@ -4,10 +4,124 @@
     <meta charset="utf-8" />
     <link rel="icon" href="%sveltekit.assets%/favicon.png" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Tauri + SvelteKit + Typescript App</title>
+    <title>SproutGit</title>
+    <style>
+      :root {
+        color-scheme: light dark;
+      }
+
+      body {
+        margin: 0;
+      }
+
+      #sg-boot {
+        position: fixed;
+        inset: 0;
+        z-index: 9999;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 10px;
+        background: radial-gradient(circle at 15% 15%, #ecfdf3 0%, #f5f5f5 55%, #ededed 100%);
+        color: #1a8a5c;
+        font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, sans-serif;
+        transition: opacity 0.2s ease;
+      }
+
+      #sg-boot.sg-boot-hidden {
+        opacity: 0;
+        pointer-events: none;
+      }
+
+      .sg-boot-spinner {
+        width: 30px;
+        height: 30px;
+        border-radius: 9999px;
+        border: 2px solid rgba(26, 138, 92, 0.2);
+        border-top-color: #1a8a5c;
+        animation: sg-boot-spin 0.8s linear infinite;
+      }
+
+      .sg-boot-label {
+        font-size: 12px;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        color: rgba(16, 47, 33, 0.75);
+      }
+
+      @keyframes sg-boot-spin {
+        to {
+          transform: rotate(360deg);
+        }
+      }
+
+      @media (prefers-color-scheme: dark) {
+        #sg-boot {
+          background: radial-gradient(circle at 15% 15%, #243840 0%, #1e1e2e 55%, #16161f 100%);
+          color: #74c7a4;
+        }
+
+        .sg-boot-spinner {
+          border-color: rgba(116, 199, 164, 0.25);
+          border-top-color: #74c7a4;
+        }
+
+        .sg-boot-label {
+          color: rgba(205, 214, 244, 0.8);
+        }
+      }
+    </style>
     %sveltekit.head%
   </head>
   <body data-sveltekit-preload-data="hover">
-    <div style="display: contents">%sveltekit.body%</div>
+    <div id="sg-boot" aria-live="polite" aria-label="Loading SproutGit">
+      <div class="sg-boot-spinner" aria-hidden="true"></div>
+      <div class="sg-boot-label">Launching SproutGit</div>
+    </div>
+    <div id="sg-app" style="display: contents">%sveltekit.body%</div>
+    <script>
+      (() => {
+        const boot = document.getElementById('sg-boot');
+        const app = document.getElementById('sg-app');
+
+        if (!boot || !app) {
+          return;
+        }
+
+        let hidden = false;
+        const hideBoot = () => {
+          if (hidden) {
+            return;
+          }
+          hidden = true;
+          boot.classList.add('sg-boot-hidden');
+          window.setTimeout(() => {
+            boot.remove();
+          }, 220);
+        };
+
+        if (app.childElementCount > 0) {
+          window.requestAnimationFrame(hideBoot);
+          return;
+        }
+
+        const observer = new MutationObserver(() => {
+          if (app.childElementCount > 0) {
+            observer.disconnect();
+            hideBoot();
+          }
+        });
+
+        observer.observe(app, { childList: true, subtree: true });
+        window.addEventListener('pageshow', hideBoot, { once: true });
+
+        // Fail-safe so the splash never blocks the app indefinitely.
+        window.setTimeout(() => {
+          observer.disconnect();
+          hideBoot();
+        }, 5000);
+      })();
+    </script>
   </body>
 </html>
