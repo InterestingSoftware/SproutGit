@@ -19,6 +19,7 @@ env:
   BASE_VERSION: "0.1"
   RUSTC_WRAPPER: sccache
   SCCACHE_GHA_ENABLED: "true"
+  SCCACHE_IGNORE_SERVER_IO_ERROR: "true"
 
 jobs:
   check-frontend:
@@ -204,12 +205,6 @@ jobs:
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
 
-      - name: Ad-hoc sign (macOS)
-        if: runner.os == 'macOS'
-        run: |
-          codesign --force --deep --sign - \
-            src-tauri/target/release/bundle/macos/SproutGit.app
-
       - name: Upload artifacts (macOS)
         if: runner.os == 'macOS'
         uses: actions/upload-artifact@v4
@@ -217,8 +212,6 @@ jobs:
           name: SproutGit-macos
           path: |
             src-tauri/target/release/bundle/dmg/*.dmg
-            src-tauri/target/release/bundle/macos/*.app.tar.gz
-            src-tauri/target/release/bundle/macos/*.app.tar.gz.sig
 
       - name: Upload artifacts (Windows)
         if: runner.os == 'Windows'
@@ -286,10 +279,6 @@ jobs:
             printf '%s\n' "$artifact_path"
           }
 
-          MACOS_TAR=$(find_required_artifact "artifacts/SproutGit-macos" "*.app.tar.gz" "macOS")
-          MACOS_SIG=$(cat "${MACOS_TAR}.sig")
-          MACOS_FILENAME=$(basename "$MACOS_TAR")
-
           LINUX_IMG=$(find_required_artifact "artifacts/SproutGit-linux" "*.AppImage" "Linux")
           LINUX_SIG=$(cat "${LINUX_IMG}.sig")
           LINUX_FILENAME=$(basename "$LINUX_IMG")
@@ -301,8 +290,6 @@ jobs:
           jq -n \
             --arg version "$VERSION" \
             --arg date "$DATE" \
-            --arg macos_url "${BASE_URL}/${MACOS_FILENAME}" \
-            --arg macos_sig "$MACOS_SIG" \
             --arg linux_url "${BASE_URL}/${LINUX_FILENAME}" \
             --arg linux_sig "$LINUX_SIG" \
             --arg win_url "${BASE_URL}/${WIN_FILENAME}" \
@@ -311,7 +298,6 @@ jobs:
               version: $version,
               pub_date: $date,
               platforms: {
-                "darwin-aarch64": {url: $macos_url, signature: $macos_sig},
                 "linux-x86_64":   {url: $linux_url, signature: $linux_sig},
                 "windows-x86_64": {url: $win_url,   signature: $win_sig}
               }
