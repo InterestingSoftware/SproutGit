@@ -8,7 +8,7 @@
   import ContextMenu, { type MenuItem } from "$lib/components/ContextMenu.svelte";
   import DiffViewer from "$lib/components/DiffViewer.svelte";
   import Spinner from "$lib/components/Spinner.svelte";
-  import TerminalPanel from "$lib/components/TerminalPanel.svelte";
+  import TerminalContainer from "$lib/components/TerminalContainer.svelte";
   import WorkspaceHooksModal from "$lib/components/WorkspaceHooksModal.svelte";
   import {
     checkoutWorktree,
@@ -1808,21 +1808,15 @@
           {/if}
         {/if}
 
-        <!-- Terminal panels: lazily initialized, never unmounted once created.
+        <!-- Terminal containers: lazily initialized, never unmounted once created.
              display:none hides them when the terminal tab is not active,
-             preserving the PTY session across tab and worktree switches. -->
+             preserving all PTY sessions across tab and worktree switches. -->
         {#each [...terminalInitializedPaths] as wtPath (wtPath)}
           <div
             class="flex min-h-0 flex-1 flex-col overflow-hidden"
             style:display={activeTab === "terminal" && activeWorktreePath === wtPath ? "flex" : "none"}
           >
-            {#if defaultShell}
-              <TerminalPanel shell={defaultShell} cwd={wtPath} />
-            {:else}
-              <div class="flex flex-1 items-center justify-center">
-                <p class="text-sm text-[var(--sg-text-faint)]">No shell detected on this system</p>
-              </div>
-            {/if}
+            <TerminalContainer {defaultShell} {availableShells} cwd={wtPath} />
           </div>
         {/each}
       </section>

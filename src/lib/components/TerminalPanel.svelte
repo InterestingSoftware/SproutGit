@@ -36,6 +36,7 @@
   let unlistenOutput: UnlistenFn | null = null;
   let unlistenClosed: UnlistenFn | null = null;
   let resizeObserver: ResizeObserver | null = null;
+  let resizeTimer: ReturnType<typeof setTimeout> | null = null;
 
   // ── Catppuccin-mocha terminal theme (matches SproutGit dark palette) ──────
   const THEME = {
@@ -77,6 +78,8 @@
       cursorBlink: true,
       allowTransparency: false,
       scrollback: 5000,
+      // @ts-expect-error - Available in xterm but may be missing from types
+      windowsMode: true, // Solves the ConPTY resize history-cropping bug
     });
 
     fitAddon = new FitAddon();
@@ -89,11 +92,22 @@
       if (ptyId) void terminalInput(ptyId, data);
     });
 
-    // Observe container resize and notify PTY
-    resizeObserver = new ResizeObserver(() => {
+    // Observe container resize and notify PTY.
+    // Uses a small debounce to avoid flooding ConPTY with resize events
+    // while the user is actively dragging the window.
+    resizeObserver = new ResizeObserver((entries) => {
       if (!fitAddon || !term || !ptyId) return;
-      fitAddon.fit();
-      void terminalResize(ptyId, term.cols, term.rows);
+      const entry = entries[0];
+      if (!entry || entry.contentRect.width === 0 || entry.contentRect.height === 0) {
+        // Panel hidden — cancel any pending timer so fit doesn't fire at zero size.
+        if (resizeTimer) { clearTimeout(resizeTimer); resizeTimer = null; }
+        return;
+      }
+      if (resizeTimer) clearTimeout(resizeTimer);
+      resizeTimer = setTimeout(() => {
+        resizeTimer = null;
+        fitAndResize();
+      }, 50);
     });
     resizeObserver.observe(containerEl);
 
@@ -116,6 +130,7 @@
   }
 
   async function teardown() {
+    if (resizeTimer) { clearTimeout(resizeTimer); resizeTimer = null; }
     resizeObserver?.disconnect();
     resizeObserver = null;
 
@@ -142,6 +157,32 @@
   onDestroy(() => {
     void teardown();
   });
+
+  /** Focus the underlying xterm instance so keyboard input works immediately. */
+  export function focus() {
+    term?.focus();
+  }
+
+  /**
+   * Fit xterm to the current container size and tell the PTY.
+   */
+  function fitAndResize() {
+    if (!fitAddon || !term || !ptyId) return;
+    const dims = fitAddon.proposeDimensions();
+    if (!dims || dims.cols <= 0 || dims.rows <= 0) return;
+
+    fitAddon.fit();
+    void terminalResize(ptyId, term.cols, term.rows);
+  }
+
+  /**
+   * Force a fit+resize after revealing a previously-hidden panel
+   * (e.g. switching layout from tabs to split).
+   * Waits for the next animation frame so the container has its final dimensions.
+   */
+  export function refit() {
+    requestAnimationFrame(() => fitAndResize());
+  }
 </script>
 
 <!-- xterm.css is imported at the top of the script block via Vite -->
