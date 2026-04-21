@@ -94,6 +94,24 @@ input, select, textarea, button {
   background: var(--sg-text-faint);
 }
 
+/* Always-visible thin scrollbar for graph lane column */
+.sg-scrollbar-visible {
+  overflow-x: auto !important;
+}
+.sg-scrollbar-visible::-webkit-scrollbar {
+  height: 5px;
+}
+.sg-scrollbar-visible::-webkit-scrollbar-track {
+  background: var(--sg-surface);
+}
+.sg-scrollbar-visible::-webkit-scrollbar-thumb {
+  background: var(--sg-border);
+  border-radius: 3px;
+}
+.sg-scrollbar-visible::-webkit-scrollbar-thumb:hover {
+  background: var(--sg-text-faint);
+}
+
 /* ── Syntax Highlighting (highlight.js) ── */
 .diff-hl, .diff-hl-add, .diff-hl-del {
   color: var(--sg-text-dim);

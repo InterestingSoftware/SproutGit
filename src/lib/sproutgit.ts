@@ -228,8 +228,16 @@ export const listWorktrees = (repoPath: string) =>
 
 export const listRefs = (repoPath: string) => invoke<RefsResult>('list_refs', { repoPath });
 
-export const getCommitGraph = (repoPath: string, limit = 120) =>
-  invoke<CommitGraphResult>('get_commit_graph', { repoPath, limit });
+export const getCommitGraph = (
+  repoPath: string,
+  limit?: number | null,
+  skip?: number | null
+) =>
+  invoke<CommitGraphResult>('get_commit_graph', {
+    repoPath,
+    limit: limit ?? null,
+    skip: skip ?? null,
+  });
 
 export const createManagedWorktree = (
   rootRepoPath: string,

@@ -85,6 +85,45 @@ pub struct CheckoutResult {
     pub stashed: bool,
 }
 
+/// Clamp a graph page size to [20, 2000], defaulting to 2000.
+pub(crate) fn clamp_graph_limit(limit: Option<usize>) -> usize {
+    limit.unwrap_or(2000).clamp(20, 2000)
+}
+
+/// Clamp a skip value to at most 1,000,000.
+pub(crate) fn clamp_graph_skip(skip: Option<usize>) -> Option<usize> {
+    skip.map(|s| s.min(1_000_000))
+}
+
+/// Parse a single record-separator-delimited commit line into a CommitEntry.
+pub(crate) fn parse_commit_line(line: &str, sep: &str) -> Option<CommitEntry> {
+    let parts: Vec<&str> = line.split(sep).collect();
+    if parts.len() < 8 {
+        return None;
+    }
+
+    let refs_list: Vec<String> = if parts[7].is_empty() {
+        vec![]
+    } else {
+        parts[7].split(", ").map(|r| r.trim().to_string()).collect()
+    };
+
+    Some(CommitEntry {
+        hash: parts[0].to_string(),
+        short_hash: parts[1].to_string(),
+        parents: if parts[2].is_empty() {
+            vec![]
+        } else {
+            parts[2].split(' ').map(|p| p.to_string()).collect()
+        },
+        author_name: parts[3].to_string(),
+        author_email: parts[4].to_string(),
+        author_date: parts[5].to_string(),
+        subject: parts[6].to_string(),
+        refs: refs_list,
+    })
+}
+
 fn workspace_from_root_repo(root_repo: &Path) -> Option<PathBuf> {
     let workspace = root_repo.parent()?.to_path_buf();
     let marker = workspace.join(".sproutgit").join("project.json");
@@ -244,26 +283,34 @@ pub async fn list_refs(repo_path: String) -> Result<RefsResult, String> {
 pub async fn get_commit_graph(
     repo_path: String,
     limit: Option<usize>,
+    skip: Option<usize>,
 ) -> Result<CommitGraphResult, String> {
     let canonical = normalize_existing_path(&repo_path)?;
-    let max = limit.unwrap_or(120).clamp(20, 400).to_string();
 
     let sep = "\x1e";
     let format_str = ["%H", "%h", "%P", "%an", "%ae", "%ar", "%s", "%D"].join(sep);
 
-    let output = run_git(
-        GitAction::CommitGraph,
-        &[
-            "-C",
-            &canonical.to_string_lossy(),
-            "log",
-            "--all",
-            "--topo-order",
-            &format!("--format={format_str}"),
-            "-n",
-            &max,
-        ],
-    )?;
+    let mut args = vec![
+        "-C".to_string(),
+        canonical.to_string_lossy().to_string(),
+        "log".to_string(),
+        "--all".to_string(),
+        "--author-date-order".to_string(),
+        format!("--format={format_str}"),
+    ];
+
+    let max = clamp_graph_limit(limit).to_string();
+    args.push("-n".to_string());
+    args.push(max);
+
+    if let Some(safe_skip) = clamp_graph_skip(skip) {
+        args.push("--skip".to_string());
+        args.push(safe_skip.to_string());
+    }
+
+    let arg_refs: Vec<&str> = args.iter().map(String::as_str).collect();
+
+    let output = run_git(GitAction::CommitGraph, &arg_refs)?;
 
     let output = ensure_git_success(output, "Failed to read commit history")?;
     let stdout = String::from_utf8_lossy(&output.stdout);
@@ -271,33 +318,7 @@ pub async fn get_commit_graph(
     let commits: Vec<CommitEntry> = stdout
         .lines()
         .filter(|line| !line.is_empty())
-        .filter_map(|line| {
-            let parts: Vec<&str> = line.split(sep).collect();
-            if parts.len() < 8 {
-                return None;
-            }
-
-            let refs_list: Vec<String> = if parts[7].is_empty() {
-                vec![]
-            } else {
-                parts[7].split(", ").map(|r| r.trim().to_string()).collect()
-            };
-
-            Some(CommitEntry {
-                hash: parts[0].to_string(),
-                short_hash: parts[1].to_string(),
-                parents: if parts[2].is_empty() {
-                    vec![]
-                } else {
-                    parts[2].split(' ').map(|p| p.to_string()).collect()
-                },
-                author_name: parts[3].to_string(),
-                author_email: parts[4].to_string(),
-                author_date: parts[5].to_string(),
-                subject: parts[6].to_string(),
-                refs: refs_list,
-            })
-        })
+        .filter_map(|line| parse_commit_line(line, sep))
         .collect();
 
     Ok(CommitGraphResult {
@@ -667,4 +688,128 @@ pub async fn reset_worktree_to_ref(
     ensure_git_success(clean_output, "Failed to clean worktree")?;
 
     Ok(format!("Worktree reset to {target_ref} and cleaned"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{clamp_graph_limit, clamp_graph_skip, parse_commit_line};
+
+    const SEP: &str = "\x1e";
+
+    fn make_line(fields: &[&str]) -> String {
+        fields.join(SEP)
+    }
+
+    // ── clamp_graph_limit ──
+
+    #[test]
+    fn limit_defaults_to_2000() {
+        assert_eq!(clamp_graph_limit(None), 2000);
+    }
+
+    #[test]
+    fn limit_clamps_below_minimum() {
+        assert_eq!(clamp_graph_limit(Some(5)), 20);
+        assert_eq!(clamp_graph_limit(Some(0)), 20);
+    }
+
+    #[test]
+    fn limit_clamps_above_maximum() {
+        assert_eq!(clamp_graph_limit(Some(5000)), 2000);
+        assert_eq!(clamp_graph_limit(Some(usize::MAX)), 2000);
+    }
+
+    #[test]
+    fn limit_passes_through_valid_values() {
+        assert_eq!(clamp_graph_limit(Some(20)), 20);
+        assert_eq!(clamp_graph_limit(Some(100)), 100);
+        assert_eq!(clamp_graph_limit(Some(2000)), 2000);
+    }
+
+    // ── clamp_graph_skip ──
+
+    #[test]
+    fn skip_none_returns_none() {
+        assert_eq!(clamp_graph_skip(None), None);
+    }
+
+    #[test]
+    fn skip_clamps_to_million() {
+        assert_eq!(clamp_graph_skip(Some(2_000_000)), Some(1_000_000));
+        assert_eq!(clamp_graph_skip(Some(usize::MAX)), Some(1_000_000));
+    }
+
+    #[test]
+    fn skip_passes_through_valid_values() {
+        assert_eq!(clamp_graph_skip(Some(0)), Some(0));
+        assert_eq!(clamp_graph_skip(Some(500)), Some(500));
+        assert_eq!(clamp_graph_skip(Some(1_000_000)), Some(1_000_000));
+    }
+
+    // ── parse_commit_line ──
+
+    #[test]
+    fn parses_full_commit_line() {
+        let line = make_line(&[
+            "abc123def456",
+            "abc123d",
+            "parent1 parent2",
+            "Alice",
+            "alice@example.com",
+            "2 days ago",
+            "fix: resolve merge conflict",
+            "HEAD -> main, origin/main",
+        ]);
+        let entry = parse_commit_line(&line, SEP).unwrap_or_else(|| panic!("should parse"));
+        assert_eq!(entry.hash, "abc123def456");
+        assert_eq!(entry.short_hash, "abc123d");
+        assert_eq!(entry.parents, vec!["parent1", "parent2"]);
+        assert_eq!(entry.author_name, "Alice");
+        assert_eq!(entry.author_email, "alice@example.com");
+        assert_eq!(entry.author_date, "2 days ago");
+        assert_eq!(entry.subject, "fix: resolve merge conflict");
+        assert_eq!(entry.refs, vec!["HEAD -> main", "origin/main"]);
+    }
+
+    #[test]
+    fn parses_commit_with_no_parents() {
+        let line = make_line(&[
+            "abc123", "abc1", "", "Bob", "bob@example.com", "3 hours ago", "initial commit", "",
+        ]);
+        let entry = parse_commit_line(&line, SEP).unwrap_or_else(|| panic!("should parse"));
+        assert!(entry.parents.is_empty());
+        assert!(entry.refs.is_empty());
+    }
+
+    #[test]
+    fn parses_commit_with_single_parent() {
+        let line = make_line(&[
+            "def456", "def4", "abc123", "Carol", "carol@x.com", "1 day ago", "feat: add login",
+            "tag: v1.0",
+        ]);
+        let entry = parse_commit_line(&line, SEP).unwrap_or_else(|| panic!("should parse"));
+        assert_eq!(entry.parents, vec!["abc123"]);
+        assert_eq!(entry.refs, vec!["tag: v1.0"]);
+    }
+
+    #[test]
+    fn rejects_line_with_too_few_fields() {
+        let line = make_line(&["abc", "ab", "", "Name"]);
+        assert!(parse_commit_line(&line, SEP).is_none());
+    }
+
+    #[test]
+    fn rejects_empty_line() {
+        assert!(parse_commit_line("", SEP).is_none());
+    }
+
+    #[test]
+    fn handles_extra_fields_gracefully() {
+        let line = make_line(&[
+            "abc", "ab", "", "Name", "e@x.com", "now", "msg", "HEAD", "extra-field",
+        ]);
+        let entry = parse_commit_line(&line, SEP).unwrap_or_else(|| panic!("extra fields should not break parsing"));
+        assert_eq!(entry.hash, "abc");
+        assert_eq!(entry.refs, vec!["HEAD"]);
+    }
 }
