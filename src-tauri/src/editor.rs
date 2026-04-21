@@ -17,6 +17,17 @@ pub struct EditorInfo {
     pub installed: bool,
 }
 
+#[derive(Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct GitToolInfo {
+    pub id: String,
+    pub name: String,
+    pub command: String,
+    pub installed: bool,
+    pub supports_diff: bool,
+    pub supports_merge: bool,
+}
+
 // ── Known Editors ──
 // Each entry: (id, display_name, cli_command, optional macOS app bundle path).
 
@@ -25,6 +36,15 @@ struct EditorCandidate {
     name: &'static str,
     command: &'static str,
     mac_bundle_bin: Option<&'static str>,
+}
+
+struct GitToolCandidate {
+    id: &'static str,
+    name: &'static str,
+    command: &'static str,
+    mac_bundle_bin: Option<&'static str>,
+    supports_diff: bool,
+    supports_merge: bool,
 }
 
 fn known_editors() -> Vec<EditorCandidate> {
@@ -94,6 +114,113 @@ fn known_editors() -> Vec<EditorCandidate> {
     ]
 }
 
+fn known_git_tools() -> Vec<GitToolCandidate> {
+    vec![
+        GitToolCandidate {
+            id: "vscode",
+            name: "VS Code",
+            command: "code",
+            mac_bundle_bin: Some(
+                "/Applications/Visual Studio Code.app/Contents/Resources/app/bin/code",
+            ),
+            supports_diff: true,
+            supports_merge: true,
+        },
+        GitToolCandidate {
+            id: "cursor",
+            name: "Cursor",
+            command: "cursor",
+            mac_bundle_bin: Some("/Applications/Cursor.app/Contents/Resources/app/bin/cursor"),
+            supports_diff: true,
+            supports_merge: true,
+        },
+        GitToolCandidate {
+            id: "windsurf",
+            name: "Windsurf",
+            command: "windsurf",
+            mac_bundle_bin: Some(
+                "/Applications/Windsurf.app/Contents/Resources/app/bin/windsurf",
+            ),
+            supports_diff: true,
+            supports_merge: true,
+        },
+        GitToolCandidate {
+            id: "zed",
+            name: "Zed",
+            command: "zed",
+            mac_bundle_bin: Some("/Applications/Zed.app/Contents/MacOS/cli"),
+            supports_diff: true,
+            supports_merge: true,
+        },
+        GitToolCandidate {
+            id: "sublime",
+            name: "Sublime Text",
+            command: "subl",
+            mac_bundle_bin: Some(
+                "/Applications/Sublime Text.app/Contents/SharedSupport/bin/subl",
+            ),
+            supports_diff: true,
+            supports_merge: true,
+        },
+        GitToolCandidate {
+            id: "vimdiff",
+            name: "Vimdiff",
+            command: "vimdiff",
+            mac_bundle_bin: None,
+            supports_diff: true,
+            supports_merge: true,
+        },
+        GitToolCandidate {
+            id: "nvimdiff",
+            name: "Neovim diff",
+            command: "nvimdiff",
+            mac_bundle_bin: None,
+            supports_diff: true,
+            supports_merge: true,
+        },
+        GitToolCandidate {
+            id: "meld",
+            name: "Meld",
+            command: "meld",
+            mac_bundle_bin: None,
+            supports_diff: true,
+            supports_merge: true,
+        },
+        GitToolCandidate {
+            id: "kdiff3",
+            name: "KDiff3",
+            command: "kdiff3",
+            mac_bundle_bin: None,
+            supports_diff: true,
+            supports_merge: true,
+        },
+        GitToolCandidate {
+            id: "bcompare",
+            name: "Beyond Compare",
+            command: "bcompare",
+            mac_bundle_bin: None,
+            supports_diff: true,
+            supports_merge: true,
+        },
+        GitToolCandidate {
+            id: "p4merge",
+            name: "P4Merge",
+            command: "p4merge",
+            mac_bundle_bin: None,
+            supports_diff: true,
+            supports_merge: true,
+        },
+        GitToolCandidate {
+            id: "opendiff",
+            name: "FileMerge (opendiff)",
+            command: "opendiff",
+            mac_bundle_bin: None,
+            supports_diff: true,
+            supports_merge: true,
+        },
+    ]
+}
+
 fn is_command_available(cmd: &str) -> bool {
     command_exists(cmd)
 }
@@ -105,6 +232,18 @@ fn resolve_editor(editor: &EditorCandidate) -> Option<String> {
         return Some(editor.command.to_string());
     }
     if let Some(bundle_path) = editor.mac_bundle_bin {
+        if Path::new(bundle_path).exists() {
+            return Some(bundle_path.to_string());
+        }
+    }
+    None
+}
+
+fn resolve_git_tool(tool: &GitToolCandidate) -> Option<String> {
+    if is_command_available(tool.command) {
+        return Some(tool.command.to_string());
+    }
+    if let Some(bundle_path) = tool.mac_bundle_bin {
         if Path::new(bundle_path).exists() {
             return Some(bundle_path.to_string());
         }
@@ -226,6 +365,26 @@ pub fn detect_editors() -> Vec<EditorInfo> {
                     .clone()
                     .unwrap_or_else(|| editor.command.to_string()),
                 installed: resolved.is_some(),
+            }
+        })
+        .collect()
+}
+
+#[tauri::command]
+pub fn detect_git_tools() -> Vec<GitToolInfo> {
+    known_git_tools()
+        .into_iter()
+        .map(|tool| {
+            let resolved = resolve_git_tool(&tool);
+            GitToolInfo {
+                id: tool.id.to_string(),
+                name: tool.name.to_string(),
+                command: resolved
+                    .clone()
+                    .unwrap_or_else(|| tool.command.to_string()),
+                installed: resolved.is_some(),
+                supports_diff: tool.supports_diff,
+                supports_merge: tool.supports_merge,
             }
         })
         .collect()

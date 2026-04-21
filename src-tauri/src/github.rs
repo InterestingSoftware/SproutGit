@@ -286,6 +286,16 @@ pub struct GitHubRepo {
     pub description: Option<String>,
 }
 
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GitHubEmailSuggestion {
+    pub label: String,
+    pub email: String,
+    pub kind: String,
+    pub primary: bool,
+    pub verified: bool,
+}
+
 fn migrate_legacy_token_to_keychain() -> GitHubAuthStorageMigration {
     let legacy_file_token = read_auth_data().token;
     let had_legacy_file_token = legacy_file_token.is_some();
@@ -577,4 +587,124 @@ pub async fn list_github_repos() -> Result<Vec<GitHubRepo>, String> {
     }
 
     Ok(all_repos)
+}
+
+#[tauri::command]
+pub async fn list_github_email_suggestions() -> Result<Vec<GitHubEmailSuggestion>, String> {
+    let token = get_stored_token().ok_or("Not authenticated with GitHub")?;
+
+    #[derive(Deserialize)]
+    struct RawUser {
+        login: String,
+        id: u64,
+        email: Option<String>,
+    }
+
+    #[derive(Deserialize)]
+    struct RawEmail {
+        email: String,
+        primary: bool,
+        verified: bool,
+    }
+
+    fn push_unique(suggestions: &mut Vec<GitHubEmailSuggestion>, suggestion: GitHubEmailSuggestion) {
+        if !suggestions
+            .iter()
+            .any(|existing| existing.email.eq_ignore_ascii_case(&suggestion.email))
+        {
+            suggestions.push(suggestion);
+        }
+    }
+
+    let client = reqwest::Client::new();
+
+    let user_resp = client
+        .get("https://api.github.com/user")
+        .header("Authorization", format!("Bearer {token}"))
+        .header("User-Agent", "SproutGit")
+        .header("Accept", "application/json")
+        .send()
+        .await
+        .map_err(|e| format!("Failed to fetch GitHub user profile: {e}"))?;
+
+    if !user_resp.status().is_success() {
+        return Err(format!("GitHub returned status {}", user_resp.status()));
+    }
+
+    let user: RawUser = user_resp
+        .json()
+        .await
+        .map_err(|e| format!("Failed to parse GitHub user profile: {e}"))?;
+
+    let mut suggestions = Vec::new();
+
+    if let Some(public_email) = user.email.filter(|value| !value.trim().is_empty()) {
+        push_unique(
+            &mut suggestions,
+            GitHubEmailSuggestion {
+                label: "GitHub public email".to_string(),
+                email: public_email,
+                kind: "public".to_string(),
+                primary: true,
+                verified: true,
+            },
+        );
+    }
+
+    push_unique(
+        &mut suggestions,
+        GitHubEmailSuggestion {
+            label: "GitHub private email".to_string(),
+            email: format!("{}+{}@users.noreply.github.com", user.id, user.login),
+            kind: "private".to_string(),
+            primary: true,
+            verified: true,
+        },
+    );
+
+    push_unique(
+        &mut suggestions,
+        GitHubEmailSuggestion {
+            label: "GitHub private email (legacy)".to_string(),
+            email: format!("{}@users.noreply.github.com", user.login),
+            kind: "private-legacy".to_string(),
+            primary: false,
+            verified: true,
+        },
+    );
+
+    let emails_resp = client
+        .get("https://api.github.com/user/emails")
+        .header("Authorization", format!("Bearer {token}"))
+        .header("User-Agent", "SproutGit")
+        .header("Accept", "application/json")
+        .send()
+        .await
+        .map_err(|e| format!("Failed to fetch GitHub emails: {e}"))?;
+
+    if emails_resp.status().is_success() {
+        let emails: Vec<RawEmail> = emails_resp
+            .json()
+            .await
+            .map_err(|e| format!("Failed to parse GitHub emails: {e}"))?;
+
+        for entry in emails {
+            push_unique(
+                &mut suggestions,
+                GitHubEmailSuggestion {
+                    label: if entry.primary {
+                        "GitHub email (primary)".to_string()
+                    } else {
+                        "GitHub email".to_string()
+                    },
+                    email: entry.email,
+                    kind: "account".to_string(),
+                    primary: entry.primary,
+                    verified: entry.verified,
+                },
+            );
+        }
+    }
+
+    Ok(suggestions)
 }

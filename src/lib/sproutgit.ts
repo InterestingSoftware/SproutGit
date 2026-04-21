@@ -190,11 +190,28 @@ export type GitHubRepo = {
   description?: string | null;
 };
 
+export type GitHubEmailSuggestion = {
+  label: string;
+  email: string;
+  kind: string;
+  primary: boolean;
+  verified: boolean;
+};
+
 export type EditorInfo = {
   id: string;
   name: string;
   command: string;
   installed: boolean;
+};
+
+export type GitToolInfo = {
+  id: string;
+  name: string;
+  command: string;
+  installed: boolean;
+  supportsDiff: boolean;
+  supportsMerge: boolean;
 };
 
 export const getGitInfo = () => invoke<GitInfo>('git_info');
@@ -361,9 +378,14 @@ export const githubLogout = () => invoke<void>('github_logout');
 
 export const listGithubRepos = () => invoke<GitHubRepo[]>('list_github_repos');
 
+export const listGithubEmailSuggestions = () =>
+  invoke<GitHubEmailSuggestion[]>('list_github_email_suggestions');
+
 export const getHomeDir = () => invoke<string>('get_home_dir');
 
 export const detectEditors = () => invoke<EditorInfo[]>('detect_editors');
+
+export const detectGitTools = () => invoke<GitToolInfo[]>('detect_git_tools');
 
 export const getGitConfig = (key: string) => invoke<string>('get_git_config', { key });
 

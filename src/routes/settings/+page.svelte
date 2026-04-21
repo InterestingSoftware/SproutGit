@@ -1,471 +1,436 @@
 <script lang="ts">
-  import { goto } from "$app/navigation";
-  import { openUrl } from "@tauri-apps/plugin-opener";
-  import Spinner from "$lib/components/Spinner.svelte";
-  import WindowControls from "$lib/components/WindowControls.svelte";
-  import { getVersion } from "@tauri-apps/api/app";
-  import type { Update } from "@tauri-apps/plugin-updater";
+  import { goto } from '$app/navigation';
+  import { getVersion } from '@tauri-apps/api/app';
+  import { openUrl } from '@tauri-apps/plugin-opener';
+  import type { Update } from '@tauri-apps/plugin-updater';
+  import { GitBranch, Info, Pencil, Settings, SquareTerminal, User } from 'lucide-svelte';
+  import Spinner from '$lib/components/Spinner.svelte';
+  import WindowControls from '$lib/components/WindowControls.svelte';
   import {
+    detectEditors,
+    detectGitTools,
+    getAppSetting,
+    getGitConfig,
     getGitInfo,
     getGithubAuthStatus,
-    migrateGithubAuthStorage,
-    githubDeviceFlowStart,
     githubDeviceFlowPoll,
+    githubDeviceFlowStart,
     githubLogout,
-    detectEditors,
-    getGitConfig,
-    setGitConfig,
-    getAppSetting,
-    setAppSetting,
     listAvailableShells,
-    type GitInfo,
-    type GitHubAuthStatus,
+    listGithubEmailSuggestions,
+    migrateGithubAuthStorage,
+    setAppSetting,
+    setGitConfig,
     type DeviceCodeResponse,
     type EditorInfo,
-  } from "$lib/sproutgit";
-  import { toast } from "$lib/toast.svelte";
+    type GitHubAuthStatus,
+    type GitHubEmailSuggestion,
+    type GitInfo,
+    type GitToolInfo,
+  } from '$lib/sproutgit';
+  import { toast } from '$lib/toast.svelte';
 
-  // ── GitHub Auth State ──
+  const initialWorkspacePath =
+    typeof window !== 'undefined'
+      ? new URL(window.location.href).searchParams.get('workspace') ?? ''
+      : '';
+  let workspacePath = $state(initialWorkspacePath);
+
   let githubAuth = $state<GitHubAuthStatus | null>(null);
   let deviceCode = $state<DeviceCodeResponse | null>(null);
   let authPolling = $state(false);
   let authStarting = $state(false);
 
-  // ── Editor State ──
   let editors = $state<EditorInfo[]>([]);
-  let currentEditor = $state("");
-  let customEditor = $state("");
-  let editorsLoading = $state(true);
+  let gitTools = $state<GitToolInfo[]>([]);
+  let currentEditor = $state('');
+  let customEditor = $state('');
+  let currentDiffTool = $state('');
+  let customDiffTool = $state('');
+  let currentMergeTool = $state('');
+  let customMergeTool = $state('');
+  let toolsLoading = $state(true);
 
-  // ── Shell State ──
+  let currentGitName = $state('');
+  let currentGitEmail = $state('');
+  let customGitName = $state('');
+  let customGitEmail = $state('');
+
+  let githubEmailSuggestions = $state<GitHubEmailSuggestion[]>([]);
+  let githubEmailsLoading = $state(false);
+
   let availableShells = $state<string[]>([]);
-  let currentShell = $state("");
+  let currentShell = $state('');
   let shellsLoading = $state(true);
 
-  // ── Git State ──
   let gitInfo = $state<GitInfo | null>(null);
-
-  // Keep workspace context for back navigation.
-  const initialWorkspacePath =
-    typeof window !== "undefined"
-      ? new URL(window.location.href).searchParams.get("workspace") ?? ""
-      : "";
-  let workspacePath = $state(initialWorkspacePath);
-
-  // ── App Version ──
   let appVersion = $state<string | null>(null);
-
-  // ── Update State ──
   let updateChecking = $state(false);
+  let updateChecked = $state(false);
   let updateAvailable = $state<Update | null>(null);
   let updateInstalling = $state(false);
-  let updateChecked = $state(false);
 
-  // Load initial state
-  getVersion()
-    .then((v) => {
-      appVersion = v;
-    })
-    .catch(() => {
-      appVersion = "unknown";
-    });
+  let editingAuthor = $state(false);
+  let editingEditor = $state(false);
+  let editingDiffTool = $state(false);
+  let editingMergeTool = $state(false);
+
+  let installedEditors = $derived(editors.filter((e) => e.installed));
+  let unavailableEditors = $derived(editors.filter((e) => !e.installed));
+  let installedDiffTools = $derived(gitTools.filter((t) => t.installed && t.supportsDiff));
+  let installedMergeTools = $derived(gitTools.filter((t) => t.installed && t.supportsMerge));
+
+  getVersion().then((v) => (appVersion = v)).catch(() => (appVersion = 'unknown'));
   getGitInfo()
-    .then((info) => {
-      gitInfo = info;
-    })
-    .catch(() => {
-      gitInfo = { installed: false, version: "Unavailable" };
-    });
-  migrateGithubAuthStorage()
-    .then((migration) => {
-      if (migration.migrated && migration.hadLegacyFileToken) {
-        toast.success("Migrated GitHub token storage to OS keychain");
-      } else if (migration.storageBackend === "file" && migration.hadLegacyFileToken) {
-        toast.warning(
-          migration.error
-            ? `Secure token migration unavailable, using file fallback: ${migration.error}`
-            : "Secure token migration unavailable, using file fallback"
-        );
-      }
-    })
-    .catch(() => {
-      // Ignore migration errors here; auth status call below remains source of truth.
-    })
-    .finally(() => {
-      getGithubAuthStatus()
-        .then((s) => {
-          githubAuth = s;
-        })
-        .catch(() => {
-          githubAuth = { authenticated: false, username: null, provider: "github" };
-        });
-    });
+    .then((info) => (gitInfo = info))
+    .catch(() => (gitInfo = { installed: false, version: 'Unavailable' }));
 
   Promise.all([
     detectEditors(),
-    getGitConfig("core.editor"),
-  ]).then(([detected, configured]) => {
-    editors = detected;
-    currentEditor = configured;
-    // If the current editor doesn't match any known editor, put it in custom
-    if (configured && !detected.some((e) => e.installed && matchesEditor(e, configured))) {
-      customEditor = configured;
-    }
-    editorsLoading = false;
-  }).catch(() => {
-    editorsLoading = false;
-  });
+    detectGitTools(),
+    getGitConfig('core.editor'),
+    getGitConfig('diff.tool'),
+    getGitConfig('merge.tool'),
+    getGitConfig('user.name'),
+    getGitConfig('user.email'),
+  ])
+    .then(([detectedEditors, detectedTools, configuredEditor, diffTool, mergeTool, gitName, gitEmail]) => {
+      editors = detectedEditors;
+      gitTools = detectedTools;
+      currentEditor = configuredEditor;
+      currentDiffTool = diffTool;
+      currentMergeTool = mergeTool;
+      currentGitName = gitName;
+      currentGitEmail = gitEmail;
+      customGitName = gitName;
+      customGitEmail = gitEmail;
+      if (configuredEditor && !detectedEditors.some((e) => e.installed && matchesEditor(e, configuredEditor))) {
+        customEditor = configuredEditor;
+      }
+      toolsLoading = false;
+    })
+    .catch(() => (toolsLoading = false));
 
-  Promise.all([
-    listAvailableShells(),
-    getAppSetting("default_shell"),
-  ]).then(([shells, savedShell]) => {
-    availableShells = shells;
-    currentShell = savedShell ?? shells[0] ?? "";
-    shellsLoading = false;
-  }).catch(() => {
-    shellsLoading = false;
-  });
+  Promise.all([listAvailableShells(), getAppSetting('default_shell')])
+    .then(([shells, saved]) => {
+      availableShells = shells;
+      currentShell = saved ?? shells[0] ?? '';
+      shellsLoading = false;
+    })
+    .catch(() => (shellsLoading = false));
 
-  async function selectShell(shell: string) {
-    currentShell = shell;
-    try {
-      await setAppSetting("default_shell", shell);
-      toast.success(`Default shell set to ${shell}`);
-    } catch (err) {
-      toast.error(String(err));
-    }
-  }
+  migrateGithubAuthStorage()
+    .catch(() => {})
+    .finally(() => {
+      getGithubAuthStatus()
+        .then(async (status) => {
+          githubAuth = status;
+          if (status.authenticated) await loadGithubEmailSuggestions();
+        })
+        .catch(() => (githubAuth = { authenticated: false, username: null, provider: 'github' }));
+    });
 
   function matchesEditor(editor: EditorInfo, configured: string): boolean {
-    // Strip quotes and extract the command portion (before --wait etc)
-    const stripped = configured.replace(/^["']|["']$/g, "");
+    const stripped = configured.replace(/^["']|["']$/g, '');
     const cmd = stripped.split(/\s+--?\w/)[0].trim();
     return cmd === editor.command || stripped.startsWith(editor.command);
   }
-
+  function quoteCommand(command: string): string {
+    return command.includes(' ') ? `"${command}"` : command;
+  }
   function editorCommand(editor: EditorInfo): string {
-    // Editors that benefit from --wait for git operations
-    const waitIds = ["vscode", "cursor", "windsurf", "kiro", "sublime", "zed"];
-    const needsWait = waitIds.includes(editor.id);
-    const cmd = editor.command.includes(" ") ? `"${editor.command}"` : editor.command;
-    return needsWait ? `${cmd} --wait` : cmd;
+    const waits = ['vscode', 'cursor', 'windsurf', 'kiro', 'sublime', 'zed'];
+    const cmd = quoteCommand(editor.command);
+    return waits.includes(editor.id) ? `${cmd} --wait` : cmd;
+  }
+  function buildDiffToolCommand(tool: GitToolInfo): string | null {
+    const waits = ['vscode', 'cursor', 'windsurf', 'kiro', 'sublime', 'zed'];
+    const cmd = quoteCommand(tool.command);
+    if (waits.includes(tool.id)) return `${cmd} --wait --diff "$LOCAL" "$REMOTE"`;
+    if (tool.id === 'opendiff') return 'opendiff "$LOCAL" "$REMOTE"';
+    return null;
+  }
+  function buildMergeToolCommand(tool: GitToolInfo): string | null {
+    const waits = ['vscode', 'cursor', 'windsurf', 'kiro', 'sublime', 'zed'];
+    const cmd = quoteCommand(tool.command);
+    if (waits.includes(tool.id)) return `${cmd} --wait "$MERGED"`;
+    if (tool.id === 'opendiff') return 'opendiff "$LOCAL" "$REMOTE" -merge "$MERGED"';
+    return null;
+  }
+  function togglePanel(panel: 'author' | 'editor' | 'diff' | 'merge') {
+    editingAuthor = panel === 'author' ? !editingAuthor : false;
+    editingEditor = panel === 'editor' ? !editingEditor : false;
+    editingDiffTool = panel === 'diff' ? !editingDiffTool : false;
+    editingMergeTool = panel === 'merge' ? !editingMergeTool : false;
   }
 
-  async function selectEditor(editor: EditorInfo) {
-    const cmd = editorCommand(editor);
+  async function loadGithubEmailSuggestions() {
+    githubEmailsLoading = true;
     try {
-      await setGitConfig("core.editor", cmd);
-      currentEditor = cmd;
-      customEditor = "";
-      toast.success(`Editor set to ${editor.name}`);
-    } catch (err) {
-      toast.error(String(err));
+      githubEmailSuggestions = await listGithubEmailSuggestions();
+    } catch {
+      githubEmailSuggestions = [];
+    } finally {
+      githubEmailsLoading = false;
     }
   }
-
-  async function saveCustomEditor() {
-    const value = customEditor.trim();
-    try {
-      await setGitConfig("core.editor", value);
-      currentEditor = value;
-      toast.success(value ? `Editor set to "${value}"` : "Editor config cleared");
-    } catch (err) {
-      toast.error(String(err));
-    }
-  }
-
   async function startGithubLogin() {
     authStarting = true;
     try {
       const dc = await githubDeviceFlowStart();
       deviceCode = dc;
-      try {
-        await navigator.clipboard.writeText(dc.userCode);
-        toast.info(`Code ${dc.userCode} copied to clipboard`);
-      } catch {
-        toast.info(`Enter code: ${dc.userCode}`);
-      }
       await openUrl(dc.verificationUri);
-      pollForToken(dc.deviceCode, dc.interval);
+      setTimeout(async function poll() {
+        try {
+          const result = await githubDeviceFlowPoll(dc.deviceCode);
+          if (result.status === 'complete') {
+            authPolling = false;
+            deviceCode = null;
+            githubAuth = { authenticated: true, username: result.username, provider: 'github' };
+            await loadGithubEmailSuggestions();
+            toast.success(`Signed in as ${result.username ?? 'GitHub user'}`);
+            return;
+          }
+          if (result.status === 'pending') {
+            authPolling = true;
+            setTimeout(poll, (dc.interval + 1) * 1000);
+            return;
+          }
+          authPolling = false;
+          deviceCode = null;
+          toast.error(result.error ?? 'Authentication failed');
+        } catch (err) {
+          authPolling = false;
+          deviceCode = null;
+          toast.error(String(err));
+        }
+      }, dc.interval * 1000);
     } catch (err) {
       toast.error(String(err));
     } finally {
       authStarting = false;
     }
   }
-
-  async function pollForToken(code: string, interval: number) {
-    authPolling = true;
-    const poll = async () => {
-      try {
-        const result = await githubDeviceFlowPoll(code);
-        if (result.status === "complete") {
-          authPolling = false;
-          deviceCode = null;
-          githubAuth = { authenticated: true, username: result.username, provider: "github" };
-          toast.success(`Signed in as ${result.username ?? "GitHub user"}`);
-          return;
-        }
-        if (result.status === "expired" || result.status === "error") {
-          authPolling = false;
-          deviceCode = null;
-          toast.error(result.error ?? "Authentication failed");
-          return;
-        }
-        setTimeout(poll, (interval + 1) * 1000);
-      } catch (err) {
-        authPolling = false;
-        deviceCode = null;
-        toast.error(String(err));
-      }
-    };
-    setTimeout(poll, interval * 1000);
-  }
-
   async function handleGithubLogout() {
     try {
       await githubLogout();
-      githubAuth = { authenticated: false, username: null, provider: "github" };
-      toast.info("Signed out of GitHub");
+      githubAuth = { authenticated: false, username: null, provider: 'github' };
+      githubEmailSuggestions = [];
     } catch (err) {
       toast.error(String(err));
     }
   }
-
-  let installedEditors = $derived(editors.filter((e) => e.installed));
-  let unavailableEditors = $derived(editors.filter((e) => !e.installed));
+  async function saveGitIdentity() {
+    try {
+      await Promise.all([
+        setGitConfig('user.name', customGitName.trim()),
+        setGitConfig('user.email', customGitEmail.trim()),
+      ]);
+      currentGitName = customGitName.trim();
+      currentGitEmail = customGitEmail.trim();
+      editingAuthor = false;
+      toast.success('Git author updated');
+    } catch (err) {
+      toast.error(String(err));
+    }
+  }
+  async function applyGithubEmail(s: GitHubEmailSuggestion) {
+    try {
+      await setGitConfig('user.email', s.email);
+      currentGitEmail = s.email;
+      customGitEmail = s.email;
+      toast.success(`Git email set to ${s.label}`);
+    } catch (err) {
+      toast.error(String(err));
+    }
+  }
+  async function applyGithubUsernameAsAuthor() {
+    if (!githubAuth?.username) return;
+    try {
+      await setGitConfig('user.name', githubAuth.username);
+      currentGitName = githubAuth.username;
+      customGitName = githubAuth.username;
+      toast.success('Git author name set from GitHub username');
+    } catch (err) {
+      toast.error(String(err));
+    }
+  }
+  async function selectEditor(editor: EditorInfo) {
+    try {
+      const cmd = editorCommand(editor);
+      await setGitConfig('core.editor', cmd);
+      currentEditor = cmd;
+      customEditor = '';
+      editingEditor = false;
+      toast.success(`Editor set to ${editor.name}`);
+    } catch (err) {
+      toast.error(String(err));
+    }
+  }
+  async function saveCustomEditor() {
+    try {
+      const value = customEditor.trim();
+      await setGitConfig('core.editor', value);
+      currentEditor = value;
+      editingEditor = false;
+      toast.success(value ? `Editor set to "${value}"` : 'Editor config cleared');
+    } catch (err) {
+      toast.error(String(err));
+    }
+  }
+  async function applyDetectedDiffTool(tool: GitToolInfo) {
+    try {
+      await setGitConfig('diff.tool', tool.id);
+      const cmd = buildDiffToolCommand(tool);
+      if (cmd) await setGitConfig(`difftool.${tool.id}.cmd`, cmd);
+      currentDiffTool = tool.id;
+      customDiffTool = '';
+      editingDiffTool = false;
+      toast.success(`Diff tool set to ${tool.name}`);
+    } catch (err) {
+      toast.error(String(err));
+    }
+  }
+  async function applyDetectedMergeTool(tool: GitToolInfo) {
+    try {
+      await setGitConfig('merge.tool', tool.id);
+      const cmd = buildMergeToolCommand(tool);
+      if (cmd) await setGitConfig(`mergetool.${tool.id}.cmd`, cmd);
+      currentMergeTool = tool.id;
+      customMergeTool = '';
+      editingMergeTool = false;
+      toast.success(`Merge tool set to ${tool.name}`);
+    } catch (err) {
+      toast.error(String(err));
+    }
+  }
+  async function saveCustomDiffTool() {
+    try {
+      const value = customDiffTool.trim();
+      await setGitConfig('diff.tool', value);
+      currentDiffTool = value;
+      editingDiffTool = false;
+    } catch (err) {
+      toast.error(String(err));
+    }
+  }
+  async function saveCustomMergeTool() {
+    try {
+      const value = customMergeTool.trim();
+      await setGitConfig('merge.tool', value);
+      currentMergeTool = value;
+      editingMergeTool = false;
+    } catch (err) {
+      toast.error(String(err));
+    }
+  }
+  async function selectShell(shell: string) {
+    currentShell = shell;
+    try {
+      await setAppSetting('default_shell', shell);
+      toast.success(`Default shell set to ${shell}`);
+    } catch (err) {
+      toast.error(String(err));
+    }
+  }
 </script>
 
 <main class="flex h-screen flex-col">
-  <header data-tauri-drag-region class="flex shrink-0 items-center gap-3 border-b border-[var(--sg-border)] bg-[var(--sg-surface)] pt-1 pr-1 pb-1 pl-[var(--sg-titlebar-inset)]">
-    <button
-      onclick={() =>
-        goto(
-          workspacePath
-            ? `/workspace?workspace=${encodeURIComponent(workspacePath)}`
-            : "/",
-        )}
-      class="rounded px-2 py-0.5 text-xs text-[var(--sg-text-dim)] hover:bg-[var(--sg-surface-raised)] hover:text-[var(--sg-text)]"
-    >
-      &larr; Projects
-    </button>
-    <div class="h-3 w-px bg-[var(--sg-border)]"></div>
-    <span class="text-xs font-medium text-[var(--sg-text)]">Settings</span>
-    <div class="ml-auto">
-      <WindowControls />
-    </div>
+  <header data-tauri-drag-region class="flex shrink-0 items-center gap-3 border-b border-(--sg-border) bg-(--sg-surface) pt-1 pr-1 pb-1 pl-(--sg-titlebar-inset)">
+    <button onclick={() => goto(workspacePath ? `/workspace?workspace=${encodeURIComponent(workspacePath)}` : '/')} class="rounded px-2 py-0.5 text-xs text-(--sg-text-dim) hover:bg-(--sg-surface-raised) hover:text-(--sg-text)">&larr; Projects</button>
+    <div class="h-3 w-px bg-(--sg-border)"></div>
+    <span class="text-xs font-medium text-(--sg-text)">Settings</span>
+    <div class="ml-auto"><WindowControls /></div>
   </header>
 
   <div class="flex-1 overflow-auto p-6">
-    <div class="mx-auto flex max-w-xl flex-col gap-8">
+    <div class="mx-auto flex max-w-6xl flex-col gap-6">
+      <div class="flex items-center gap-2"><Settings size={18} class="text-(--sg-primary)" /><h1 class="text-lg font-semibold text-(--sg-primary)">Settings</h1></div>
 
-      <!-- GitHub Authentication -->
-      <section>
-        <h2 class="mb-1 text-sm font-semibold text-[var(--sg-text)]">GitHub</h2>
-        <p class="mb-4 text-xs text-[var(--sg-text-faint)]">Authenticate with GitHub to clone private repositories and access your repos.</p>
-
+      <section class="rounded-lg border border-(--sg-border) bg-(--sg-surface) p-5">
+        <div class="mb-3 flex items-center gap-2"><svg viewBox="0 0 16 16" aria-hidden="true" class="h-4 w-4 text-(--sg-primary)" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><circle cx="3.25" cy="8" r="1.5" /><circle cx="12.75" cy="4" r="1.5" /><circle cx="12.75" cy="12" r="1.5" /><path d="M4.6 7.2 11.4 4.8" /><path d="M4.6 8.8 11.4 11.2" /></svg><h2 class="text-sm font-semibold text-(--sg-primary)">Git Provider</h2></div>
         {#if githubAuth === null}
-          <div class="flex items-center gap-2 text-xs text-[var(--sg-text-dim)]">
-            <Spinner size="sm" />
-            Checking…
-          </div>
+          <div class="flex items-center gap-2 text-xs text-(--sg-text-dim)"><Spinner size="sm" /> Checking connection...</div>
         {:else if githubAuth.authenticated}
-          <div class="flex items-center justify-between rounded-lg border border-[var(--sg-border)] bg-[var(--sg-surface)] px-4 py-3">
-            <div class="flex items-center gap-3">
-              <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="currentColor" class="text-[var(--sg-text-dim)]"><path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0 0 24 12c0-6.63-5.37-12-12-12z"/></svg>
-              <div>
-                <div class="text-sm font-medium text-[var(--sg-text)]">{githubAuth.username}</div>
-                <div class="text-xs text-[var(--sg-text-faint)]">Connected</div>
-              </div>
-            </div>
-            <button
-              class="rounded border border-[var(--sg-border)] px-3 py-1.5 text-xs text-[var(--sg-text-dim)] hover:border-[var(--sg-danger)] hover:text-[var(--sg-danger)]"
-              onclick={handleGithubLogout}
-            >Sign out</button>
+          <div class="flex items-center justify-between rounded border border-(--sg-border) bg-(--sg-surface-raised) px-3 py-2.5">
+            <p class="text-xs text-(--sg-text)">{githubAuth.username}</p>
+            <button class="rounded border border-(--sg-border) px-3 py-1.5 text-xs text-(--sg-text-dim) hover:border-(--sg-danger) hover:text-(--sg-danger)" onclick={handleGithubLogout}>Sign out</button>
           </div>
         {:else if authPolling}
-          <div class="rounded-lg border border-[var(--sg-border)] bg-[var(--sg-surface)] px-4 py-4">
-            <div class="flex items-center gap-2 text-sm text-[var(--sg-text-dim)]">
-              <Spinner size="sm" />
-              Waiting for GitHub authorization…
-            </div>
-            {#if deviceCode}
-              <div class="mt-3 flex items-center gap-2 text-xs text-[var(--sg-text-faint)]">
-                Your code:
-                <code class="rounded bg-[var(--sg-surface-raised)] px-2 py-1 font-mono text-sm font-semibold text-[var(--sg-primary)]">{deviceCode.userCode}</code>
-              </div>
-            {/if}
-          </div>
+          <div class="flex items-center gap-2 text-xs text-(--sg-text-dim)"><Spinner size="sm" /> Waiting for authorization...</div>
         {:else}
-          <button
-            class="flex items-center gap-2 rounded-lg border border-[var(--sg-border)] bg-[var(--sg-surface)] px-4 py-3 text-sm text-[var(--sg-text)] hover:bg-[var(--sg-surface-raised)] disabled:opacity-40"
-            onclick={startGithubLogin}
-            disabled={authStarting}
-          >
-            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0 0 24 12c0-6.63-5.37-12-12-12z"/></svg>
-            {#if authStarting}
-              <Spinner size="sm" />
-            {/if}
-            Sign in with GitHub
-          </button>
+          <button class="inline-flex items-center gap-2 rounded border border-(--sg-border) bg-(--sg-surface-raised) px-3 py-1.5 text-xs text-(--sg-text) hover:bg-(--sg-primary) hover:text-white" onclick={startGithubLogin} disabled={authStarting}><svg viewBox="0 0 16 16" aria-hidden="true" class="h-3.5 w-3.5" fill="currentColor"><path d="M8 0C3.58 0 0 3.67 0 8.2c0 3.62 2.29 6.7 5.47 7.78.4.08.55-.18.55-.39 0-.2-.01-.85-.01-1.54-2.23.5-2.7-.98-2.7-.98-.36-.95-.9-1.2-.9-1.2-.73-.52.06-.51.06-.51.8.06 1.23.84 1.23.84.72 1.26 1.88.9 2.34.69.07-.54.28-.9.5-1.1-1.78-.21-3.64-.91-3.64-4.06 0-.9.31-1.63.82-2.2-.09-.21-.36-1.04.08-2.17 0 0 .67-.22 2.2.84A7.43 7.43 0 0 1 8 3.46c.68 0 1.37.1 2.01.31 1.53-1.06 2.2-.84 2.2-.84.44 1.13.17 1.96.08 2.17.51.57.82 1.3.82 2.2 0 3.16-1.87 3.84-3.66 4.05.29.26.54.77.54 1.56 0 1.13-.01 2.03-.01 2.31 0 .21.14.47.55.39A8.2 8.2 0 0 0 16 8.2C16 3.67 12.42 0 8 0Z" /></svg>Sign in with GitHub</button>
         {/if}
       </section>
 
-      <!-- Git Editor -->
-      <section>
-        <h2 class="mb-1 text-sm font-semibold text-[var(--sg-text)]">Editor</h2>
-        <p class="mb-4 text-xs text-[var(--sg-text-faint)]">Choose the editor that Git uses for commit messages, interactive rebase, etc. Sets <code class="rounded bg-[var(--sg-surface-raised)] px-1 font-mono">core.editor</code> in your global Git config.</p>
+      <div class="grid gap-6 xl:grid-cols-[1.6fr_1fr]">
+        <section class="rounded-lg border border-(--sg-border) bg-(--sg-surface)">
+          <div class="border-b border-(--sg-border) px-5 py-4"><div class="flex items-center gap-2"><GitBranch size={16} class="text-(--sg-primary)" /><h2 class="text-sm font-semibold text-(--sg-primary)">Git Settings</h2></div><p class="mt-1 text-xs text-(--sg-text-faint)">These update your global Git configuration.</p></div>
 
-        {#if editorsLoading}
-          <div class="flex items-center gap-2 text-xs text-[var(--sg-text-dim)]">
-            <Spinner size="sm" />
-            Detecting editors…
-          </div>
-        {:else}
-          <!-- Installed editors -->
-          {#if installedEditors.length > 0}
-            <div class="mb-3 flex flex-wrap gap-2">
-              {#each installedEditors as editor}
-                {@const isActive = currentEditor && matchesEditor(editor, currentEditor)}
-                <button
-                  class="rounded-md border px-3 py-1.5 text-xs transition-colors {isActive
-                    ? 'border-[var(--sg-primary)] bg-[var(--sg-primary)]/10 text-[var(--sg-primary)] font-medium'
-                    : 'border-[var(--sg-border)] text-[var(--sg-text-dim)] hover:border-[var(--sg-text-faint)] hover:text-[var(--sg-text)]'}"
-                  onclick={() => selectEditor(editor)}
-                >
-                  {editor.name}
-                </button>
-              {/each}
-            </div>
-          {/if}
-
-          <!-- Current value -->
-          <div class="mb-3 rounded-lg border border-[var(--sg-border)] bg-[var(--sg-surface)] px-4 py-3">
-            <div class="mb-1 text-xs text-[var(--sg-text-faint)]">Current value</div>
-            <code class="text-xs text-[var(--sg-text)]">{currentEditor || "(not set)"}</code>
-          </div>
-
-          <!-- Custom editor input -->
-          <div>
-            <label for="custom-editor" class="mb-1 block text-xs text-[var(--sg-text-dim)]">Custom command</label>
-            <div class="flex gap-1.5">
-              <input
-                id="custom-editor"
-                bind:value={customEditor}
-                class="min-w-0 flex-1 rounded border border-[var(--sg-input-border)] bg-[var(--sg-input-bg)] px-2.5 py-1.5 font-mono text-xs text-[var(--sg-text)] placeholder-[var(--sg-text-faint)] outline-none focus:border-[var(--sg-input-focus)]"
-                placeholder="e.g. vim, emacs, code --wait"
-                spellcheck="false"
-                autocorrect="off"
-                autocapitalize="off"
-              />
-              <button
-                class="shrink-0 rounded border border-[var(--sg-border)] bg-[var(--sg-surface-raised)] px-3 py-1.5 text-xs text-[var(--sg-text-dim)] hover:bg-[var(--sg-border)] hover:text-[var(--sg-text)]"
-                onclick={saveCustomEditor}
-              >Save</button>
-            </div>
-          </div>
-
-          <!-- Unavailable editors (dimmed) -->
-          {#if unavailableEditors.length > 0}
-            <div class="mt-4">
-              <div class="mb-1.5 text-xs text-[var(--sg-text-faint)]">Not found on system</div>
-              <div class="flex flex-wrap gap-2">
-                {#each unavailableEditors as editor}
-                  <span class="rounded-md border border-[var(--sg-border-subtle)] px-3 py-1.5 text-xs text-[var(--sg-text-faint)] opacity-50">
-                    {editor.name}
-                  </span>
-                {/each}
-              </div>
-            </div>
-          {/if}
-        {/if}
-      </section>
-
-      <!-- Terminal Shell -->
-      <section>
-        <h2 class="mb-1 text-sm font-semibold text-[var(--sg-text)]">Terminal Shell</h2>
-        <p class="mb-4 text-xs text-[var(--sg-text-faint)]">Choose the default shell for the built-in terminal. Opens in the selected worktree directory.</p>
-
-        {#if shellsLoading}
-          <div class="flex items-center gap-2 text-xs text-[var(--sg-text-dim)]">
-            <Spinner size="sm" />
-            Detecting shells…
-          </div>
-        {:else if availableShells.length === 0}
-          <div class="rounded-lg border border-[var(--sg-border)] bg-[var(--sg-surface)] px-4 py-3 text-xs text-[var(--sg-text-dim)]">
-            No supported shells detected on this system.
-          </div>
-        {:else}
-          <div class="flex flex-wrap gap-2">
-            {#each availableShells as shell}
-              {@const isActive = currentShell === shell}
-              <button
-                class="rounded-md border px-3 py-1.5 text-xs transition-colors {isActive
-                  ? 'border-[var(--sg-primary)] bg-[var(--sg-primary)]/10 font-medium text-[var(--sg-primary)]'
-                  : 'border-[var(--sg-border)] text-[var(--sg-text-dim)] hover:border-[var(--sg-text-faint)] hover:text-[var(--sg-text)]'}"
-                onclick={() => selectShell(shell)}
-              >
-                {shell}
-              </button>
-            {/each}
-          </div>
-          <p class="mt-2 text-[11px] text-[var(--sg-text-faint)]">
-            Current: <span class="font-mono text-[var(--sg-text-dim)]">{currentShell || "not set"}</span>
-          </p>
-        {/if}
-      </section>
-
-      <section>
-        <h2 class="mb-1 text-sm font-semibold text-[var(--sg-text)]">Workspace hooks</h2>
-        <div class="rounded-lg border border-[var(--sg-border)] bg-[var(--sg-surface)] px-4 py-3 text-xs text-[var(--sg-text-dim)]">
-          Open a workspace and use the <span class="font-semibold text-[var(--sg-text)]">Hooks</span> button in the top bar.
-        </div>
-      </section>
-
-      <!-- Git -->
-      <section>
-        <h2 class="mb-1 text-sm font-semibold text-[var(--sg-text)]">Git</h2>
-        <p class="mb-4 text-xs text-[var(--sg-text-faint)]">Information about the Git installation SproutGit is using.</p>
-        <div class="rounded-lg border border-[var(--sg-border)] bg-[var(--sg-surface)] px-4 py-3">
-          {#if gitInfo === null}
-            <div class="flex items-center gap-2 text-xs text-[var(--sg-text-dim)]">
-              <Spinner size="sm" />
-              Checking…
-            </div>
-          {:else if gitInfo.installed}
-            <div class="text-sm text-[var(--sg-text)]">{gitInfo.version}</div>
+          {#if toolsLoading}
+            <div class="px-5 py-5 text-xs text-(--sg-text-dim)"><Spinner size="sm" /> Detecting editors and tools...</div>
           {:else}
-            <div class="text-sm text-[var(--sg-danger)]">Git not found</div>
-          {/if}
-        </div>
-      </section>
-
-      <!-- About -->
-      <section>
-        <h2 class="mb-1 text-sm font-semibold text-[var(--sg-text)]">About</h2>
-        <div class="rounded-lg border border-[var(--sg-border)] bg-[var(--sg-surface)] px-4 py-3 flex flex-col gap-3">
-          <div class="flex items-center justify-between">
-            <span class="text-xs text-[var(--sg-text-dim)]">SproutGit</span>
-            <span class="font-mono text-xs text-[var(--sg-text-faint)]">
-              {#if appVersion !== null}
-                v{appVersion}
-              {:else}
-                <Spinner size="sm" />
-              {/if}
-            </span>
-          </div>
-          <div class="flex items-center justify-between border-t border-[var(--sg-border)] pt-3">
-            {#if updateAvailable}
-              <div class="flex flex-col gap-0.5">
-                <span class="text-xs font-medium text-[var(--sg-primary)]">Update v{updateAvailable.version} available</span>
-                {#if updateAvailable.body}
-                  <span class="text-xs text-[var(--sg-text-faint)]">{updateAvailable.body}</span>
+            <div class="divide-y divide-(--sg-border)">
+              <div class="px-5 py-4">
+                <div class="flex items-start justify-between"><div class="flex gap-2"><User size={14} class="mt-0.5 text-(--sg-text-dim)" /><div><p class="text-xs font-semibold text-(--sg-text)">Author Identity</p><p class="text-[11px] text-(--sg-text-faint)">{currentGitName || '(not set)'} · {currentGitEmail || '(not set)'}</p></div></div><button class="inline-flex items-center gap-1 rounded border border-(--sg-border) px-2.5 py-1 text-xs text-(--sg-text-dim)" onclick={() => togglePanel('author')}><Pencil size={12} /> {editingAuthor ? 'Done' : 'Edit'}</button></div>
+                {#if editingAuthor}
+                  <div class="mt-3 space-y-2 border-t border-(--sg-border) pt-3">
+                    <input bind:value={customGitName} class="w-full rounded border border-(--sg-input-border) bg-(--sg-input-bg) px-2.5 py-1.5 text-xs text-(--sg-text)" placeholder="Git user.name" />
+                    <input bind:value={customGitEmail} class="w-full rounded border border-(--sg-input-border) bg-(--sg-input-bg) px-2.5 py-1.5 text-xs text-(--sg-text)" placeholder="Git user.email" />
+                    <div class="flex flex-wrap gap-2"><button class="rounded border border-(--sg-border) px-3 py-1.5 text-xs text-(--sg-text)" onclick={saveGitIdentity}>Save Author</button>{#if githubAuth?.authenticated && githubAuth.username}<button class="rounded border border-(--sg-border) px-3 py-1.5 text-xs text-(--sg-text)" onclick={applyGithubUsernameAsAuthor}>Use GitHub Username</button>{/if}</div>
+                    {#if githubAuth?.authenticated}
+                      <div class="flex flex-wrap gap-2">{#if githubEmailsLoading}<span class="text-[11px] text-(--sg-text-faint)">Loading GitHub emails...</span>{:else}{#each githubEmailSuggestions as suggestion}<button class="rounded border border-(--sg-border) px-2 py-1 text-[11px] text-(--sg-text-dim)" onclick={() => applyGithubEmail(suggestion)}>{suggestion.label}</button>{/each}{/if}</div>
+                    {/if}
+                  </div>
                 {/if}
               </div>
-              <button
-                class="shrink-0 rounded border border-[var(--sg-primary)] px-3 py-1.5 text-xs text-[var(--sg-primary)] hover:bg-[var(--sg-primary)]/10 disabled:opacity-50"
-                onclick={async () => {
+
+              <div class="px-5 py-4">
+                <div class="flex items-start justify-between"><div class="flex gap-2"><svg viewBox="0 0 16 16" aria-hidden="true" class="mt-0.5 h-3.5 w-3.5 text-(--sg-text-dim)" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M3 13.5h10" /><path d="M5 11.5h6" /><path d="M4.5 2.5h7l1 1v5l-1 1h-7l-1-1v-5z" /></svg><div><p class="text-xs font-semibold text-(--sg-text)">Editor</p><p class="text-[11px] text-(--sg-text-faint)">{currentEditor || '(not set)'}</p></div></div><button class="inline-flex items-center gap-1 rounded border border-(--sg-border) px-2.5 py-1 text-xs text-(--sg-text-dim)" onclick={() => togglePanel('editor')}><Pencil size={12} /> {editingEditor ? 'Done' : 'Edit'}</button></div>
+                {#if editingEditor}
+                  <div class="mt-3 space-y-2 border-t border-(--sg-border) pt-3"><div class="flex flex-wrap gap-2">{#each installedEditors as editor}<button class="rounded border px-3 py-1.5 text-xs {currentEditor && matchesEditor(editor, currentEditor) ? 'border-(--sg-primary) text-(--sg-primary)' : 'border-(--sg-border) text-(--sg-text-dim)'}" onclick={() => selectEditor(editor)}>{editor.name}</button>{/each}</div><div class="flex gap-2"><input bind:value={customEditor} class="min-w-0 flex-1 rounded border border-(--sg-input-border) bg-(--sg-input-bg) px-2.5 py-1.5 font-mono text-xs text-(--sg-text)" placeholder="Custom core.editor" /><button class="rounded border border-(--sg-border) px-3 py-1.5 text-xs text-(--sg-text)" onclick={saveCustomEditor}>Save</button></div>{#if unavailableEditors.length > 0}<p class="text-[11px] text-(--sg-text-faint)">Not found: {unavailableEditors.map((e) => e.name).join(', ')}</p>{/if}</div>
+                {/if}
+              </div>
+
+              <div class="px-5 py-4">
+                <div class="flex items-start justify-between"><div class="flex gap-2"><svg viewBox="0 0 16 16" aria-hidden="true" class="mt-0.5 h-3.5 w-3.5 text-(--sg-text-dim)" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 4.5h11" /><path d="M2.5 11.5h11" /><circle cx="5" cy="4.5" r="1.25" fill="currentColor" stroke="none" /><circle cx="11" cy="11.5" r="1.25" fill="currentColor" stroke="none" /></svg><div><p class="text-xs font-semibold text-(--sg-text)">Diff Tool</p><p class="text-[11px] text-(--sg-text-faint)">{currentDiffTool || '(not set)'}</p></div></div><button class="inline-flex items-center gap-1 rounded border border-(--sg-border) px-2.5 py-1 text-xs text-(--sg-text-dim)" onclick={() => togglePanel('diff')}><Pencil size={12} /> {editingDiffTool ? 'Done' : 'Edit'}</button></div>
+                {#if editingDiffTool}
+                  <div class="mt-3 space-y-2 border-t border-(--sg-border) pt-3"><div class="flex flex-wrap gap-2">{#each installedDiffTools as tool}<button class="rounded border px-3 py-1.5 text-xs {currentDiffTool === tool.id ? 'border-(--sg-primary) text-(--sg-primary)' : 'border-(--sg-border) text-(--sg-text-dim)'}" onclick={() => applyDetectedDiffTool(tool)}>{tool.name}</button>{/each}</div><div class="flex gap-2"><input bind:value={customDiffTool} class="min-w-0 flex-1 rounded border border-(--sg-input-border) bg-(--sg-input-bg) px-2.5 py-1.5 font-mono text-xs text-(--sg-text)" placeholder="Custom diff.tool" /><button class="rounded border border-(--sg-border) px-3 py-1.5 text-xs text-(--sg-text)" onclick={saveCustomDiffTool}>Save</button></div></div>
+                {/if}
+              </div>
+
+              <div class="px-5 py-4">
+                <div class="flex items-start justify-between"><div class="flex gap-2"><svg viewBox="0 0 16 16" aria-hidden="true" class="mt-0.5 h-3.5 w-3.5 text-(--sg-text-dim)" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 3v6.5" /><path d="M11 13V6.5" /><path d="M2.5 6.5 5 9l2.5-2.5" /><path d="M8.5 9.5 11 7l2.5 2.5" /></svg><div><p class="text-xs font-semibold text-(--sg-text)">Merge Tool</p><p class="text-[11px] text-(--sg-text-faint)">{currentMergeTool || '(not set)'}</p></div></div><button class="inline-flex items-center gap-1 rounded border border-(--sg-border) px-2.5 py-1 text-xs text-(--sg-text-dim)" onclick={() => togglePanel('merge')}><Pencil size={12} /> {editingMergeTool ? 'Done' : 'Edit'}</button></div>
+                {#if editingMergeTool}
+                  <div class="mt-3 space-y-2 border-t border-(--sg-border) pt-3"><div class="flex flex-wrap gap-2">{#each installedMergeTools as tool}<button class="rounded border px-3 py-1.5 text-xs {currentMergeTool === tool.id ? 'border-(--sg-primary) text-(--sg-primary)' : 'border-(--sg-border) text-(--sg-text-dim)'}" onclick={() => applyDetectedMergeTool(tool)}>{tool.name}</button>{/each}</div><div class="flex gap-2"><input bind:value={customMergeTool} class="min-w-0 flex-1 rounded border border-(--sg-input-border) bg-(--sg-input-bg) px-2.5 py-1.5 font-mono text-xs text-(--sg-text)" placeholder="Custom merge.tool" /><button class="rounded border border-(--sg-border) px-3 py-1.5 text-xs text-(--sg-text)" onclick={saveCustomMergeTool}>Save</button></div></div>
+                {/if}
+              </div>
+
+              <div class="px-5 py-4"><div class="flex items-center gap-2"><Info size={14} class="text-(--sg-text-dim)" /><p class="text-xs font-semibold text-(--sg-text)">Git Installation</p></div>{#if gitInfo === null}<p class="mt-1 text-xs text-(--sg-text-faint)">Checking...</p>{:else if gitInfo.installed}<p class="mt-1 text-xs text-(--sg-text-dim)">{gitInfo.version}</p>{:else}<p class="mt-1 text-xs text-(--sg-danger)">Git not found</p>{/if}</div>
+            </div>
+          {/if}
+        </section>
+
+        <div class="space-y-6">
+          <section class="rounded-lg border border-(--sg-border) bg-(--sg-surface) p-5">
+            <div class="mb-2 flex items-center gap-2"><SquareTerminal size={16} class="text-(--sg-primary)" /><h2 class="text-sm font-semibold text-(--sg-primary)">Terminal Shell</h2></div>
+            <p class="mb-3 text-xs text-(--sg-text-faint)">Default shell used in SproutGit's terminal panel.</p>
+            {#if shellsLoading}
+              <div class="text-xs text-(--sg-text-dim)"><Spinner size="sm" /> Detecting shells...</div>
+            {:else if availableShells.length === 0}
+              <p class="text-xs text-(--sg-text-faint)">No supported shells detected.</p>
+            {:else}
+              <div class="flex flex-wrap gap-2">{#each availableShells as shell}<button class="rounded border px-3 py-1.5 text-xs {currentShell === shell ? 'border-(--sg-primary) text-(--sg-primary)' : 'border-(--sg-border) text-(--sg-text-dim)'}" onclick={() => selectShell(shell)}>{shell}</button>{/each}</div>
+            {/if}
+          </section>
+
+          <section class="rounded-lg border border-(--sg-border) bg-(--sg-surface) p-5">
+            <div class="mb-2 flex items-center gap-2"><Info size={16} class="text-(--sg-primary)" /><h2 class="text-sm font-semibold text-(--sg-primary)">About</h2></div>
+            <div class="flex items-center justify-between"><span class="text-xs text-(--sg-text)">SproutGit</span><span class="font-mono text-xs text-(--sg-text-dim)">{#if appVersion !== null}v{appVersion}{:else}<Spinner size="sm" />{/if}</span></div>
+            <div class="mt-3 border-t border-(--sg-border) pt-3">
+              {#if updateAvailable}
+                <p class="mb-2 text-xs text-(--sg-text)">Update v{updateAvailable.version} available</p>
+                <button class="rounded border border-(--sg-border) px-3 py-1.5 text-xs text-(--sg-text)" disabled={updateInstalling} onclick={async () => {
                   updateInstalling = true;
                   try {
                     await updateAvailable!.downloadAndInstall();
@@ -476,43 +441,28 @@
                   } finally {
                     updateInstalling = false;
                   }
-                }}
-                disabled={updateInstalling}
-              >
-                {#if updateInstalling}<Spinner size="sm" />{/if}
-                {updateInstalling ? 'Installing…' : 'Install & Restart'}
-              </button>
-            {:else}
-              <span class="text-xs text-[var(--sg-text-faint)]">
-                {#if updateChecked}Up to date{:else}Check for the latest version{/if}
-              </span>
-              <button
-                class="shrink-0 rounded border border-[var(--sg-border)] bg-[var(--sg-surface-raised)] px-3 py-1.5 text-xs text-[var(--sg-text-dim)] hover:bg-[var(--sg-border)] hover:text-[var(--sg-text)] disabled:opacity-50"
-                onclick={async () => {
+                }}>{updateInstalling ? 'Installing...' : 'Install & Restart'}</button>
+              {:else}
+                <p class="mb-2 text-xs text-(--sg-text-faint)">{#if updateChecked}Up to date{:else}Check for the latest version{/if}</p>
+                <button class="rounded border border-(--sg-border) bg-(--sg-surface-raised) px-3 py-1.5 text-xs text-(--sg-text)" disabled={updateChecking} onclick={async () => {
                   updateChecking = true;
                   updateChecked = false;
                   try {
                     const { check } = await import('@tauri-apps/plugin-updater');
-                    const update = await check();
-                    updateAvailable = update;
+                    updateAvailable = await check();
                     updateChecked = true;
-                    if (!update) toast.info('You\'re on the latest version');
+                    if (!updateAvailable) toast.info("You're on the latest version");
                   } catch (err) {
                     toast.error('Update check failed: ' + String(err));
                   } finally {
                     updateChecking = false;
                   }
-                }}
-                disabled={updateChecking}
-              >
-                {#if updateChecking}<Spinner size="sm" />{/if}
-                {updateChecking ? 'Checking…' : 'Check for Updates'}
-              </button>
-            {/if}
-          </div>
+                }}>{updateChecking ? 'Checking...' : 'Check for Updates'}</button>
+              {/if}
+            </div>
+          </section>
         </div>
-      </section>
-
+      </div>
     </div>
   </div>
 </main>
