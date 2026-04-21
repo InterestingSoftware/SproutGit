@@ -16,6 +16,8 @@
   }
 
   onMount(async () => {
+    if (import.meta.env.DEV) return;
+
     try {
       const { check } = await import("@tauri-apps/plugin-updater");
       const update = await check();

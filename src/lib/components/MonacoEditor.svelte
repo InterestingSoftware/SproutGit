@@ -55,6 +55,8 @@
       language,
       theme: resolvedThemeName(),
       minimap: { enabled: false },
+      fontFamily: 'Fira Code',
+      fontLigatures: true,
       fontSize: 13,
       lineNumbers: "on",
       scrollBeyondLastLine: false,

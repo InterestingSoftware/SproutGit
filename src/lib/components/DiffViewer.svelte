@@ -209,7 +209,7 @@
         No diff content (file may be binary or empty)
       </div>
     {:else}
-      <table class="w-full border-collapse font-mono text-[11px] leading-[18px]">
+      <table class="sg-code w-full border-collapse font-mono text-[11px] leading-[18px]">
         <tbody>
           {#each parsedDiff as line, idx}
             {@const hl = highlightedLines.get(idx)}

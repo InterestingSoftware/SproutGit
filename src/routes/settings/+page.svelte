@@ -65,6 +65,7 @@
 
   let gitInfo = $state<GitInfo | null>(null);
   let appVersion = $state<string | null>(null);
+  const updaterEnabled = !import.meta.env.DEV;
   let updateChecking = $state(false);
   let updateChecked = $state(false);
   let updateAvailable = $state<Update | null>(null);
@@ -79,6 +80,54 @@
   let unavailableEditors = $derived(editors.filter((e) => !e.installed));
   let installedDiffTools = $derived(gitTools.filter((t) => t.installed && t.supportsDiff));
   let installedMergeTools = $derived(gitTools.filter((t) => t.installed && t.supportsMerge));
+
+  type ToolDisplay = {
+    id: string;
+    name: string;
+  };
+
+  function titleCase(value: string): string {
+    return value
+      .replace(/[-_]+/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim()
+      .replace(/\b\w/g, (c) => c.toUpperCase());
+  }
+
+  function commandToken(value: string): string {
+    const trimmed = value.trim();
+    if (!trimmed) return '';
+    const stripped = trimmed.replace(/^"([\s\S]*)"(?:\s.*)?$/, '$1').replace(/^'([\s\S]*)'(?:\s.*)?$/, '$1');
+    const first = stripped.split(/\s+/)[0] ?? '';
+    const normalized = first.replace(/^"|"$/g, '').replace(/^'|'$/g, '');
+    const parts = normalized.split('/');
+    return (parts[parts.length - 1] ?? normalized).toLowerCase();
+  }
+
+  function fallbackDisplay(value: string): ToolDisplay {
+    const token = commandToken(value);
+    const base = token || value.trim();
+    return { id: token || 'custom', name: titleCase(base) };
+  }
+
+  function findEditorDisplay(value: string): ToolDisplay | null {
+    if (!value.trim()) return null;
+    const match = editors.find((editor) => matchesEditor(editor, value));
+    if (match) return { id: match.id, name: match.name };
+    return fallbackDisplay(value);
+  }
+
+  function findToolDisplay(value: string): ToolDisplay | null {
+    if (!value.trim()) return null;
+    const token = commandToken(value);
+    const match = gitTools.find((tool) => tool.id === value || tool.id === token || tool.command === token);
+    if (match) return { id: match.id, name: match.name };
+    return fallbackDisplay(value);
+  }
+
+  let editorDisplay = $derived(findEditorDisplay(currentEditor));
+  let diffToolDisplay = $derived(findToolDisplay(currentDiffTool));
+  let mergeToolDisplay = $derived(findToolDisplay(currentMergeTool));
 
   getVersion().then((v) => (appVersion = v)).catch(() => (appVersion = 'unknown'));
   getGitInfo()
@@ -335,20 +384,20 @@
   }
 </script>
 
-<main class="flex h-screen flex-col">
+<main class="sg-body flex h-screen flex-col">
   <header data-tauri-drag-region class="flex shrink-0 items-center gap-3 border-b border-(--sg-border) bg-(--sg-surface) pt-1 pr-1 pb-1 pl-(--sg-titlebar-inset)">
     <button onclick={() => goto(workspacePath ? `/workspace?workspace=${encodeURIComponent(workspacePath)}` : '/')} class="rounded px-2 py-0.5 text-xs text-(--sg-text-dim) hover:bg-(--sg-surface-raised) hover:text-(--sg-text)">&larr; Projects</button>
     <div class="h-3 w-px bg-(--sg-border)"></div>
-    <span class="text-xs font-medium text-(--sg-text)">Settings</span>
+    <span class="sg-heading text-xs font-medium text-(--sg-text)">Settings</span>
     <div class="ml-auto"><WindowControls /></div>
   </header>
 
   <div class="flex-1 overflow-auto p-6">
     <div class="mx-auto flex max-w-6xl flex-col gap-6">
-      <div class="flex items-center gap-2"><Settings size={18} class="text-(--sg-primary)" /><h1 class="text-lg font-semibold text-(--sg-primary)">Settings</h1></div>
+      <div class="flex items-center gap-2"><Settings size={18} class="text-(--sg-primary)" /><h1 class="sg-heading text-lg font-semibold text-(--sg-primary)">Settings</h1></div>
 
       <section class="rounded-lg border border-(--sg-border) bg-(--sg-surface) p-5">
-        <div class="mb-3 flex items-center gap-2"><svg viewBox="0 0 16 16" aria-hidden="true" class="h-4 w-4 text-(--sg-primary)" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><circle cx="3.25" cy="8" r="1.5" /><circle cx="12.75" cy="4" r="1.5" /><circle cx="12.75" cy="12" r="1.5" /><path d="M4.6 7.2 11.4 4.8" /><path d="M4.6 8.8 11.4 11.2" /></svg><h2 class="text-sm font-semibold text-(--sg-primary)">Git Provider</h2></div>
+        <div class="mb-3 flex items-center gap-2"><svg viewBox="0 0 16 16" aria-hidden="true" class="h-4 w-4 text-(--sg-primary)" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><circle cx="3.25" cy="8" r="1.5" /><circle cx="12.75" cy="4" r="1.5" /><circle cx="12.75" cy="12" r="1.5" /><path d="M4.6 7.2 11.4 4.8" /><path d="M4.6 8.8 11.4 11.2" /></svg><h2 class="sg-heading text-sm font-semibold text-(--sg-primary)">Git Provider</h2></div>
         {#if githubAuth === null}
           <div class="flex items-center gap-2 text-xs text-(--sg-text-dim)"><Spinner size="sm" /> Checking connection...</div>
         {:else if githubAuth.authenticated}
@@ -365,14 +414,14 @@
 
       <div class="grid gap-6 xl:grid-cols-[1.6fr_1fr]">
         <section class="rounded-lg border border-(--sg-border) bg-(--sg-surface)">
-          <div class="border-b border-(--sg-border) px-5 py-4"><div class="flex items-center gap-2"><GitBranch size={16} class="text-(--sg-primary)" /><h2 class="text-sm font-semibold text-(--sg-primary)">Git Settings</h2></div><p class="mt-1 text-xs text-(--sg-text-faint)">These update your global Git configuration.</p></div>
+          <div class="border-b border-(--sg-border) px-5 py-4"><div class="flex items-center gap-2"><GitBranch size={16} class="text-(--sg-primary)" /><h2 class="sg-heading text-sm font-semibold text-(--sg-primary)">Git Settings</h2></div><p class="mt-1 text-xs text-(--sg-text-faint)">These update your global Git configuration.</p></div>
 
           {#if toolsLoading}
             <div class="px-5 py-5 text-xs text-(--sg-text-dim)"><Spinner size="sm" /> Detecting editors and tools...</div>
           {:else}
             <div class="divide-y divide-(--sg-border)">
               <div class="px-5 py-4">
-                <div class="flex items-start justify-between"><div class="flex gap-2"><User size={14} class="mt-0.5 text-(--sg-text-dim)" /><div><p class="text-xs font-semibold text-(--sg-text)">Author Identity</p><p class="text-[11px] text-(--sg-text-faint)">{currentGitName || '(not set)'} · {currentGitEmail || '(not set)'}</p></div></div><button class="inline-flex items-center gap-1 rounded border border-(--sg-border) px-2.5 py-1 text-xs text-(--sg-text-dim)" onclick={() => togglePanel('author')}><Pencil size={12} /> {editingAuthor ? 'Done' : 'Edit'}</button></div>
+                <div class="flex items-start justify-between"><div class="flex gap-2"><User size={14} class="mt-0.5 text-(--sg-text-dim)" /><div><p class="sg-heading text-xs font-semibold text-(--sg-text)">Author Identity</p><p class="text-[11px] text-(--sg-text-faint)">{currentGitName || '(not set)'} · {currentGitEmail || '(not set)'}</p></div></div><button class="inline-flex items-center gap-1 rounded border border-(--sg-border) px-2.5 py-1 text-xs text-(--sg-text-dim)" onclick={() => togglePanel('author')}><Pencil size={12} /> {editingAuthor ? 'Done' : 'Edit'}</button></div>
                 {#if editingAuthor}
                   <div class="mt-3 space-y-2 border-t border-(--sg-border) pt-3">
                     <input bind:value={customGitName} class="w-full rounded border border-(--sg-input-border) bg-(--sg-input-bg) px-2.5 py-1.5 text-xs text-(--sg-text)" placeholder="Git user.name" />
@@ -386,34 +435,34 @@
               </div>
 
               <div class="px-5 py-4">
-                <div class="flex items-start justify-between"><div class="flex gap-2"><svg viewBox="0 0 16 16" aria-hidden="true" class="mt-0.5 h-3.5 w-3.5 text-(--sg-text-dim)" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M3 13.5h10" /><path d="M5 11.5h6" /><path d="M4.5 2.5h7l1 1v5l-1 1h-7l-1-1v-5z" /></svg><div><p class="text-xs font-semibold text-(--sg-text)">Editor</p><p class="text-[11px] text-(--sg-text-faint)">{currentEditor || '(not set)'}</p></div></div><button class="inline-flex items-center gap-1 rounded border border-(--sg-border) px-2.5 py-1 text-xs text-(--sg-text-dim)" onclick={() => togglePanel('editor')}><Pencil size={12} /> {editingEditor ? 'Done' : 'Edit'}</button></div>
+                <div class="flex items-start justify-between"><div class="flex gap-2"><svg viewBox="0 0 16 16" aria-hidden="true" class="mt-0.5 h-3.5 w-3.5 text-(--sg-text-dim)" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M3 13.5h10" /><path d="M5 11.5h6" /><path d="M4.5 2.5h7l1 1v5l-1 1h-7l-1-1v-5z" /></svg><div><p class="sg-heading text-xs font-semibold text-(--sg-text)">Editor</p>{#if editorDisplay}<p class="text-[11px] text-(--sg-text-faint)">{editorDisplay.name}</p>{:else}<p class="text-[11px] text-(--sg-text-faint)">(not set)</p>{/if}</div></div><button class="inline-flex items-center gap-1 rounded border border-(--sg-border) px-2.5 py-1 text-xs text-(--sg-text-dim)" onclick={() => togglePanel('editor')}><Pencil size={12} /> {editingEditor ? 'Done' : 'Edit'}</button></div>
                 {#if editingEditor}
                   <div class="mt-3 space-y-2 border-t border-(--sg-border) pt-3"><div class="flex flex-wrap gap-2">{#each installedEditors as editor}<button class="rounded border px-3 py-1.5 text-xs {currentEditor && matchesEditor(editor, currentEditor) ? 'border-(--sg-primary) text-(--sg-primary)' : 'border-(--sg-border) text-(--sg-text-dim)'}" onclick={() => selectEditor(editor)}>{editor.name}</button>{/each}</div><div class="flex gap-2"><input bind:value={customEditor} class="min-w-0 flex-1 rounded border border-(--sg-input-border) bg-(--sg-input-bg) px-2.5 py-1.5 font-mono text-xs text-(--sg-text)" placeholder="Custom core.editor" /><button class="rounded border border-(--sg-border) px-3 py-1.5 text-xs text-(--sg-text)" onclick={saveCustomEditor}>Save</button></div>{#if unavailableEditors.length > 0}<p class="text-[11px] text-(--sg-text-faint)">Not found: {unavailableEditors.map((e) => e.name).join(', ')}</p>{/if}</div>
                 {/if}
               </div>
 
               <div class="px-5 py-4">
-                <div class="flex items-start justify-between"><div class="flex gap-2"><svg viewBox="0 0 16 16" aria-hidden="true" class="mt-0.5 h-3.5 w-3.5 text-(--sg-text-dim)" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 4.5h11" /><path d="M2.5 11.5h11" /><circle cx="5" cy="4.5" r="1.25" fill="currentColor" stroke="none" /><circle cx="11" cy="11.5" r="1.25" fill="currentColor" stroke="none" /></svg><div><p class="text-xs font-semibold text-(--sg-text)">Diff Tool</p><p class="text-[11px] text-(--sg-text-faint)">{currentDiffTool || '(not set)'}</p></div></div><button class="inline-flex items-center gap-1 rounded border border-(--sg-border) px-2.5 py-1 text-xs text-(--sg-text-dim)" onclick={() => togglePanel('diff')}><Pencil size={12} /> {editingDiffTool ? 'Done' : 'Edit'}</button></div>
+                <div class="flex items-start justify-between"><div class="flex gap-2"><svg viewBox="0 0 16 16" aria-hidden="true" class="mt-0.5 h-3.5 w-3.5 text-(--sg-text-dim)" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 4.5h11" /><path d="M2.5 11.5h11" /><circle cx="5" cy="4.5" r="1.25" fill="currentColor" stroke="none" /><circle cx="11" cy="11.5" r="1.25" fill="currentColor" stroke="none" /></svg><div><p class="sg-heading text-xs font-semibold text-(--sg-text)">Diff Tool</p>{#if diffToolDisplay}<p class="text-[11px] text-(--sg-text-faint)">{diffToolDisplay.name}</p>{:else}<p class="text-[11px] text-(--sg-text-faint)">(not set)</p>{/if}</div></div><button class="inline-flex items-center gap-1 rounded border border-(--sg-border) px-2.5 py-1 text-xs text-(--sg-text-dim)" onclick={() => togglePanel('diff')}><Pencil size={12} /> {editingDiffTool ? 'Done' : 'Edit'}</button></div>
                 {#if editingDiffTool}
                   <div class="mt-3 space-y-2 border-t border-(--sg-border) pt-3"><div class="flex flex-wrap gap-2">{#each installedDiffTools as tool}<button class="rounded border px-3 py-1.5 text-xs {currentDiffTool === tool.id ? 'border-(--sg-primary) text-(--sg-primary)' : 'border-(--sg-border) text-(--sg-text-dim)'}" onclick={() => applyDetectedDiffTool(tool)}>{tool.name}</button>{/each}</div><div class="flex gap-2"><input bind:value={customDiffTool} class="min-w-0 flex-1 rounded border border-(--sg-input-border) bg-(--sg-input-bg) px-2.5 py-1.5 font-mono text-xs text-(--sg-text)" placeholder="Custom diff.tool" /><button class="rounded border border-(--sg-border) px-3 py-1.5 text-xs text-(--sg-text)" onclick={saveCustomDiffTool}>Save</button></div></div>
                 {/if}
               </div>
 
               <div class="px-5 py-4">
-                <div class="flex items-start justify-between"><div class="flex gap-2"><svg viewBox="0 0 16 16" aria-hidden="true" class="mt-0.5 h-3.5 w-3.5 text-(--sg-text-dim)" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 3v6.5" /><path d="M11 13V6.5" /><path d="M2.5 6.5 5 9l2.5-2.5" /><path d="M8.5 9.5 11 7l2.5 2.5" /></svg><div><p class="text-xs font-semibold text-(--sg-text)">Merge Tool</p><p class="text-[11px] text-(--sg-text-faint)">{currentMergeTool || '(not set)'}</p></div></div><button class="inline-flex items-center gap-1 rounded border border-(--sg-border) px-2.5 py-1 text-xs text-(--sg-text-dim)" onclick={() => togglePanel('merge')}><Pencil size={12} /> {editingMergeTool ? 'Done' : 'Edit'}</button></div>
+                <div class="flex items-start justify-between"><div class="flex gap-2"><svg viewBox="0 0 16 16" aria-hidden="true" class="mt-0.5 h-3.5 w-3.5 text-(--sg-text-dim)" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 3v6.5" /><path d="M11 13V6.5" /><path d="M2.5 6.5 5 9l2.5-2.5" /><path d="M8.5 9.5 11 7l2.5 2.5" /></svg><div><p class="sg-heading text-xs font-semibold text-(--sg-text)">Merge Tool</p>{#if mergeToolDisplay}<p class="text-[11px] text-(--sg-text-faint)">{mergeToolDisplay.name}</p>{:else}<p class="text-[11px] text-(--sg-text-faint)">(not set)</p>{/if}</div></div><button class="inline-flex items-center gap-1 rounded border border-(--sg-border) px-2.5 py-1 text-xs text-(--sg-text-dim)" onclick={() => togglePanel('merge')}><Pencil size={12} /> {editingMergeTool ? 'Done' : 'Edit'}</button></div>
                 {#if editingMergeTool}
                   <div class="mt-3 space-y-2 border-t border-(--sg-border) pt-3"><div class="flex flex-wrap gap-2">{#each installedMergeTools as tool}<button class="rounded border px-3 py-1.5 text-xs {currentMergeTool === tool.id ? 'border-(--sg-primary) text-(--sg-primary)' : 'border-(--sg-border) text-(--sg-text-dim)'}" onclick={() => applyDetectedMergeTool(tool)}>{tool.name}</button>{/each}</div><div class="flex gap-2"><input bind:value={customMergeTool} class="min-w-0 flex-1 rounded border border-(--sg-input-border) bg-(--sg-input-bg) px-2.5 py-1.5 font-mono text-xs text-(--sg-text)" placeholder="Custom merge.tool" /><button class="rounded border border-(--sg-border) px-3 py-1.5 text-xs text-(--sg-text)" onclick={saveCustomMergeTool}>Save</button></div></div>
                 {/if}
               </div>
 
-              <div class="px-5 py-4"><div class="flex items-center gap-2"><Info size={14} class="text-(--sg-text-dim)" /><p class="text-xs font-semibold text-(--sg-text)">Git Installation</p></div>{#if gitInfo === null}<p class="mt-1 text-xs text-(--sg-text-faint)">Checking...</p>{:else if gitInfo.installed}<p class="mt-1 text-xs text-(--sg-text-dim)">{gitInfo.version}</p>{:else}<p class="mt-1 text-xs text-(--sg-danger)">Git not found</p>{/if}</div>
+              <div class="px-5 py-4"><div class="flex items-center gap-2"><Info size={14} class="text-(--sg-text-dim)" /><p class="sg-heading text-xs font-semibold text-(--sg-text)">Git Installation</p></div>{#if gitInfo === null}<p class="mt-1 text-xs text-(--sg-text-faint)">Checking...</p>{:else if gitInfo.installed}<p class="mt-1 text-xs text-(--sg-text-dim)">{gitInfo.version}</p>{:else}<p class="mt-1 text-xs text-(--sg-danger)">Git not found</p>{/if}</div>
             </div>
           {/if}
         </section>
 
         <div class="space-y-6">
           <section class="rounded-lg border border-(--sg-border) bg-(--sg-surface) p-5">
-            <div class="mb-2 flex items-center gap-2"><SquareTerminal size={16} class="text-(--sg-primary)" /><h2 class="text-sm font-semibold text-(--sg-primary)">Terminal Shell</h2></div>
+            <div class="mb-2 flex items-center gap-2"><SquareTerminal size={16} class="text-(--sg-primary)" /><h2 class="sg-heading text-sm font-semibold text-(--sg-primary)">Terminal Shell</h2></div>
             <p class="mb-3 text-xs text-(--sg-text-faint)">Default shell used in SproutGit's terminal panel.</p>
             {#if shellsLoading}
               <div class="text-xs text-(--sg-text-dim)"><Spinner size="sm" /> Detecting shells...</div>
@@ -425,10 +474,12 @@
           </section>
 
           <section class="rounded-lg border border-(--sg-border) bg-(--sg-surface) p-5">
-            <div class="mb-2 flex items-center gap-2"><Info size={16} class="text-(--sg-primary)" /><h2 class="text-sm font-semibold text-(--sg-primary)">About</h2></div>
-            <div class="flex items-center justify-between"><span class="text-xs text-(--sg-text)">SproutGit</span><span class="font-mono text-xs text-(--sg-text-dim)">{#if appVersion !== null}v{appVersion}{:else}<Spinner size="sm" />{/if}</span></div>
+            <div class="mb-2 flex items-center gap-2"><Info size={16} class="text-(--sg-primary)" /><h2 class="sg-heading text-sm font-semibold text-(--sg-primary)">About</h2></div>
+            <div class="flex items-center justify-between"><span class="sg-logo-text text-xs text-(--sg-text)">SproutGit</span><span class="font-mono text-xs text-(--sg-text-dim)">{#if appVersion !== null}v{appVersion}{:else}<Spinner size="sm" />{/if}</span></div>
             <div class="mt-3 border-t border-(--sg-border) pt-3">
-              {#if updateAvailable}
+              {#if !updaterEnabled}
+                <p class="mb-2 text-xs text-(--sg-text-faint)">Updater is disabled in development builds.</p>
+              {:else if updateAvailable}
                 <p class="mb-2 text-xs text-(--sg-text)">Update v{updateAvailable.version} available</p>
                 <button class="rounded border border-(--sg-border) px-3 py-1.5 text-xs text-(--sg-text)" disabled={updateInstalling} onclick={async () => {
                   updateInstalling = true;

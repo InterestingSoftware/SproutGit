@@ -27,6 +27,8 @@
     }
   },
   "dependencies": {
+    "@fontsource/fira-code": "^5.2.7",
+    "@fontsource/plus-jakarta-sans": "^5.2.8",
     "@fontsource/space-grotesk": "^5.2.10",
     "@monaco-editor/loader": "^1.7.0",
     "@tauri-apps/api": "^2",
