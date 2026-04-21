@@ -8,6 +8,7 @@
   import ContextMenu, { type MenuItem } from "$lib/components/ContextMenu.svelte";
   import DiffViewer from "$lib/components/DiffViewer.svelte";
   import Spinner from "$lib/components/Spinner.svelte";
+  import TerminalPanel from "$lib/components/TerminalPanel.svelte";
   import WorkspaceHooksModal from "$lib/components/WorkspaceHooksModal.svelte";
   import {
     checkoutWorktree,
@@ -32,6 +33,8 @@
     startWatchingWorktrees,
     stopWatchingWorktrees,
     onWorktreeChanged,
+    getAppSetting,
+    listAvailableShells,
     type StatusFileEntry,
     type WorktreeStatusResult,
     type CommitEntry,
@@ -417,14 +420,41 @@
   let statusLoading = $state(false);
   let stagingAction = $state<string | null>(null);
   let committing = $state(false);
-  // Initialise from sessionStorage so it survives HMR reloads.
-  // (Must be set here, before the persisting $effect, to avoid the effect
-  // overwriting a saved "false" before loadWorkspace() can read it.)
-  let showHistory = $state<boolean>(
-    typeof sessionStorage !== "undefined"
-      ? sessionStorage.getItem("sg_show_history") !== "false"
-      : true,
+
+  // ── Active tab ──────────────────────────────────────────────────────────────
+  // Three tabs: 'history' | 'changes' | 'terminal'
+  // Initialised from sessionStorage, with migration from the old boolean key.
+  type WorkspaceTab = "history" | "changes" | "terminal";
+  let activeTab = $state<WorkspaceTab>(
+    (() => {
+      if (typeof sessionStorage === "undefined") return "history";
+      const saved = sessionStorage.getItem("sg_active_tab");
+      if (saved === "history" || saved === "changes" || saved === "terminal") return saved;
+      // Migrate from the old boolean sg_show_history key
+      return sessionStorage.getItem("sg_show_history") === "false" ? "changes" : "history";
+    })(),
   );
+
+  // ── Terminal state ──────────────────────────────────────────────────────────
+  let availableShells = $state<string[]>([]);
+  let defaultShell = $state("");
+  // Paths whose terminal panel has been initialized at least once.
+  // Once added, the TerminalPanel stays mounted (display:none when inactive)
+  // so the PTY session survives tab switches and worktree switches.
+  let terminalInitializedPaths = $state(new Set<string>());
+
+  // Lazily initialize terminal for the active worktree the first time the tab is shown.
+  $effect(() => {
+    if (
+      activeTab === "terminal" &&
+      defaultShell &&
+      activeWorktreePath &&
+      activeWorktreePath !== workspace?.rootPath &&
+      !terminalInitializedPaths.has(activeWorktreePath)
+    ) {
+      terminalInitializedPaths = new Set([...terminalInitializedPaths, activeWorktreePath]);
+    }
+  });
 
   // Per-worktree change counts for sidebar badges
   let worktreeChangeCounts = $state<Record<string, number>>({});
@@ -691,7 +721,7 @@
     // (backslashes on Windows) while listWorktrees returns git-output forward slashes.
     const changedPath = changedPathRaw.replace(/\\/g, "/");
     // Update the change count and file list for the specific worktree that changed.
-    // Never resets activeWorktreePath or showHistory, and never touches the graph
+    // Never resets activeWorktreePath or activeTab, and never touches the graph
     // (to avoid a visible full re-render while the user is on the Changes tab).
     try {
       const result = await getWorktreeStatus(changedPath);
@@ -699,7 +729,7 @@
       if (changedPath === selectedWorktree?.path) {
         worktreeStatus = result.files;
         // Refresh active diff to reflect the new working tree / index state.
-        if (stagingDiffFile && !showHistory) {
+        if (stagingDiffFile && activeTab === "changes") {
           void loadStagingDiff(stagingDiffFile, stagingDiffStaged);
         }
       }
@@ -731,7 +761,7 @@
     if (activeWorktreePath) sessionStorage.setItem("sg_active_wt", activeWorktreePath);
   });
   $effect(() => {
-    sessionStorage.setItem("sg_show_history", String(showHistory));
+    sessionStorage.setItem("sg_active_tab", activeTab);
   });
 
   async function loadWorkspace() {
@@ -762,15 +792,22 @@
       initializeGraphState(graphData);
       selectedRef = refsData.refs[0]?.name ?? "HEAD";
 
-      // Restore the previously active worktree and tab if still valid (survives HMR).
+      // Restore the previously active worktree if still valid (survives HMR).
       const savedWt = sessionStorage.getItem("sg_active_wt");
-      const savedTab = sessionStorage.getItem("sg_show_history");
       if (savedWt && worktreeData.worktrees.some((wt) => wt.path === savedWt)) {
         activeWorktreePath = savedWt;
       } else {
         activeWorktreePath = worktreeData.worktrees[0]?.path ?? null;
       }
-      // (showHistory is already initialised from sessionStorage at declaration time.)
+      // (activeTab is already initialised from sessionStorage at declaration time.)
+
+      // Load available shells and the user's default shell preference
+      const [shells, savedShell] = await Promise.all([
+        listAvailableShells().catch(() => [] as string[]),
+        getAppSetting("default_shell").catch(() => null),
+      ]);
+      availableShells = shells;
+      defaultShell = savedShell ?? shells[0] ?? "";
 
       // Load change counts for all non-root worktrees
       const nonRoot = worktreeData.worktrees
@@ -1482,20 +1519,20 @@
 
       <!-- Main content area -->
       <section class="flex min-w-0 flex-1 flex-col overflow-hidden">
-        <!-- View toggles (staging vs history) -->
+        <!-- View toggles (history / changes / terminal) -->
         {#if selectedWorktree && activeWorktreePath !== workspace?.rootPath}
           <div class="flex items-center gap-1 border-b border-[var(--sg-border)] bg-[var(--sg-surface)] px-4">
             <button
-              onclick={() => (showHistory = true)}
-              class="border-b-2 px-3 py-2 text-xs font-medium transition {showHistory
+              onclick={() => (activeTab = "history")}
+              class="border-b-2 px-3 py-2 text-xs font-medium transition {activeTab === 'history'
                 ? 'border-[var(--sg-primary)] text-[var(--sg-primary)]'
                 : 'border-transparent text-[var(--sg-text-dim)] hover:text-[var(--sg-text)]'}"
             >
               History
             </button>
             <button
-              onclick={() => (showHistory = false)}
-              class="flex items-center gap-1.5 border-b-2 px-3 py-2 text-xs font-medium transition {!showHistory
+              onclick={() => (activeTab = "changes")}
+              class="flex items-center gap-1.5 border-b-2 px-3 py-2 text-xs font-medium transition {activeTab === 'changes'
                 ? 'border-[var(--sg-primary)] text-[var(--sg-primary)]'
                 : 'border-transparent text-[var(--sg-text-dim)] hover:text-[var(--sg-text)]'}"
             >
@@ -1506,10 +1543,18 @@
                 </span>
               {/if}
             </button>
+            <button
+              onclick={() => (activeTab = "terminal")}
+              class="border-b-2 px-3 py-2 text-xs font-medium transition {activeTab === 'terminal'
+                ? 'border-[var(--sg-primary)] text-[var(--sg-primary)]'
+                : 'border-transparent text-[var(--sg-text-dim)] hover:text-[var(--sg-text)]'}"
+            >
+              Terminal
+            </button>
           </div>
         {/if}
 
-        {#if !showHistory && selectedWorktree && activeWorktreePath !== workspace?.rootPath}
+        {#if activeTab === "changes" && selectedWorktree && activeWorktreePath !== workspace?.rootPath}
           <!-- Staging View: left = file lists + commit form, right = always-visible diff panel -->
           <div class="flex min-h-0 flex-1">
             <!-- Left column: file lists + commit form -->
@@ -1697,7 +1742,7 @@
               {/if}
             </div>
           </div>
-        {:else if showHistory}
+        {:else if activeTab === "history" || !selectedWorktree || activeWorktreePath === workspace?.rootPath}
           <!-- Commit graph -->
           <div class="flex min-h-0 {selectedCommits.length > 0 ? "h-1/2" : "flex-1"} flex-col">
             <div class="flex items-center justify-between border-b border-[var(--sg-border-subtle)] bg-[var(--sg-surface)] px-4 py-2">
@@ -1751,11 +1796,35 @@
             </div>
           {/if}
         {:else}
-          <!-- Root worktree (protected) message -->
-          <div class="flex flex-1 items-center justify-center">
-            <p class="text-sm text-[var(--sg-text-faint)]">Select a worktree to view changes</p>
-          </div>
+          <!-- Root worktree (protected) message, or terminal tab with no shell -->
+          {#if activeTab === "terminal" && !defaultShell}
+            <div class="flex flex-1 items-center justify-center">
+              <p class="text-sm text-[var(--sg-text-faint)]">No shell detected on this system</p>
+            </div>
+          {:else if activeTab !== "terminal"}
+            <div class="flex flex-1 items-center justify-center">
+              <p class="text-sm text-[var(--sg-text-faint)]">Select a worktree to view changes</p>
+            </div>
+          {/if}
         {/if}
+
+        <!-- Terminal panels: lazily initialized, never unmounted once created.
+             display:none hides them when the terminal tab is not active,
+             preserving the PTY session across tab and worktree switches. -->
+        {#each [...terminalInitializedPaths] as wtPath (wtPath)}
+          <div
+            class="flex min-h-0 flex-1 flex-col overflow-hidden"
+            style:display={activeTab === "terminal" && activeWorktreePath === wtPath ? "flex" : "none"}
+          >
+            {#if defaultShell}
+              <TerminalPanel shell={defaultShell} cwd={wtPath} />
+            {:else}
+              <div class="flex flex-1 items-center justify-center">
+                <p class="text-sm text-[var(--sg-text-faint)]">No shell detected on this system</p>
+              </div>
+            {/if}
+          </div>
+        {/each}
       </section>
 
 
