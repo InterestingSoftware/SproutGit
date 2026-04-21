@@ -59,6 +59,7 @@
   let graphSkip = $state(0);
   let graphHasMore = $state(false);
   let graphLoadingMore = $state(false);
+  let graphSeenHashes = new Set<string>();
   let loading = $state(true);
   let creating = $state(false);
   let deleting = $state<string | null>(null);
@@ -389,17 +390,11 @@
     refs.map((r) => ({ label: r.name, value: r.name, detail: r.kind })),
   );
 
-  function mergeGraphCommits(existing: CommitEntry[], incoming: CommitEntry[]): CommitEntry[] {
-    if (incoming.length === 0) return existing;
-
-    const seen = new Set(existing.map((c) => c.hash));
-    const merged = [...existing];
-    for (const commit of incoming) {
-      if (seen.has(commit.hash)) continue;
-      seen.add(commit.hash);
-      merged.push(commit);
-    }
-    return merged;
+  function initializeGraphState(nextGraph: CommitGraphResult) {
+    graph = nextGraph;
+    graphSkip = nextGraph.commits.length;
+    graphHasMore = nextGraph.commits.length === GRAPH_PAGE_SIZE;
+    graphSeenHashes = new Set(nextGraph.commits.map((commit) => commit.hash));
   }
 
   async function loadWorkspace() {
@@ -427,9 +422,7 @@
 
       worktrees = worktreeData.worktrees;
       refs = refsData.refs;
-      graph = graphData;
-      graphSkip = graphData.commits.length;
-      graphHasMore = graphData.commits.length === GRAPH_PAGE_SIZE;
+      initializeGraphState(graphData);
       selectedRef = refsData.refs[0]?.name ?? "HEAD";
       activeWorktreePath = worktreeData.worktrees[0]?.path ?? null;
     } catch (err) {
@@ -649,9 +642,7 @@
       listRefs(workspace.rootPath),
     ]);
     worktrees = refreshedWt.worktrees;
-    graph = refreshedGraph;
-    graphSkip = refreshedGraph.commits.length;
-    graphHasMore = refreshedGraph.commits.length === GRAPH_PAGE_SIZE;
+    initializeGraphState(refreshedGraph);
     refs = refreshedRefs.refs;
   }
 
@@ -662,16 +653,19 @@
     try {
       const nextPage = await getCommitGraph(workspace.rootPath, GRAPH_PAGE_SIZE, graphSkip);
       if (!graph) {
-        graph = nextPage;
+        initializeGraphState(nextPage);
       } else {
+        const newCommits = nextPage.commits.filter((commit) => !graphSeenHashes.has(commit.hash));
+        for (const commit of newCommits) {
+          graphSeenHashes.add(commit.hash);
+        }
         graph = {
           ...graph,
-          commits: mergeGraphCommits(graph.commits, nextPage.commits),
+          commits: [...graph.commits, ...newCommits],
         };
+        graphSkip += nextPage.commits.length;
+        graphHasMore = nextPage.commits.length === GRAPH_PAGE_SIZE;
       }
-
-      graphSkip += nextPage.commits.length;
-      graphHasMore = nextPage.commits.length === GRAPH_PAGE_SIZE;
     } catch (err) {
       toast.error(`Failed to load more commits: ${err}`);
     } finally {

@@ -42,8 +42,10 @@
   }
 
   function handleInput() {
-    // Keep bound value in sync with free-typed text (not only selected items).
-    value = query;
+    const selected = items.find((item) => item.value === value);
+    if (!selected || query !== selected.label) {
+      value = query;
+    }
     open = true;
     highlightIdx = 0;
   }

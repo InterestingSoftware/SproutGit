@@ -619,15 +619,20 @@ mod tests {
 
     #[test]
     fn ensure_git_success_passes_on_success() {
+        #[cfg(unix)]
+        let status =
+            <std::process::ExitStatus as std::os::unix::process::ExitStatusExt>::from_raw(0);
+        #[cfg(windows)]
+        let status =
+            <std::process::ExitStatus as std::os::windows::process::ExitStatusExt>::from_raw(0);
+
         let output = std::process::Output {
-            status: std::process::ExitStatus::default(),
+            status,
             stdout: b"all good".to_vec(),
             stderr: vec![],
         };
-        // ExitStatus::default() is success on unix
-        if output.status.success() {
-            assert!(ensure_git_success(output, "failed").is_ok());
-        }
+
+        assert!(ensure_git_success(output, "failed").is_ok());
     }
 
     // ── CachedValue ──
@@ -656,7 +661,7 @@ mod tests {
             data: true,
             timestamp: 100,
         };
-        // equal timestamps should be considered stale (< not <=)
+        // equal timestamps are considered fresh because is_stale uses <, not <=
         assert!(!cached.is_stale(100));
     }
 
