@@ -151,22 +151,37 @@ fn finalize_workspace(
     })
 }
 
-fn count_files_recursive(path: &std::path::Path) -> usize {
-    let Ok(rd) = fs::read_dir(path) else {
-        return 0;
-    };
-    rd.flatten()
-        .map(|entry| {
-            let Ok(ft) = entry.file_type() else {
-                return 0;
-            };
-            if ft.is_dir() {
-                count_files_recursive(&entry.path())
-            } else {
-                1
-            }
-        })
-        .sum()
+fn count_files_recursive(path: &std::path::Path) -> Result<usize, String> {
+    let rd = fs::read_dir(path).map_err(|e| {
+        format!(
+            "Failed to read directory while counting files '{}': {e}",
+            path.display()
+        )
+    })?;
+    let mut total = 0usize;
+
+    for entry in rd {
+        let entry = entry.map_err(|e| {
+            format!(
+                "Failed to read directory entry while counting files in '{}': {e}",
+                path.display()
+            )
+        })?;
+        let entry_path = entry.path();
+        let ft = entry.file_type().map_err(|e| {
+            format!(
+                "Failed to read file type while counting files '{}': {e}",
+                entry_path.display()
+            )
+        })?;
+        if ft.is_dir() {
+            total += count_files_recursive(&entry_path)?;
+        } else if ft.is_file() {
+            total += 1;
+        }
+    }
+
+    Ok(total)
 }
 
 /// Recursive directory copy with per-file progress callback.
@@ -284,7 +299,7 @@ pub(crate) fn import_repo_filesystem(
             match mode {
                 ImportRepoMode::Copy => {
                     progress("Counting files\u{2026}");
-                    let total = count_files_recursive(source_repo);
+                    let total = count_files_recursive(source_repo)?;
                     let mut copied = 0usize;
                     copy_dir_recursive_with_progress(
                         source_repo,
@@ -292,8 +307,7 @@ pub(crate) fn import_repo_filesystem(
                         &mut copied,
                         total,
                         &|n, t| {
-                            if t > 0 {
-                                let pct = (n * 100) / t;
+                            if let Some(pct) = (n * 100).checked_div(t) {
                                 progress(&format!("Copying files\u{2026} {pct}% ({n} of {t})"));
                             }
                         },
@@ -311,7 +325,7 @@ pub(crate) fn import_repo_filesystem(
                         Err(_) => {
                             // Cross-filesystem fallback: count files first so we can
                             // report meaningful progress during the copy.
-                            let total = count_files_recursive(source_repo);
+                            let total = count_files_recursive(source_repo)?;
                             let mut copied = 0usize;
                             copy_dir_recursive_with_progress(
                                 source_repo,
@@ -319,8 +333,7 @@ pub(crate) fn import_repo_filesystem(
                                 &mut copied,
                                 total,
                                 &|n, t| {
-                                    if t > 0 {
-                                        let pct = (n * 100) / t;
+                                    if let Some(pct) = (n * 100).checked_div(t) {
                                         progress(&format!(
                                             "Copying files\u{2026} {pct}% ({n} of {t})"
                                         ));
@@ -657,20 +670,33 @@ pub async fn inspect_sproutgit_workspace(
 mod tests {
     use super::*;
     use std::fs;
+    use std::io;
     use tempfile::TempDir;
 
+    type TestResult = Result<(), Box<dyn std::error::Error>>;
+
     /// Create a temp dir populated with a flat set of named files.
-    fn make_repo(files: &[&str]) -> TempDir {
-        let dir = tempfile::tempdir().expect("tempdir");
+    fn make_repo(files: &[&str]) -> Result<TempDir, Box<dyn std::error::Error>> {
+        let dir = tempfile::tempdir()?;
         for name in files {
             // Support nested paths like "src/main.rs"
             let path = dir.path().join(name);
             if let Some(parent) = path.parent() {
-                fs::create_dir_all(parent).unwrap();
+                fs::create_dir_all(parent)?;
             }
-            fs::write(&path, name.as_bytes()).unwrap();
+            fs::write(&path, name.as_bytes())?;
         }
-        dir
+        Ok(dir)
+    }
+
+    fn import_ok(
+        workspace: &std::path::Path,
+        source_repo: &std::path::Path,
+        mode: ImportRepoMode,
+    ) -> TestResult {
+        import_repo_filesystem(workspace, source_repo, mode, &no_progress)
+            .map_err(io::Error::other)?;
+        Ok(())
     }
 
     fn no_progress(_: &str) {}
@@ -678,205 +704,231 @@ mod tests {
     // ── count_files_recursive ──────────────────────────────────────────────
 
     #[test]
-    fn count_files_empty_dir() {
-        let dir = tempfile::tempdir().unwrap();
-        assert_eq!(count_files_recursive(dir.path()), 0);
+    fn count_files_empty_dir() -> TestResult {
+        let dir = tempfile::tempdir()?;
+        assert_eq!(count_files_recursive(dir.path())?, 0);
+        Ok(())
     }
 
     #[test]
-    fn count_files_flat() {
-        let repo = make_repo(&["a.txt", "b.txt", "c.txt"]);
-        assert_eq!(count_files_recursive(repo.path()), 3);
+    fn count_files_flat() -> TestResult {
+        let repo = make_repo(&["a.txt", "b.txt", "c.txt"])?;
+        assert_eq!(count_files_recursive(repo.path())?, 3);
+        Ok(())
     }
 
     #[test]
-    fn count_files_nested() {
-        let repo = make_repo(&["a.txt", "src/main.rs", "src/lib.rs", "docs/readme.md"]);
-        assert_eq!(count_files_recursive(repo.path()), 4);
+    fn count_files_nested() -> TestResult {
+        let repo = make_repo(&["a.txt", "src/main.rs", "src/lib.rs", "docs/readme.md"])?;
+        assert_eq!(count_files_recursive(repo.path())?, 4);
+        Ok(())
     }
 
     // ── InPlace: collision detection ───────────────────────────────────────
 
     #[test]
-    fn inplace_rejects_reserved_name_root() {
-        let repo = make_repo(&["main.rs"]);
-        fs::create_dir(repo.path().join("root")).unwrap();
+    fn inplace_rejects_reserved_name_root() -> TestResult {
+        let repo = make_repo(&["main.rs"])?;
+        fs::create_dir(repo.path().join("root"))?;
 
-        let err = import_repo_filesystem(repo.path(), repo.path(), ImportRepoMode::InPlace, &no_progress)
-            .unwrap_err();
+        let err = import_repo_filesystem(
+            repo.path(),
+            repo.path(),
+            ImportRepoMode::InPlace,
+            &no_progress,
+        )
+        .err()
+        .ok_or_else(|| io::Error::other("expected import to fail"))?;
         assert!(err.contains("root"), "expected 'root' in: {err}");
-        assert!(err.contains("reserved workspace path"), "expected error kind in: {err}");
+        assert!(
+            err.contains("reserved workspace path"),
+            "expected error kind in: {err}"
+        );
+        Ok(())
     }
 
     #[test]
-    fn inplace_rejects_reserved_name_worktrees() {
-        let repo = make_repo(&["main.rs"]);
-        fs::create_dir(repo.path().join("worktrees")).unwrap();
+    fn inplace_rejects_reserved_name_worktrees() -> TestResult {
+        let repo = make_repo(&["main.rs"])?;
+        fs::create_dir(repo.path().join("worktrees"))?;
 
-        let err = import_repo_filesystem(repo.path(), repo.path(), ImportRepoMode::InPlace, &no_progress)
-            .unwrap_err();
+        let err = import_repo_filesystem(
+            repo.path(),
+            repo.path(),
+            ImportRepoMode::InPlace,
+            &no_progress,
+        )
+        .err()
+        .ok_or_else(|| io::Error::other("expected import to fail"))?;
         assert!(err.contains("worktrees"), "expected 'worktrees' in: {err}");
+        Ok(())
     }
 
     #[test]
-    fn inplace_rejects_reserved_name_sproutgit_dir() {
-        let repo = make_repo(&["main.rs"]);
-        fs::create_dir(repo.path().join(".sproutgit")).unwrap();
+    fn inplace_rejects_reserved_name_sproutgit_dir() -> TestResult {
+        let repo = make_repo(&["main.rs"])?;
+        fs::create_dir(repo.path().join(".sproutgit"))?;
 
-        let err = import_repo_filesystem(repo.path(), repo.path(), ImportRepoMode::InPlace, &no_progress)
-            .unwrap_err();
-        assert!(err.contains(".sproutgit"), "expected '.sproutgit' in: {err}");
+        let err = import_repo_filesystem(
+            repo.path(),
+            repo.path(),
+            ImportRepoMode::InPlace,
+            &no_progress,
+        )
+        .err()
+        .ok_or_else(|| io::Error::other("expected import to fail"))?;
+        assert!(
+            err.contains(".sproutgit"),
+            "expected '.sproutgit' in: {err}"
+        );
+        Ok(())
     }
 
     #[test]
-    fn inplace_rejects_multiple_reserved_names() {
-        let repo = make_repo(&["main.rs"]);
-        fs::create_dir(repo.path().join("root")).unwrap();
-        fs::create_dir(repo.path().join("worktrees")).unwrap();
+    fn inplace_rejects_multiple_reserved_names() -> TestResult {
+        let repo = make_repo(&["main.rs"])?;
+        fs::create_dir(repo.path().join("root"))?;
+        fs::create_dir(repo.path().join("worktrees"))?;
 
-        let err = import_repo_filesystem(repo.path(), repo.path(), ImportRepoMode::InPlace, &no_progress)
-            .unwrap_err();
+        let err = import_repo_filesystem(
+            repo.path(),
+            repo.path(),
+            ImportRepoMode::InPlace,
+            &no_progress,
+        )
+        .err()
+        .ok_or_else(|| io::Error::other("expected import to fail"))?;
         assert!(err.contains("root"), "expected 'root' in: {err}");
         assert!(err.contains("worktrees"), "expected 'worktrees' in: {err}");
+        Ok(())
     }
 
     // ── InPlace: filesystem outcome ────────────────────────────────────────
 
     #[test]
-    fn inplace_moves_all_files_into_root() {
-        let repo = make_repo(&["main.rs", "Cargo.toml"]);
+    fn inplace_moves_all_files_into_root() -> TestResult {
+        let repo = make_repo(&["main.rs", "Cargo.toml"])?;
         let repo_path = repo.path().to_path_buf();
 
-        import_repo_filesystem(&repo_path, &repo_path, ImportRepoMode::InPlace, &no_progress)
-            .unwrap();
+        import_ok(&repo_path, &repo_path, ImportRepoMode::InPlace)?;
 
         // Files land in root/
-        assert!(repo_path.join("root/main.rs").exists(), "main.rs should be in root/");
-        assert!(repo_path.join("root/Cargo.toml").exists(), "Cargo.toml should be in root/");
+        assert!(
+            repo_path.join("root/main.rs").exists(),
+            "main.rs should be in root/"
+        );
+        assert!(
+            repo_path.join("root/Cargo.toml").exists(),
+            "Cargo.toml should be in root/"
+        );
         // Workspace dirs created
         assert!(repo_path.join("worktrees").is_dir());
         assert!(repo_path.join(".sproutgit").is_dir());
         // Original paths gone
         assert!(!repo_path.join("main.rs").exists());
         assert!(!repo_path.join("Cargo.toml").exists());
+        Ok(())
     }
 
     #[test]
-    fn inplace_preserves_nested_structure_inside_root() {
-        let repo = make_repo(&["src/main.rs", "src/lib.rs", "README.md"]);
+    fn inplace_preserves_nested_structure_inside_root() -> TestResult {
+        let repo = make_repo(&["src/main.rs", "src/lib.rs", "README.md"])?;
         let repo_path = repo.path().to_path_buf();
 
-        import_repo_filesystem(&repo_path, &repo_path, ImportRepoMode::InPlace, &no_progress)
-            .unwrap();
+        import_ok(&repo_path, &repo_path, ImportRepoMode::InPlace)?;
 
         assert!(repo_path.join("root/src/main.rs").exists());
         assert!(repo_path.join("root/src/lib.rs").exists());
         assert!(repo_path.join("root/README.md").exists());
+        Ok(())
     }
 
     #[test]
-    fn inplace_empty_repo_still_creates_workspace_dirs() {
-        let repo = make_repo(&[]);
+    fn inplace_empty_repo_still_creates_workspace_dirs() -> TestResult {
+        let repo = make_repo(&[])?;
         let repo_path = repo.path().to_path_buf();
 
-        import_repo_filesystem(&repo_path, &repo_path, ImportRepoMode::InPlace, &no_progress)
-            .unwrap();
+        import_ok(&repo_path, &repo_path, ImportRepoMode::InPlace)?;
 
         assert!(repo_path.join("root").is_dir());
         assert!(repo_path.join("worktrees").is_dir());
         assert!(repo_path.join(".sproutgit").is_dir());
+        Ok(())
     }
 
     #[test]
-    fn inplace_does_not_create_dirs_before_collision_check() {
+    fn inplace_does_not_create_dirs_before_collision_check() -> TestResult {
         // If directories were eagerly created, the collision check would always
         // find 'root', 'worktrees', '.sproutgit' and fail for clean repos too.
-        let repo = make_repo(&["main.rs"]);
+        let repo = make_repo(&["main.rs"])?;
         let repo_path = repo.path().to_path_buf();
 
         // Should succeed — no pre-existing reserved names
-        import_repo_filesystem(&repo_path, &repo_path, ImportRepoMode::InPlace, &no_progress)
-            .unwrap();
+        import_ok(&repo_path, &repo_path, ImportRepoMode::InPlace)?;
+        Ok(())
     }
 
     // ── Copy: filesystem outcome ───────────────────────────────────────────
 
     #[test]
-    fn copy_creates_files_in_workspace_root() {
-        let source = make_repo(&["main.rs", "Cargo.toml"]);
-        let workspace = tempfile::tempdir().unwrap();
+    fn copy_creates_files_in_workspace_root() -> TestResult {
+        let source = make_repo(&["main.rs", "Cargo.toml"])?;
+        let workspace = tempfile::tempdir()?;
 
-        import_repo_filesystem(
-            workspace.path(),
-            source.path(),
-            ImportRepoMode::Copy,
-            &no_progress,
-        )
-        .unwrap();
+        import_ok(workspace.path(), source.path(), ImportRepoMode::Copy)?;
 
         assert!(workspace.path().join("root/main.rs").exists());
         assert!(workspace.path().join("root/Cargo.toml").exists());
         assert!(workspace.path().join("worktrees").is_dir());
         assert!(workspace.path().join(".sproutgit").is_dir());
+        Ok(())
     }
 
     #[test]
-    fn copy_preserves_source_repo() {
-        let source = make_repo(&["main.rs"]);
-        let workspace = tempfile::tempdir().unwrap();
+    fn copy_preserves_source_repo() -> TestResult {
+        let source = make_repo(&["main.rs"])?;
+        let workspace = tempfile::tempdir()?;
 
-        import_repo_filesystem(
-            workspace.path(),
-            source.path(),
-            ImportRepoMode::Copy,
-            &no_progress,
-        )
-        .unwrap();
+        import_ok(workspace.path(), source.path(), ImportRepoMode::Copy)?;
 
         // Source must be untouched
-        assert!(source.path().join("main.rs").exists(), "source file should still exist after copy");
+        assert!(
+            source.path().join("main.rs").exists(),
+            "source file should still exist after copy"
+        );
+        Ok(())
     }
 
     #[test]
-    fn copy_preserves_nested_directory_structure() {
-        let source = make_repo(&["src/main.rs", "src/lib.rs", "docs/readme.md"]);
-        let workspace = tempfile::tempdir().unwrap();
+    fn copy_preserves_nested_directory_structure() -> TestResult {
+        let source = make_repo(&["src/main.rs", "src/lib.rs", "docs/readme.md"])?;
+        let workspace = tempfile::tempdir()?;
 
-        import_repo_filesystem(
-            workspace.path(),
-            source.path(),
-            ImportRepoMode::Copy,
-            &no_progress,
-        )
-        .unwrap();
+        import_ok(workspace.path(), source.path(), ImportRepoMode::Copy)?;
 
         assert!(workspace.path().join("root/src/main.rs").exists());
         assert!(workspace.path().join("root/src/lib.rs").exists());
         assert!(workspace.path().join("root/docs/readme.md").exists());
+        Ok(())
     }
 
     #[test]
-    fn copy_file_contents_are_identical() {
-        let source = make_repo(&["hello.txt"]);
-        fs::write(source.path().join("hello.txt"), b"hello world").unwrap();
-        let workspace = tempfile::tempdir().unwrap();
+    fn copy_file_contents_are_identical() -> TestResult {
+        let source = make_repo(&["hello.txt"])?;
+        fs::write(source.path().join("hello.txt"), b"hello world")?;
+        let workspace = tempfile::tempdir()?;
 
-        import_repo_filesystem(
-            workspace.path(),
-            source.path(),
-            ImportRepoMode::Copy,
-            &no_progress,
-        )
-        .unwrap();
+        import_ok(workspace.path(), source.path(), ImportRepoMode::Copy)?;
 
-        let contents = fs::read(workspace.path().join("root/hello.txt")).unwrap();
+        let contents = fs::read(workspace.path().join("root/hello.txt"))?;
         assert_eq!(contents, b"hello world");
+        Ok(())
     }
 
     #[test]
-    fn copy_reports_progress_messages() {
-        let source = make_repo(&["a.txt", "b.txt"]);
-        let workspace = tempfile::tempdir().unwrap();
+    fn copy_reports_progress_messages() -> TestResult {
+        let source = make_repo(&["a.txt", "b.txt"])?;
+        let workspace = tempfile::tempdir()?;
         let messages: std::cell::RefCell<Vec<String>> = std::cell::RefCell::new(Vec::new());
 
         import_repo_filesystem(
@@ -885,59 +937,64 @@ mod tests {
             ImportRepoMode::Copy,
             &|msg| messages.borrow_mut().push(msg.to_string()),
         )
-        .unwrap();
+        .map_err(io::Error::other)?;
 
         let messages = messages.into_inner();
-        assert!(!messages.is_empty(), "expected at least one progress message");
-        assert!(messages.iter().any(|m| m.contains("Counting")), "expected counting message");
-        assert!(messages.iter().any(|m| m.contains('%')), "expected percentage message");
+        assert!(
+            !messages.is_empty(),
+            "expected at least one progress message"
+        );
+        assert!(
+            messages.iter().any(|m| m.contains("Counting")),
+            "expected counting message"
+        );
+        assert!(
+            messages.iter().any(|m| m.contains('%')),
+            "expected percentage message"
+        );
+        Ok(())
     }
 
     // ── Move: filesystem outcome ───────────────────────────────────────────
 
     #[test]
-    fn move_files_land_in_workspace_root() {
-        let source = make_repo(&["main.rs", "Cargo.toml"]);
+    fn move_files_land_in_workspace_root() -> TestResult {
+        let source = make_repo(&["main.rs", "Cargo.toml"])?;
         let source_path = source.path().to_path_buf();
-        let workspace = tempfile::tempdir().unwrap();
+        let workspace = tempfile::tempdir()?;
 
-        import_repo_filesystem(
-            workspace.path(),
-            &source_path,
-            ImportRepoMode::Move,
-            &no_progress,
-        )
-        .unwrap();
+        import_ok(workspace.path(), &source_path, ImportRepoMode::Move)?;
 
         assert!(workspace.path().join("root/main.rs").exists());
         assert!(workspace.path().join("root/Cargo.toml").exists());
         assert!(workspace.path().join("worktrees").is_dir());
         assert!(workspace.path().join(".sproutgit").is_dir());
+        Ok(())
     }
 
     #[test]
-    fn move_source_is_removed_after_same_filesystem_move() {
-        let source = make_repo(&["main.rs"]);
+    fn move_source_is_removed_after_same_filesystem_move() -> TestResult {
+        let source = make_repo(&["main.rs"])?;
         let source_path = source.path().to_path_buf();
-        let workspace = tempfile::tempdir().unwrap();
+        let workspace = tempfile::tempdir()?;
 
-        import_repo_filesystem(
-            workspace.path(),
-            &source_path,
-            ImportRepoMode::Move,
-            &no_progress,
-        )
-        .unwrap();
+        import_ok(workspace.path(), &source_path, ImportRepoMode::Move)?;
 
         // After a successful move the source directory should no longer exist.
         assert!(!source_path.exists(), "source should be removed after move");
+        Ok(())
     }
 
-    // ── count_files_recursive handles missing dir gracefully ──────────────
+    // ── count_files_recursive handles missing dir deterministically ───────
 
     #[test]
-    fn count_files_nonexistent_dir_returns_zero() {
-        let path = std::path::Path::new("/tmp/__sproutgit_nonexistent_test_dir__");
-        assert_eq!(count_files_recursive(path), 0);
+    fn count_files_nonexistent_dir_returns_error() -> TestResult {
+        let tempdir = tempfile::tempdir()?;
+        let path = tempdir.path().join("does-not-exist");
+        let err = count_files_recursive(&path).err().ok_or_else(|| {
+            io::Error::other("count_files_recursive should fail for nonexistent directories")
+        })?;
+        assert!(err.contains("Failed to read directory while counting files"));
+        Ok(())
     }
 }

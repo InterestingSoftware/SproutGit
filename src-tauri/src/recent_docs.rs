@@ -25,29 +25,61 @@ pub fn add_to_recent_documents(path: &std::path::Path, app_handle: &tauri::AppHa
 
     #[cfg(target_os = "windows")]
     {
-        use windows::Win32::UI::Shell::{SHAddToRecentDocs, SHARD_APPIDINFO, SHARDAPPIDINFO};
-        use windows::core::{HSTRING, PCWSTR};
-        use windows::Win32::UI::Shell::SHCreateItemFromParsingName;
-
-        let path_str = path.to_string_lossy();
-        let app_id = &app_handle.config().identifier;
-        let app_id_hstring = HSTRING::from(app_id.as_str());
-        let path_hstring = HSTRING::from(path_str.as_ref());
-
-        unsafe {
-            if let Ok(item) = SHCreateItemFromParsingName(&path_hstring, None) {
-                let info = SHARDAPPIDINFO {
-                    pszAppID: PCWSTR::from_raw(app_id_hstring.as_ptr()),
-                    psi: std::mem::ManuallyDrop::new(Some(item)),
-                };
-                SHAddToRecentDocs(
-                    SHARD_APPIDINFO.0 as u32,
-                    Some(&info as *const _ as *const core::ffi::c_void),
-                );
-            }
-        }
+        add_to_recent_documents_windows(path, app_handle.config().identifier.as_str());
     }
 
     // On Linux and other platforms this is a no-op.
     let _ = (path, app_handle);
+}
+
+#[cfg(target_os = "windows")]
+#[allow(unsafe_code)] // Windows shell/COM APIs require FFI calls.
+fn add_to_recent_documents_windows(path: &std::path::Path, app_id: &str) {
+    use windows::core::{HSTRING, PCWSTR};
+    use windows::Win32::Foundation::RPC_E_CHANGED_MODE;
+    use windows::Win32::System::Com::{CoInitializeEx, CoUninitialize, COINIT_APARTMENTTHREADED};
+    use windows::Win32::UI::Shell::{
+        IShellItem, SHAddToRecentDocs, SHCreateItemFromParsingName, SHARDAPPIDINFO,
+        SHARD_APPIDINFO, SHARD_PATHW,
+    };
+
+    let path_hstring = HSTRING::from(path.to_string_lossy().as_ref());
+    let app_id_hstring = HSTRING::from(app_id);
+
+    let mut com_initialized = false;
+    if let Err(err) = unsafe { CoInitializeEx(None, COINIT_APARTMENTTHREADED) } {
+        if err.code() != RPC_E_CHANGED_MODE {
+            return;
+        }
+    } else {
+        com_initialized = true;
+    }
+
+    let mut added = false;
+    if let Ok(item) = unsafe { SHCreateItemFromParsingName::<IShellItem>(&path_hstring, None) } {
+        let info = SHARDAPPIDINFO {
+            pszAppID: PCWSTR::from_raw(app_id_hstring.as_ptr()),
+            psi: std::mem::ManuallyDrop::new(Some(item)),
+        };
+        unsafe {
+            SHAddToRecentDocs(
+                SHARD_APPIDINFO.0 as u32,
+                Some(&info as *const _ as *const core::ffi::c_void),
+            );
+        }
+        added = true;
+    }
+
+    if !added {
+        unsafe {
+            SHAddToRecentDocs(
+                SHARD_PATHW.0 as u32,
+                Some(path_hstring.as_ptr() as *const core::ffi::c_void),
+            );
+        }
+    }
+
+    if com_initialized {
+        unsafe { CoUninitialize() };
+    }
 }
