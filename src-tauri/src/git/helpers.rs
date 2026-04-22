@@ -1,4 +1,3 @@
-use rusqlite::{params, Connection};
 use std::collections::HashSet;
 use std::ffi::OsString;
 use std::fs;
@@ -394,45 +393,19 @@ pub fn slugify_for_path(name: &str) -> String {
     output.trim_matches('-').to_string()
 }
 
-#[allow(dead_code)]
-pub fn initialize_state_db(state_db_path: &Path) -> Result<(), String> {
-    let conn = Connection::open(state_db_path)
-        .map_err(|e| format!("Failed to open workspace state database: {e}"))?;
+// ── Shell detection (shared between terminal and hooks) ──
 
-    conn.execute_batch(
-        "
-        CREATE TABLE IF NOT EXISTS meta (
-            key TEXT PRIMARY KEY,
-            value TEXT NOT NULL
-        );
-
-        CREATE TABLE IF NOT EXISTS recent_repositories (
-            repo_path TEXT PRIMARY KEY,
-            last_opened_at INTEGER NOT NULL
-        );
-
-        CREATE TABLE IF NOT EXISTS worktree_sessions (
-            worktree_path TEXT PRIMARY KEY,
-            last_branch TEXT,
-            last_opened_at INTEGER NOT NULL
-        );
-        ",
-    )
-    .map_err(|e| format!("Failed to initialize workspace schema: {e}"))?;
-
-    conn.execute(
-        "INSERT OR REPLACE INTO meta(key, value) VALUES(?1, ?2)",
-        params!["schema_version", "1"],
-    )
-    .map_err(|e| format!("Failed to write schema metadata: {e}"))?;
-
-    conn.execute(
-        "INSERT OR REPLACE INTO meta(key, value) VALUES(?1, ?2)",
-        params!["updated_at", now_epoch_seconds().to_string()],
-    )
-    .map_err(|e| format!("Failed to write update metadata: {e}"))?;
-
-    Ok(())
+/// Ordered list of shell candidates to probe for the current OS.
+/// Used by both the terminal spawner and the hook executor so detection
+/// behaviour is consistent across both features.
+pub fn shell_candidates_for_current_os() -> &'static [&'static str] {
+    if cfg!(target_os = "windows") {
+        &["pwsh", "powershell", "bash"]
+    } else if cfg!(target_os = "macos") {
+        &["zsh", "bash"]
+    } else {
+        &["bash", "zsh", "pwsh"]
+    }
 }
 
 // ── Tier 1: Composable Git Transaction ──

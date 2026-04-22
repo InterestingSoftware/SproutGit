@@ -31,13 +31,13 @@ serde_json = "1"
 rusqlite = { version = "0.32", features = ["bundled"] }
 rusqlite_migration = "1"
 tauri-plugin-dialog = "2.7.0"
-reqwest = { version = "0.12", features = ["json"] }
+reqwest = { version = "0.13", features = ["json", "form", "query"] }
 dunce = "1"
 sea-orm = { version = "1.1", default-features = false, features = ["macros", "runtime-tokio-rustls", "sqlx-sqlite"] }
 tokio = { version = "1", features = ["process", "io-util", "time", "rt"] }
 keyring = "3"
-notify-debouncer-mini = "0.4"
-portable-pty = "0.8"
+notify-debouncer-mini = "0.7"
+portable-pty = "0.9"
 
 [target.'cfg(target_os = "macos")'.dependencies]
 objc2 = "0.6"
@@ -45,7 +45,7 @@ objc2-app-kit = { version = "0.3", features = ["NSDocumentController"] }
 objc2-foundation = { version = "0.3", features = ["NSURL", "NSString"] }
 
 [target.'cfg(target_os = "windows")'.dependencies]
-windows = { version = "0.61", features = ["Win32_UI_Shell", "Win32_System_Com"] }
+windows = { version = "0.62", features = ["Win32_UI_Shell", "Win32_System_Com"] }
 
 [dev-dependencies]
 tempfile = "3"
