@@ -3,6 +3,17 @@
   import ToastContainer from "$lib/components/ToastContainer.svelte";
   import { toast } from "$lib/toast.svelte";
   import { onMount } from "svelte";
+  import { onNavigate } from "$app/navigation";
+
+  onNavigate((navigation) => {
+    if (!document.startViewTransition) return;
+    return new Promise((resolve) => {
+      document.startViewTransition(async () => {
+        resolve();
+        await navigation.complete;
+      });
+    });
+  });
 
   if (typeof navigator !== 'undefined' && typeof document !== 'undefined') {
     const root = document.documentElement;

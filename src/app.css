@@ -230,3 +230,13 @@ samp,
   0%, 100% { opacity: 1; }
   50% { opacity: 0.4; }
 }
+
+/* ── View Transitions ── */
+::view-transition-old(root),
+::view-transition-new(root),
+::view-transition-old(sg-app-header),
+::view-transition-new(sg-app-header),
+::view-transition-old(sg-page-content),
+::view-transition-new(sg-page-content) {
+  animation-duration: 100ms;
+}

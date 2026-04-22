@@ -1301,7 +1301,7 @@
 
 <main class="flex h-screen flex-col">
   <!-- Context header -->
-  <header data-tauri-drag-region class="flex shrink-0 items-center gap-3 border-b border-[var(--sg-border)] bg-[var(--sg-surface)] pt-1 pr-1 pb-1 pl-[var(--sg-titlebar-inset)]">
+  <header data-tauri-drag-region class="flex shrink-0 items-center gap-3 border-b border-[var(--sg-border)] bg-[var(--sg-surface)] pt-1 pr-1 pb-1 pl-[var(--sg-titlebar-inset)]" style="view-transition-name: sg-app-header">
     <button onclick={() => goto("/")} class="rounded px-2 py-0.5 text-xs text-[var(--sg-text-dim)] hover:bg-[var(--sg-surface-raised)] hover:text-[var(--sg-text)]">
       &larr; Projects
     </button>
@@ -1338,7 +1338,7 @@
       <div class="border-b border-[var(--sg-border)] bg-[var(--sg-surface-raised)] px-4 py-2 text-xs text-[var(--sg-danger)]" style="animation: sg-slide-down 0.2s ease-out">{error}</div>
     {/if}
 
-    <div class="flex min-h-0 flex-1" style="animation: sg-fade-in 0.3s ease-out">
+    <div class="flex min-h-0 flex-1" style="view-transition-name: sg-page-content; animation: sg-fade-in 0.3s ease-out">
       <!-- Left sidebar -->
       <aside class="flex w-[260px] shrink-0 flex-col border-r border-[var(--sg-border)] bg-[var(--sg-surface)]">
         <!-- Root info -->
