@@ -661,7 +661,7 @@
             {#each row.refs as ref}
               <button
                 type="button"
-                class="mr-1 inline-block cursor-pointer appearance-none rounded px-1 py-px text-[10px] font-medium transition-opacity hover:opacity-80 {refBadgeClass(ref)}"
+                class="font-code mr-1 inline-block cursor-pointer appearance-none rounded px-1 py-px text-[10px] font-medium transition-opacity hover:opacity-80 {refBadgeClass(ref)}"
                 aria-label="Copy ref {ref}"
                 onclick={(e) => handleRefClick(ref, e)}
                 onkeydown={(e) => handleRefKeydown(ref, e)}

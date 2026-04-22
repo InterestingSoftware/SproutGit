@@ -110,13 +110,21 @@ samp,
   font-variant-ligatures: common-ligatures contextual;
 }
 
-input, select, textarea {
-  -webkit-user-select: text;
-  user-select: text;
+@utility font-code {
+  font-family: var(--sg-font-code);
+  font-variant-ligatures: common-ligatures contextual;
+  font-feature-settings: 'liga' 1, 'calt' 1;
 }
 
-input, select, textarea, button {
-  font: inherit;
+@layer base {
+  input, select, textarea {
+    -webkit-user-select: text;
+    user-select: text;
+  }
+
+  input, select, textarea, button {
+    font: inherit;
+  }
 }
 
 ::-webkit-scrollbar {
