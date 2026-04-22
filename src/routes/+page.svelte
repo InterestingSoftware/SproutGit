@@ -13,6 +13,7 @@
     getGitInfo,
     inspectWorkspace,
     onCloneProgress,
+    onImportProgress,
     getGithubAuthStatus,
     listGithubRepos,
     getHomeDir,
@@ -61,6 +62,7 @@
   let clonePercent = $state<number | null>(null);
   let clonePhase = $state("");
   let progressEl = $state<HTMLDivElement | null>(null);
+  let importProgressMsg = $state("");
 
   // GitHub auth state
   let githubAuth = $state<GitHubAuthStatus | null>(null);
@@ -373,6 +375,11 @@
     }
 
     importing = true;
+    importProgressMsg = "";
+
+    const unlistenImport = await onImportProgress((msg) => {
+      importProgressMsg = msg;
+    });
 
     try {
       const imported = await importGitRepoWorkspaceWithMode(
@@ -388,6 +395,8 @@
       error = String(err);
       toast.error(String(err));
     } finally {
+      unlistenImport();
+      importProgressMsg = "";
       importing = false;
     }
   }
@@ -885,6 +894,10 @@
 
           {#if error}
             <p class="select-text text-xs text-[var(--sg-danger)]">{error}</p>
+          {/if}
+
+          {#if importing && importProgressMsg}
+            <p class="truncate text-[10px] text-[var(--sg-text-faint)]">{importProgressMsg}</p>
           {/if}
 
           <div class="flex justify-end gap-2 border-t border-[var(--sg-border-subtle)] pt-3">

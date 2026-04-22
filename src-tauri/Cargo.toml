@@ -38,6 +38,9 @@ keyring = "3"
 notify-debouncer-mini = "0.4"
 portable-pty = "0.8"
 
+[dev-dependencies]
+tempfile = "3"
+
 [lints.clippy]
 # Security and common mistakes
 unwrap_used = "warn"

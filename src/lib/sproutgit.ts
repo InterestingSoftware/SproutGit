@@ -375,6 +375,9 @@ export const getDiffContent = (
 export const onCloneProgress = (callback: (message: string) => void): Promise<UnlistenFn> =>
   listen<string>('clone-progress', event => callback(event.payload));
 
+export const onImportProgress = (callback: (message: string) => void): Promise<UnlistenFn> =>
+  listen<string>('import-progress', event => callback(event.payload));
+
 export const onHookProgress = (
   callback: (payload: HookProgressEvent) => void
 ): Promise<UnlistenFn> =>
