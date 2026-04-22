@@ -29,7 +29,17 @@
       <svg class="mt-0.5 h-4 w-4 shrink-0" fill="none" stroke={colorMap[t.type]} viewBox="0 0 24 24" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
         <path d={iconPaths[t.type]} />
       </svg>
-      <p class="min-w-0 flex-1 select-text text-xs leading-relaxed text-[var(--sg-text)]">{t.message}</p>
+      <div class="min-w-0 flex-1">
+        <p class="select-text text-xs leading-relaxed text-[var(--sg-text)]">{t.message}</p>
+        {#if t.action}
+          <button
+            onclick={() => { t.action!.onClick(); removeToast(t.id); }}
+            class="mt-1 text-xs font-medium text-[var(--sg-accent)] hover:underline"
+          >
+            {t.action.label}
+          </button>
+        {/if}
+      </div>
       <button
         onclick={() => removeToast(t.id)}
         class="shrink-0 rounded p-0.5 text-[var(--sg-text-faint)] hover:text-[var(--sg-text)]"
