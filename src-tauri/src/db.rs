@@ -1,6 +1,7 @@
+use rusqlite_migration::{Migrations, M};
 use sea_orm::{ConnectionTrait, Database, DatabaseConnection, Statement};
-use std::fs;
 use std::path::{Path, PathBuf};
+use std::sync::LazyLock;
 
 use crate::git::helpers::{ensure_directory, normalize_existing_path};
 
@@ -29,166 +30,55 @@ async fn connect_sqlite(db_path: &Path) -> Result<DatabaseConnection, String> {
         .map_err(|e| format!("Failed to open sqlite database: {e}"))
 }
 
-async fn ensure_config_schema(conn: &DatabaseConnection) -> Result<(), String> {
-    conn.execute(Statement::from_string(
-        sea_orm::DatabaseBackend::Sqlite,
-        "
-        CREATE TABLE IF NOT EXISTS app_settings (
-            key TEXT PRIMARY KEY,
-            value TEXT NOT NULL
-        );
+static WORKSPACE_MIGRATIONS: LazyLock<Migrations<'static>> = LazyLock::new(|| {
+    Migrations::new(vec![M::up(include_str!(
+        "../migrations/workspace/001_initial_schema.sql"
+    ))])
+});
 
-        CREATE TABLE IF NOT EXISTS recent_workspaces (
-            workspace_path TEXT PRIMARY KEY,
-            last_opened_at INTEGER NOT NULL
-        );
-        "
-        .to_string(),
-    ))
-    .await
-    .map_err(|e| format!("Failed to initialize config schema: {e}"))?;
+static CONFIG_MIGRATIONS: LazyLock<Migrations<'static>> = LazyLock::new(|| {
+    Migrations::new(vec![M::up(include_str!(
+        "../migrations/config/001_initial_schema.sql"
+    ))])
+});
 
-    Ok(())
-}
-
-async fn ensure_workspace_schema(conn: &DatabaseConnection) -> Result<(), String> {
-    conn.execute(Statement::from_string(
-        sea_orm::DatabaseBackend::Sqlite,
-        "
-        CREATE TABLE IF NOT EXISTS meta (
-            key TEXT PRIMARY KEY,
-            value TEXT NOT NULL
-        );
-
-        CREATE TABLE IF NOT EXISTS recent_repositories (
-            repo_path TEXT PRIMARY KEY,
-            last_opened_at INTEGER NOT NULL
-        );
-
-        CREATE TABLE IF NOT EXISTS worktree_sessions (
-            worktree_path TEXT PRIMARY KEY,
-            last_branch TEXT,
-            last_opened_at INTEGER NOT NULL
-        );
-
-        CREATE TABLE IF NOT EXISTS hook_definitions (
-            id TEXT PRIMARY KEY,
-            name TEXT NOT NULL,
-            scope TEXT NOT NULL DEFAULT 'worktree',
-            trigger TEXT NOT NULL,
-            shell TEXT NOT NULL,
-            script TEXT NOT NULL,
-            enabled INTEGER NOT NULL DEFAULT 1,
-            critical INTEGER NOT NULL DEFAULT 0,
-            timeout_seconds INTEGER NOT NULL DEFAULT 600,
-            created_at INTEGER NOT NULL,
-            updated_at INTEGER NOT NULL
-        );
-
-        CREATE TABLE IF NOT EXISTS hook_dependencies (
-            hook_id TEXT NOT NULL,
-            depends_on_hook_id TEXT NOT NULL,
-            PRIMARY KEY (hook_id, depends_on_hook_id)
-        );
-
-        CREATE TABLE IF NOT EXISTS hook_runs (
-            id TEXT PRIMARY KEY,
-            hook_id TEXT NOT NULL,
-            trigger TEXT NOT NULL,
-            worktree_path TEXT NOT NULL,
-            status TEXT NOT NULL,
-            started_at INTEGER NOT NULL,
-            finished_at INTEGER NULL,
-            exit_code INTEGER NULL,
-            stdout_snippet TEXT NULL,
-            stderr_snippet TEXT NULL,
-            error_message TEXT NULL
-        );
-
-        CREATE INDEX IF NOT EXISTS idx_hook_definitions_trigger_enabled
-            ON hook_definitions(trigger, enabled);
-
-        CREATE INDEX IF NOT EXISTS idx_hook_dependencies_depends_on
-            ON hook_dependencies(depends_on_hook_id);
-
-        CREATE INDEX IF NOT EXISTS idx_hook_runs_hook_started_at
-            ON hook_runs(hook_id, started_at);
-
-        CREATE INDEX IF NOT EXISTS idx_hook_runs_worktree_started_at
-            ON hook_runs(worktree_path, started_at);
-        "
-        .to_string(),
-    ))
-    .await
-    .map_err(|e| format!("Failed to initialize workspace schema: {e}"))?;
-
-    ensure_workspace_schema_migrations(conn).await
-}
-
-async fn sqlite_table_has_column(
-    conn: &DatabaseConnection,
-    table_name: &str,
-    column_name: &str,
-) -> Result<bool, String> {
-    let pragma = format!("PRAGMA table_info({table_name})");
-    let rows = conn
-        .query_all(Statement::from_string(
-            sea_orm::DatabaseBackend::Sqlite,
-            pragma,
-        ))
-        .await
-        .map_err(|e| format!("Failed to inspect sqlite table '{table_name}': {e}"))?;
-
-    for row in rows {
-        let name = row
-            .try_get::<String>("", "name")
-            .map_err(|e| format!("Failed to read sqlite column metadata: {e}"))?;
-        if name == column_name {
-            return Ok(true);
-        }
+fn run_workspace_migrations(db_path: &Path) -> Result<(), String> {
+    if let Some(parent) = db_path.parent() {
+        ensure_directory(parent)?;
     }
-
-    Ok(false)
+    let mut conn = rusqlite::Connection::open(db_path)
+        .map_err(|e| format!("Failed to open workspace database for migration: {e}"))?;
+    apply_connection_pragmas(&conn)?;
+    WORKSPACE_MIGRATIONS
+        .to_latest(&mut conn)
+        .map_err(|e| format!("Workspace database migration failed: {e}"))
 }
 
-async fn ensure_workspace_schema_migrations(conn: &DatabaseConnection) -> Result<(), String> {
-    if !sqlite_table_has_column(conn, "hook_definitions", "scope").await? {
-        conn.execute(Statement::from_string(
-            sea_orm::DatabaseBackend::Sqlite,
-            "
-            ALTER TABLE hook_definitions
-            ADD COLUMN scope TEXT NOT NULL DEFAULT 'worktree';
-            "
-            .to_string(),
-        ))
-        .await
-        .map_err(|e| format!("Failed to migrate hook_definitions scope column: {e}"))?;
-
-        conn.execute(Statement::from_string(
-            sea_orm::DatabaseBackend::Sqlite,
-            "
-            UPDATE hook_definitions
-            SET scope = 'worktree'
-            WHERE scope IS NULL OR TRIM(scope) = '';
-            "
-            .to_string(),
-        ))
-        .await
-        .map_err(|e| format!("Failed to backfill hook scope values: {e}"))?;
+fn run_config_migrations(db_path: &Path) -> Result<(), String> {
+    if let Some(parent) = db_path.parent() {
+        ensure_directory(parent)?;
     }
+    let mut conn = rusqlite::Connection::open(db_path)
+        .map_err(|e| format!("Failed to open config database for migration: {e}"))?;
+    apply_connection_pragmas(&conn)?;
+    CONFIG_MIGRATIONS
+        .to_latest(&mut conn)
+        .map_err(|e| format!("Config database migration failed: {e}"))
+}
 
-    conn.execute(Statement::from_string(
-        sea_orm::DatabaseBackend::Sqlite,
+/// Apply connection-level PRAGMAs that must be set on every connection open,
+/// not just at schema creation time.
+fn apply_connection_pragmas(conn: &rusqlite::Connection) -> Result<(), String> {
+    conn.execute_batch(
         "
-        CREATE INDEX IF NOT EXISTS idx_hook_definitions_scope_trigger_enabled
-            ON hook_definitions(scope, trigger, enabled);
-        "
-        .to_string(),
-    ))
-    .await
-    .map_err(|e| format!("Failed to ensure hook scope index: {e}"))?;
-
-    Ok(())
+        PRAGMA journal_mode = WAL;
+        PRAGMA synchronous   = NORMAL;
+        PRAGMA foreign_keys  = ON;
+        PRAGMA cache_size    = -4096;
+        PRAGMA temp_store    = MEMORY;
+        ",
+    )
+    .map_err(|e| format!("Failed to apply connection PRAGMAs: {e}"))
 }
 
 fn config_db_path() -> Result<PathBuf, String> {
@@ -240,29 +130,58 @@ fn config_db_path() -> Result<PathBuf, String> {
 
 pub async fn connect_config_db() -> Result<DatabaseConnection, String> {
     let path = config_db_path()?;
-    let conn = connect_sqlite(&path).await?;
-    ensure_config_schema(&conn).await?;
-    Ok(conn)
+    run_config_migrations(&path)?;
+    connect_sqlite(&path).await
 }
 
 pub async fn connect_workspace_db(workspace_path: &str) -> Result<DatabaseConnection, String> {
     let workspace = normalize_existing_path(workspace_path)?;
     let db_path = workspace.join(".sproutgit").join("state.db");
-    let conn = connect_sqlite(&db_path).await?;
-    ensure_workspace_schema(&conn).await?;
-    Ok(conn)
+    run_workspace_migrations(&db_path)?;
+    connect_sqlite(&db_path).await
 }
 
 pub async fn initialize_workspace_db(workspace_path: &Path) -> Result<(), String> {
-    let metadata_path = workspace_path.join(".sproutgit");
-    ensure_directory(&metadata_path)?;
-    let db_path = metadata_path.join("state.db");
+    let db_path = workspace_path.join(".sproutgit").join("state.db");
+    run_workspace_migrations(&db_path)
+}
 
-    if !db_path.exists() {
-        fs::File::create(&db_path)
-            .map_err(|e| format!("Failed to create workspace state database: {e}"))?;
+/// Write identifying metadata about a workspace into the `meta` table.
+///
+/// Uses `INSERT OR IGNORE` so that `created_at` and other values set on first
+/// creation are never overwritten by subsequent calls (e.g. during backfill).
+pub async fn write_workspace_meta(
+    db_path: &Path,
+    workspace: &Path,
+    root_path: &Path,
+    worktrees_path: &Path,
+    state_db_path: &Path,
+) -> Result<(), String> {
+    use crate::git::helpers::{now_epoch_seconds, path_to_frontend};
+
+    let conn = connect_sqlite(db_path).await?;
+
+    let pairs: [(&str, String); 6] = [
+        ("project_version", "1".to_string()),
+        ("created_at", now_epoch_seconds().to_string()),
+        ("workspace_path", path_to_frontend(workspace)),
+        ("root_path", path_to_frontend(root_path)),
+        ("worktrees_path", path_to_frontend(worktrees_path)),
+        ("state_db_path", path_to_frontend(state_db_path)),
+    ];
+
+    for (key, value) in &pairs {
+        conn.execute(Statement::from_sql_and_values(
+            sea_orm::DatabaseBackend::Sqlite,
+            "INSERT OR IGNORE INTO meta (key, value) VALUES (?, ?)",
+            [
+                sea_orm::Value::String(Some(Box::new((*key).to_string()))),
+                sea_orm::Value::String(Some(Box::new(value.clone()))),
+            ],
+        ))
+        .await
+        .map_err(|e| format!("Failed to write workspace meta '{key}': {e}"))?;
     }
 
-    let conn = connect_sqlite(&db_path).await?;
-    ensure_workspace_schema(&conn).await
+    Ok(())
 }

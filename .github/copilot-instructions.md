@@ -18,7 +18,7 @@ Open-source, cross-platform Git desktop app with a **worktree-first** workflow. 
 | Language | **TypeScript** (frontend), **Rust** (backend) | |
 | Styling | **Tailwind CSS v4** | via `@tailwindcss/vite` plugin |
 | State (frontend) | Svelte 5 runes | `$state`, `$derived`, `$derived.by`, `$props`, `$effect` |
-| State (persistent) | **SQLite** via `rusqlite` (bundled) | `<workspace>/.sproutgit/state.db` |
+| State (persistent) | **SQLite** via `rusqlite` (bundled) + `rusqlite_migration` | workspace `state.db` + app-global `config.db` |
 | Package manager | **pnpm** | Tauri hooks use `pnpm run dev` / `pnpm run build` |
 | Git integration | CLI-based | Rust backend shells out to `git` via `std::process::Command` |
 
@@ -44,9 +44,20 @@ sproutgit/
 │       └── workspace/
 │           └── +page.svelte      # Screen 2: Workspace (worktree mgmt + commit graph)
 ├── src-tauri/
-│   ├── src/lib.rs                # ALL Rust backend: Tauri commands, Git ops, DB, helpers
+│   ├── src/
+│   │   ├── lib.rs                # Tauri entry: registers all commands
+│   │   ├── db.rs                 # Database connections + migration runner
+│   │   ├── workspace.rs          # Workspace create/inspect/import commands
+│   │   ├── hooks.rs              # Hook definitions, dependencies, run history
+│   │   ├── git/                  # Git operations, helpers, diff, staging
+│   │   └── ...                   # config, editor, github, terminal, watcher
+│   ├── migrations/
+│   │   ├── workspace/            # Migrations for per-workspace state.db
+│   │   │   └── 001_initial_schema.sql
+│   │   └── config/               # Migrations for app-global config.db
+│   │       └── 001_initial_schema.sql
 │   ├── tauri.conf.json           # App config: window 1200x800, min 900x600, resizable
-│   ├── Cargo.toml                # Rust deps: tauri, rusqlite, serde, tauri-plugin-dialog
+│   ├── Cargo.toml                # Rust deps: tauri, rusqlite, rusqlite_migration, sea-orm, …
 │   └── capabilities/default.json # Permissions: core, opener, dialog
 ├── docs/
 │   ├── index.md                  # Documentation index; read first to discover relevant docs for a task
@@ -77,8 +88,7 @@ SproutGit manages user repos in a prescribed directory layout:
 │   ├── feature-foo/
 │   └── bugfix-bar/
 └── .sproutgit/            # SproutGit metadata
-    ├── project.json
-    └── state.db           # SQLite: app-local state, sessions, recent repos
+    └── state.db           # SQLite: workspace state (meta, hooks, sessions)
 ```
 
 ## Rust Backend (`src-tauri/src/lib.rs`)
@@ -113,7 +123,7 @@ SproutGit manages user repos in a prescribed directory layout:
 - `run_git(args)` — Execute `git` with args, capture stdout
 - `ensure_git_success(args)` — Run git, return error on non-zero exit
 - `normalize_existing_path` / `normalize_or_create_dir` — Path canonicalization
-- `initialize_state_db(path)` — Create SQLite schema
+- `initialize_workspace_db(path)` — Run workspace migrations, creating `state.db` if needed
 - `slugify_for_path(name)` — Branch name → filesystem-safe slug
 - `now_epoch_seconds()` — Current Unix timestamp
 
@@ -177,9 +187,58 @@ Always use `var(--sg-*)` tokens in components. Never hardcode colors outside of 
 - `Checkbox.svelte` is the source of truth for custom checkbox visuals and spacing behavior. Keep checked/unchecked icon rendering layout-stable to avoid row height shifts.
 - `Select.svelte` is the source of truth for themed dropdowns. Prefer it over native `<select>` styling repeated inline.
 
+## Database Architecture
+
+SproutGit uses two SQLite databases, each with its own versioned migration set.
+
+### Two databases
+
+| Database | Path | Purpose |
+|----------|------|---------|
+| **Workspace DB** | `<workspace>/.sproutgit/state.db` | Per-project state: meta, hook definitions, hook runs, worktree sessions |
+| **Config DB** | OS app-data dir (`~/Library/Application Support/SproutGit/config.db` on macOS) | App-global settings and recent workspace list |
+
+A SproutGit workspace is identified by the presence of `state.db` (not a `project.json` — that file no longer exists).
+
+### Migration system (`rusqlite_migration`)
+
+Migrations are plain `.sql` files embedded at compile time via `include_str!` and applied by `rusqlite_migration` on every database open. Version state is tracked automatically in a `__migrations` table that the library manages.
+
+**File layout:**
+```
+src-tauri/migrations/
+  workspace/
+    001_initial_schema.sql   ← tables/indexes for state.db
+    002_next_change.sql      ← (future)
+  config/
+    001_initial_schema.sql   ← tables/indexes for config.db
+```
+
+**How migrations are registered (`src-tauri/src/db.rs`):**
+```rust
+static WORKSPACE_MIGRATIONS: LazyLock<Migrations<'static>> = LazyLock::new(|| {
+    Migrations::new(vec![
+        M::up(include_str!("../migrations/workspace/001_initial_schema.sql")),
+        // append new migrations here in order
+    ])
+});
+```
+
+**Rules:**
+- Never modify an already-shipped migration file. Add a new numbered file instead.
+- Append the new `M::up(include_str!("../migrations/<db>/<NNN>_….sql"))` entry to the correct `LazyLock` vec.
+- Indexes that reference a column added in the same migration must appear after that `ALTER TABLE` in the same file, or in a later migration file.
+- Do not create bespoke `PRAGMA table_info` checks — the framework handles idempotency.
+
+### `db.rs` public API
+
+- `connect_workspace_db(workspace_path)` — Runs workspace migrations then returns a SeaORM connection.
+- `connect_config_db()` — Runs config migrations then returns a SeaORM connection.
+- `initialize_workspace_db(workspace_path)` — Runs workspace migrations only (no SeaORM connection returned); used during workspace creation.
+- `write_workspace_meta(db_path, …)` — Inserts identifying path metadata into the `meta` table using `INSERT OR IGNORE` (preserves `created_at` across re-opens).
+
 ## Recent Hook Findings
 
-- Schema migration ordering matters: do not create indexes that reference new columns until after migration checks/additions run (example: `hook_definitions.scope`).
 - Hook dependency compatibility rule: dependencies may be same-trigger or `manual`; incompatible cross-trigger links should fail validation clearly.
 - Hook shell handling must use runtime detection of available shells. On Windows, support both `pwsh` and `powershell` fallback.
 

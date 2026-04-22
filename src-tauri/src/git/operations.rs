@@ -127,8 +127,8 @@ pub(crate) fn parse_commit_line(line: &str, sep: &str) -> Option<CommitEntry> {
 
 fn workspace_from_root_repo(root_repo: &Path) -> Option<PathBuf> {
     let workspace = root_repo.parent()?.to_path_buf();
-    let marker = workspace.join(".sproutgit").join("project.json");
-    if marker.exists() {
+    let db = workspace.join(".sproutgit").join("state.db");
+    if db.exists() {
         Some(workspace)
     } else {
         None
@@ -137,8 +137,8 @@ fn workspace_from_root_repo(root_repo: &Path) -> Option<PathBuf> {
 
 fn workspace_from_worktree_path(worktree_path: &Path) -> Option<PathBuf> {
     for ancestor in worktree_path.ancestors() {
-        let marker = ancestor.join(".sproutgit").join("project.json");
-        if marker.exists() {
+        let db = ancestor.join(".sproutgit").join("state.db");
+        if db.exists() {
             return Some(ancestor.to_path_buf());
         }
     }

@@ -1,38 +1,15 @@
 use serde::{Deserialize, Serialize};
-use serde_json::json;
 use std::collections::VecDeque;
 use std::fs;
 use std::io::{BufReader, Read};
 use std::process::Stdio;
 
-use crate::db::initialize_workspace_db;
+use crate::db::{initialize_workspace_db, write_workspace_meta};
 use crate::git::helpers::{
     ensure_directory, git_command, normalize_existing_path, normalize_or_create_dir,
-    now_epoch_seconds, path_to_frontend, validate_repo_url, GitAction,
+    path_to_frontend, validate_repo_url, GitAction,
 };
 use crate::github::git_clone_auth_context;
-
-fn write_project_marker(
-    project_marker_path: &std::path::Path,
-    workspace: &std::path::Path,
-    root_path: &std::path::Path,
-    worktrees_path: &std::path::Path,
-    state_db_path: &std::path::Path,
-) -> Result<(), String> {
-    let marker = json!({
-        "projectVersion": 1,
-        "createdAt": now_epoch_seconds(),
-        "workspacePath": path_to_frontend(workspace),
-        "rootPath": path_to_frontend(root_path),
-        "worktreesPath": path_to_frontend(worktrees_path),
-        "stateDbPath": path_to_frontend(state_db_path),
-    });
-
-    let marker_pretty = serde_json::to_string_pretty(&marker)
-        .map_err(|e| format!("Failed to serialize project marker: {e}"))?;
-    fs::write(project_marker_path, marker_pretty)
-        .map_err(|e| format!("Failed to write project marker: {e}"))
-}
 
 fn validate_clean_git_repo(repo_path: &std::path::Path) -> Result<(), String> {
     let repo_str = repo_path.to_string_lossy().to_string();
@@ -128,27 +105,15 @@ fn finalize_workspace(
     metadata_path: &std::path::Path,
     state_db_path: &std::path::Path,
     cloned: bool,
-) -> Result<WorkspaceInitResult, String> {
-    let project_marker_path = metadata_path.join("project.json");
-
-    if !project_marker_path.exists() {
-        write_project_marker(
-            &project_marker_path,
-            workspace,
-            root_path,
-            worktrees_path,
-            state_db_path,
-        )?;
-    }
-
-    Ok(WorkspaceInitResult {
+) -> WorkspaceInitResult {
+    WorkspaceInitResult {
         workspace_path: path_to_frontend(workspace),
         root_path: path_to_frontend(root_path),
         worktrees_path: path_to_frontend(worktrees_path),
         metadata_path: path_to_frontend(metadata_path),
         state_db_path: path_to_frontend(state_db_path),
         cloned,
-    })
+    }
 }
 
 fn count_files_recursive(path: &std::path::Path) -> Result<usize, String> {
@@ -385,23 +350,14 @@ pub async fn create_sproutgit_workspace(
     let worktrees_path = workspace.join("worktrees");
     let metadata_path = workspace.join(".sproutgit");
     let state_db_path = metadata_path.join("state.db");
-    let project_marker_path = metadata_path.join("project.json");
 
     ensure_directory(&root_path)?;
     ensure_directory(&worktrees_path)?;
     ensure_directory(&metadata_path)?;
 
     initialize_workspace_db(&workspace).await?;
-
-    if !project_marker_path.exists() {
-        write_project_marker(
-            &project_marker_path,
-            &workspace,
-            &root_path,
-            &worktrees_path,
-            &state_db_path,
-        )?;
-    }
+    write_workspace_meta(&state_db_path, &workspace, &root_path, &worktrees_path, &state_db_path)
+        .await?;
 
     let repo_url = repo_url
         .as_deref()
@@ -596,6 +552,8 @@ pub async fn import_git_repo_workspace_with_mode(
     import_repo_with_mode(&workspace, &source_repo, mode, &app_handle)?;
 
     initialize_workspace_db(&workspace).await?;
+    write_workspace_meta(&state_db_path, &workspace, &root_path, &worktrees_path, &state_db_path)
+        .await?;
 
     let result = finalize_workspace(
         &workspace,
@@ -604,7 +562,7 @@ pub async fn import_git_repo_workspace_with_mode(
         &metadata_path,
         &state_db_path,
         matches!(mode, ImportRepoMode::Copy),
-    )?;
+    );
 
     crate::recent_docs::add_to_recent_documents(&workspace, &app_handle);
 
@@ -622,43 +580,40 @@ pub async fn inspect_sproutgit_workspace(
     let worktrees_path = workspace.join("worktrees");
     let metadata_path = workspace.join(".sproutgit");
     let state_db_path = metadata_path.join("state.db");
-    let project_marker_path = metadata_path.join("project.json");
 
     let root_exists = root_path.exists();
     let worktrees_exists = worktrees_path.exists();
     let metadata_exists = metadata_path.exists();
-    let project_marker_exists = project_marker_path.exists();
     let layout_exists = root_exists && worktrees_exists && metadata_exists;
 
     if layout_exists {
-        // Backfill state DB for projects created before workspace DB became required.
+        // Backfill state DB and meta for projects created before workspace DB became required.
         if !state_db_path.exists() {
             initialize_workspace_db(&workspace).await?;
         }
-
-        // Backfill marker for legacy projects while preserving existing paths.
-        if !project_marker_exists {
-            write_project_marker(
-                &project_marker_path,
-                &workspace,
-                &root_path,
-                &worktrees_path,
-                &state_db_path,
-            )?;
-        }
+        // INSERT OR IGNORE: preserves created_at and other values set at creation time.
+        write_workspace_meta(
+            &state_db_path,
+            &workspace,
+            &root_path,
+            &worktrees_path,
+            &state_db_path,
+        )
+        .await?;
     }
 
+    let state_db_exists = state_db_path.exists();
     let status = WorkspaceStatus {
         workspace_path: path_to_frontend(&workspace),
         root_path: path_to_frontend(&root_path),
         worktrees_path: path_to_frontend(&worktrees_path),
         metadata_path: path_to_frontend(&metadata_path),
         state_db_path: path_to_frontend(&state_db_path),
-        is_sproutgit_project: project_marker_path.exists() || layout_exists,
+        is_sproutgit_project: state_db_exists || layout_exists,
         root_exists,
         worktrees_exists,
         metadata_exists,
-        state_db_exists: state_db_path.exists(),
+        state_db_exists,
     };
 
     if status.is_sproutgit_project {
