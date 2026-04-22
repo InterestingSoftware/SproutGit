@@ -514,6 +514,8 @@ pub async fn create_sproutgit_workspace(
         }
     }
 
+    crate::recent_docs::add_to_recent_documents(&workspace, &app_handle);
+
     Ok(WorkspaceInitResult {
         workspace_path: workspace.to_string_lossy().to_string(),
         root_path: root_path.to_string_lossy().to_string(),
@@ -578,18 +580,23 @@ pub async fn import_git_repo_workspace_with_mode(
 
     initialize_workspace_db(&workspace).await?;
 
-    finalize_workspace(
+    let result = finalize_workspace(
         &workspace,
         &root_path,
         &worktrees_path,
         &metadata_path,
         &state_db_path,
         matches!(mode, ImportRepoMode::Copy),
-    )
+    )?;
+
+    crate::recent_docs::add_to_recent_documents(&workspace, &app_handle);
+
+    Ok(result)
 }
 
 #[tauri::command]
 pub async fn inspect_sproutgit_workspace(
+    app_handle: tauri::AppHandle,
     workspace_path: String,
 ) -> Result<WorkspaceStatus, String> {
     let workspace = normalize_existing_path(&workspace_path)?;
@@ -624,7 +631,7 @@ pub async fn inspect_sproutgit_workspace(
         }
     }
 
-    Ok(WorkspaceStatus {
+    let status = WorkspaceStatus {
         workspace_path: workspace.to_string_lossy().to_string(),
         root_path: root_path.to_string_lossy().to_string(),
         worktrees_path: worktrees_path.to_string_lossy().to_string(),
@@ -635,7 +642,13 @@ pub async fn inspect_sproutgit_workspace(
         worktrees_exists,
         metadata_exists,
         state_db_exists: state_db_path.exists(),
-    })
+    };
+
+    if status.is_sproutgit_project {
+        crate::recent_docs::add_to_recent_documents(&workspace, &app_handle);
+    }
+
+    Ok(status)
 }
 
 // ── Tests ──

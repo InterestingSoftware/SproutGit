@@ -4,6 +4,7 @@ mod editor;
 mod git;
 mod github;
 mod hooks;
+mod recent_docs;
 mod terminal;
 mod watcher;
 mod workspace;
