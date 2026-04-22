@@ -1,10 +1,13 @@
 export type ToastType = "info" | "success" | "error" | "warning";
 
+export type ToastAction = { label: string; onClick: () => void };
+
 export type Toast = {
   id: number;
   type: ToastType;
   message: string;
   removing?: boolean;
+  action?: ToastAction;
 };
 
 let nextId = 0;
@@ -14,9 +17,9 @@ export function getToasts(): Toast[] {
   return toasts;
 }
 
-export function addToast(type: ToastType, message: string, durationMs = 4000) {
+export function addToast(type: ToastType, message: string, durationMs = 4000, action?: ToastAction) {
   const id = nextId++;
-  toasts = [...toasts, { id, type, message }];
+  toasts = [...toasts, { id, type, message, action }];
 
   if (durationMs > 0) {
     setTimeout(() => removeToast(id), durationMs);
@@ -37,8 +40,8 @@ export function removeToast(id: number) {
 }
 
 export const toast = {
-  info: (msg: string, duration?: number) => addToast("info", msg, duration),
-  success: (msg: string, duration?: number) => addToast("success", msg, duration),
-  error: (msg: string, duration?: number) => addToast("error", msg, duration),
-  warning: (msg: string, duration?: number) => addToast("warning", msg, duration),
+  info: (msg: string, duration?: number, action?: ToastAction) => addToast("info", msg, duration, action),
+  success: (msg: string, duration?: number, action?: ToastAction) => addToast("success", msg, duration, action),
+  error: (msg: string, duration?: number, action?: ToastAction) => addToast("error", msg, duration, action),
+  warning: (msg: string, duration?: number, action?: ToastAction) => addToast("warning", msg, duration, action),
 };

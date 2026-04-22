@@ -4,6 +4,7 @@
   import { openUrl } from '@tauri-apps/plugin-opener';
   import type { Update } from '@tauri-apps/plugin-updater';
   import { GitBranch, Info, Pencil, Settings, SquareTerminal, User } from 'lucide-svelte';
+  import { onMount } from 'svelte';
   import Spinner from '$lib/components/Spinner.svelte';
   import WindowControls from '$lib/components/WindowControls.svelte';
   import {
@@ -178,6 +179,20 @@
         })
         .catch(() => (githubAuth = { authenticated: false, username: null, provider: 'github' }));
     });
+
+  onMount(async () => {
+    if (!updaterEnabled) return;
+    updateChecking = true;
+    try {
+      const { check } = await import('@tauri-apps/plugin-updater');
+      updateAvailable = await check();
+      updateChecked = true;
+    } catch {
+      // silently ignore — update check is best-effort
+    } finally {
+      updateChecking = false;
+    }
+  });
 
   function matchesEditor(editor: EditorInfo, configured: string): boolean {
     const stripped = configured.replace(/^["']|["']$/g, '');
