@@ -523,6 +523,7 @@
     <header
       data-tauri-drag-region
       class="flex shrink-0 items-center justify-between border-b border-[var(--sg-border)] bg-[var(--sg-surface)] pt-1 pr-1 pb-1 pl-[var(--sg-titlebar-inset)]"
+      style="view-transition-name: sg-app-header"
     >
       <span
         class="sg-logo-text flex items-center gap-1.5 text-sm font-semibold text-[var(--sg-text)]"
@@ -570,7 +571,7 @@
       </div>
     </header>
 
-    <div class="flex min-h-0 flex-1">
+    <div class="flex min-h-0 flex-1" style="view-transition-name: sg-page-content">
       <!-- Left: Start sidebar -->
       <section
         class="flex w-64 shrink-0 flex-col border-r border-[var(--sg-border)] bg-[var(--sg-surface)]"
