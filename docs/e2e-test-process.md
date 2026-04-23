@@ -7,13 +7,13 @@ This document defines the default E2E workflow for SproutGit.
 - Playwright runs in headless mode by default via `e2e/playwright.config.ts`.
 - E2E uses `@srsholmes/tauri-playwright` in `tauri` mode.
 - Test workers are pinned to `1` for deterministic stateful desktop flows.
-- `pnpm run test:e2e` executes tests in process-isolated mode (fresh Playwright/Tauri invocation per test).
-- Playwright global setup performs one prebuild (`pnpm run test:e2e:build`) before tests.
+- `pnpm run test:e2e` runs Playwright directly against the built app.
+- Playwright global setup performs one prebuild (`pnpm run test:e2e:build`) before tests unless explicitly skipped.
 - `test:e2e:build` uses `tauri build --no-bundle --features e2e-testing` so tests use a release app binary without slow packaging/signing steps.
 
 To skip the one-time prebuild for faster local iteration:
 
-- `SPROUTGIT_E2E_SKIP_PREBUILD=1 pnpm run test:e2e`
+- `SPROUTGIT_E2E_SKIP_BUILD=1 pnpm run test:e2e`
 
 ## Per-Test Isolation
 
@@ -53,10 +53,9 @@ To skip local auto-setup:
 1. `pnpm run cleanup:rust-targets:delete`
 2. Rust unit tests
 3. `pnpm run test`
-4. Rust compile check
-5. lint
-6. type check
-7. full E2E run
+4. lint
+5. type check
+6. full E2E run
 
 ## Common Commands
 
@@ -64,7 +63,7 @@ To skip local auto-setup:
 # Standard e2e run (isolated process per test)
 pnpm run test:e2e
 
-# Tauri headed mode (runner maps this safely; do not pass --headed to Playwright directly)
+# Tauri headed mode
 pnpm run test:e2e --headed
 
 # Build + e2e

@@ -84,7 +84,7 @@ When working on `e2e/**`, adapter fixtures, or Playwright/Tauri bridge behavior,
 Key reminders:
 - `TauriPage` is Playwright-like but not identical to `Page`.
 - `TauriLocator.waitFor` expects a numeric timeout, not a Playwright options object.
-- Keep plugin socket/port values consistent across webServer and worker processes for each run.
+- Keep plugin socket/port values consistent across setup/launch and worker processes for each run.
 - In `tauri` mode, do not use `page.goto()` for app reset or startup navigation.
 - Prefer per-spec `beforeEach` reset hooks over global Playwright lifecycle hooks for stateful E2E flows.
 - For E2E isolation, reset both the test workspace directory and the isolated config DB, then return to the project picker with stable in-app navigation (`ensureHome()`-style helpers). Avoid making full webview reloads the default reset path for the suite.

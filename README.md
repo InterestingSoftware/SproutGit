@@ -260,7 +260,8 @@ All git and system interactions are security-hardened and tested. See [docs/secu
 ### E2E test process
 
 - E2E tests live under `e2e/` and run headless by default.
-- The suite uses one worker and a shared app process with per-test in-app reset helpers.
+- `pnpm run test:e2e` runs Playwright directly, with one worker for deterministic desktop flows.
+- Playwright global setup performs a one-time prebuild and launches the built Tauri app binary.
 - `reloadToHome()` is the reset source of truth and clears recent projects between tests.
 
 Commands:
@@ -269,8 +270,11 @@ Commands:
 # Run E2E suite
 pnpm run test:e2e
 
-# Build then run E2E suite
+# Alias for default E2E suite
 pnpm run test:e2e:full
+
+# Skip prebuild when iterating locally with an existing built app
+SPROUTGIT_E2E_SKIP_BUILD=1 pnpm run test:e2e
 
 # Canary-only checks
 pnpm run test:e2e:canary
@@ -290,10 +294,9 @@ Pre-commit gate (`.husky/pre-commit`) runs:
 1. `pnpm run cleanup:rust-targets:delete`
 2. Rust unit tests
 3. `pnpm run test`
-4. Rust compile check
-5. lint
-6. type check
-7. full E2E suite
+4. lint
+5. type check
+6. full E2E suite
 
 ## Project Structure
 
