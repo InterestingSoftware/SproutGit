@@ -17,4 +17,5 @@ const args =
     : ['install', 'chromium'];
 
 console.log(`[setup-playwright] Running: ${playwrightBin} ${args.join(' ')}`);
-execFileSync(playwrightBin, args, { stdio: 'inherit' });
+// On Windows, .cmd files must be run via cmd.exe (shell: true).
+execFileSync(playwrightBin, args, { stdio: 'inherit', shell: process.platform === 'win32' });
