@@ -3,8 +3,23 @@ import { sveltekit } from "@sveltejs/kit/vite";
 import tailwindcss from "@tailwindcss/vite";
 
 const host = process.env.TAURI_DEV_HOST;
-const port = Number.parseInt(process.env.SPROUTGIT_E2E_DEV_PORT ?? "1420", 10);
-const hmrPort = Number.parseInt(process.env.SPROUTGIT_E2E_HMR_PORT ?? "1421", 10);
+
+/**
+ * @param {string} name
+ * @param {number} fallback
+ */
+function parsePortEnv(name, fallback) {
+  const raw = process.env[name];
+  if (!raw || !raw.trim()) return fallback;
+  const parsed = Number.parseInt(raw, 10);
+  if (!Number.isInteger(parsed) || parsed <= 0 || parsed > 65535) {
+    throw new Error(`Invalid ${name}: ${raw}`);
+  }
+  return parsed;
+}
+
+const port = parsePortEnv("SPROUTGIT_E2E_DEV_PORT", 1420);
+const hmrPort = parsePortEnv("SPROUTGIT_E2E_HMR_PORT", 1421);
 
 // https://vite.dev/config/
 export default defineConfig(async () => ({

@@ -69,6 +69,7 @@ const socketPath =
 const runId = `${process.pid}-${Date.now()}`;
 const e2eRunsBaseDir = resolve(ROOT, 'tmp', 'e2e-runs');
 
+// Clean up previous run artifacts before starting this run.
 try {
   const existingRuns = readdirSync(e2eRunsBaseDir)
     .map(name => ({ name, mtime: statSync(resolve(e2eRunsBaseDir, name)).mtime.getTime() }))

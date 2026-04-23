@@ -262,7 +262,7 @@ All git and system interactions are security-hardened and tested. See [docs/secu
 - E2E tests live under `e2e/` and run headless by default.
 - `pnpm run test:e2e` runs Playwright directly, with one worker for deterministic desktop flows.
 - Playwright global setup performs a one-time prebuild and launches the built Tauri app binary.
-- `reloadToHome()` is the reset source of truth and clears recent projects between tests.
+- `reloadToHome()` is the reset source of truth for in-app navigation/session state between tests.
 
 Commands:
 
