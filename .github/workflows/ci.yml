@@ -404,9 +404,10 @@ jobs:
       contents: write
       pull-requests: read
     steps:
-      - name: Download all artifacts
+      - name: Download release build artifacts
         uses: actions/download-artifact@v4
         with:
+          pattern: SproutGit-*
           path: artifacts
 
       - name: Generate latest.json
@@ -556,7 +557,11 @@ jobs:
           tag_name: v${{ env.BASE_VERSION }}.${{ github.run_number }}
           name: v${{ env.BASE_VERSION }}.${{ github.run_number }}
           body_path: pr_release_notes.txt
-          generate_release_notes: true
+          generate_release_notes: false
           files: |
-            artifacts/**/*
+            artifacts/SproutGit-linux/*.AppImage
+            artifacts/SproutGit-linux/*.AppImage.sig
+            artifacts/SproutGit-windows/*.msi
+            artifacts/SproutGit-windows/*.msi.sig
+            artifacts/SproutGit-macos/*.dmg
             latest.json
