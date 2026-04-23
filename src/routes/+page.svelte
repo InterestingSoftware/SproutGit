@@ -507,7 +507,7 @@
 
       createdWorkspace = imported;
       await saveKnownProject(imported);
-  cacheWorkspaceHint(imported);
+      cacheWorkspaceHint(imported);
       toast.success(`Workspace imported: ${workspaceNameFromPath(imported.workspacePath)}`);
       await goto(`/workspace?workspace=${encodeURIComponent(imported.workspacePath)}`);
     } catch (err) {

@@ -9,7 +9,7 @@ This document defines the default E2E workflow for SproutGit.
 - Test workers are pinned to `1` for deterministic stateful desktop flows.
 - `pnpm run test:e2e` runs Playwright directly against the built app.
 - Playwright global setup performs one prebuild (`pnpm run test:e2e:build`) before tests unless explicitly skipped.
-- `test:e2e:build` uses `tauri build --no-bundle --features e2e-testing` so tests use a release app binary without slow packaging/signing steps.
+- `test:e2e:build` uses `tauri build --config src-tauri/tauri.e2e.conf.json --no-bundle --features e2e-testing` so tests use a release app binary without slow packaging/signing steps and only opt into Playwright permissions during E2E builds.
 
 To skip the one-time prebuild for faster local iteration:
 

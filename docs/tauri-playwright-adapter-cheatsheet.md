@@ -22,10 +22,11 @@ For SproutGit E2E, we primarily use `tauri` mode behavior with `PluginClient` + 
 1. Rust plugin enabled only for E2E feature:
 - Cargo feature `e2e-testing = ["dep:tauri-plugin-playwright"]`
 - Tauri builder plugin registration under `#[cfg(feature = "e2e-testing")]`
+- E2E builds use `src-tauri/tauri.e2e.conf.json` so only E2E runs opt into the extra inline Playwright capability
 
 2. Capabilities:
-- Do not include `playwright:default` in normal app capability when plugin feature is off.
-- Keep Playwright permissions scoped to E2E runs.
+- Keep the default app config pinned to `"default"` capability only.
+- Add Playwright permissions only from the E2E config overlay, not from the default capability file.
 
 3. Runtime connectivity:
 - `PluginClient(socketPath, tcpPort)` must match backend plugin config exactly.

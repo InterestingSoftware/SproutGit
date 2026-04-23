@@ -8,7 +8,6 @@ const tauriHeaded = rawArgs.includes('--headed');
 const passthroughArgs = rawArgs.filter(arg => arg !== '--headed');
 const skipPrebuild = process.env.SPROUTGIT_E2E_SKIP_PREBUILD === '1';
 const suiteSeed = process.env.PW_PORT_SEED ?? String(Date.now());
-const suiteConfigPath = resolve(ROOT, `.tmp/tauri.playwright.isolated.${suiteSeed}.json`);
 
 if (tauriHeaded) {
   console.warn('[e2e-isolated] --headed detected; enabling Tauri headed mode without forwarding --headed to Playwright CLI.');
@@ -31,7 +30,6 @@ function runPrebuildOnce() {
     env: {
       ...process.env,
       PW_PORT_SEED: suiteSeed,
-      SPROUTGIT_E2E_TAURI_CONFIG_PATH: suiteConfigPath,
     },
   });
 
@@ -98,9 +96,8 @@ function runSingleTest(file, fullTitle) {
       ...process.env,
       SPROUTGIT_E2E_HEADED: tauriHeaded ? '1' : '0',
       SPROUTGIT_E2E_SKIP_BUILD: '1',
-      // Keep a stable suite seed/config path to avoid forcing Tauri rebuild work per test.
+      // Keep a stable suite seed to avoid forcing runtime port drift across isolated invocations.
       PW_PORT_SEED: suiteSeed,
-      SPROUTGIT_E2E_TAURI_CONFIG_PATH: suiteConfigPath,
     },
   });
 

@@ -11,6 +11,7 @@ const ROOT = resolve(HERE, '..');
 const DEV_HOST = process.env.SPROUTGIT_E2E_DEV_HOST ?? 'localhost';
 const MIN_TEST_PORT = 1024;
 const MAX_TEST_PORT = 45_000;
+const RUN_DIR_RETENTION_MS = 12 * 60 * 60 * 1000;
 
 function parseSafePort(raw: string | undefined): number | null {
   if (!raw) return null;
@@ -69,14 +70,28 @@ const socketPath =
 const runId = `${process.pid}-${Date.now()}`;
 const e2eRunsBaseDir = resolve(ROOT, 'tmp', 'e2e-runs');
 
-// Clean up previous run artifacts before starting this run.
+// Remove only stale run directories so concurrent runs do not delete each other's state.
 try {
+  const now = Date.now();
   const existingRuns = readdirSync(e2eRunsBaseDir)
-    .map(name => ({ name, mtime: statSync(resolve(e2eRunsBaseDir, name)).mtime.getTime() }))
-    .sort((a, b) => a.mtime - b.mtime);
+    .map(name => {
+      const path = resolve(e2eRunsBaseDir, name);
+      const stats = statSync(path);
+
+      return {
+        path,
+        isDirectory: stats.isDirectory(),
+        ageMs: now - stats.mtime.getTime(),
+      };
+    })
+    .sort((a, b) => a.ageMs - b.ageMs);
 
   for (const run of existingRuns) {
-    rmSync(resolve(e2eRunsBaseDir, run.name), { recursive: true, force: true });
+    if (!run.isDirectory || run.ageMs < RUN_DIR_RETENTION_MS) {
+      continue;
+    }
+
+    rmSync(run.path, { recursive: true, force: true });
   }
 } catch {
   // Ignore when run directory does not exist yet.

@@ -16,7 +16,6 @@
     "opener:allow-reveal-item-in-dir",
     "dialog:default",
     "updater:default",
-    "process:default",
-    "playwright:allow-pw-result"
+    "process:default"
   ]
 }
