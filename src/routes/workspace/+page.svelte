@@ -49,6 +49,7 @@
     type WorktreeInfo,
   } from "$lib/sproutgit";
   import { toast } from "$lib/toast.svelte";
+  import { tildify } from "$lib/paths.svelte";
   import { validateBranchName, validateSourceRef } from "$lib/validation";
   import { openPath } from "@tauri-apps/plugin-opener";
   import {
@@ -1484,6 +1485,7 @@
           )}
         class="rounded-full p-1 text-[var(--sg-text-faint)] hover:bg-[var(--sg-surface-raised)] hover:text-[var(--sg-text)]"
         title="Settings"
+        data-testid="btn-open-settings"
       >
         <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
       </button>
@@ -1519,7 +1521,7 @@
               </span>
             {/if}
           </div>
-          <p class="mt-0.5 truncate text-xs text-[var(--sg-text-dim)]">{workspace?.rootPath ?? "—"}</p>
+          <p class="mt-0.5 truncate text-xs text-[var(--sg-text-dim)]">{workspace ? tildify(workspace.rootPath) : "—"}</p>
         </div>
 
         <!-- Create worktree form -->
@@ -1919,7 +1921,7 @@
                 </div>
               {:else if stagingDiffFile}
                 <!-- Diff header -->
-                <div class="flex shrink-0 items-center gap-2 border-b border-[var(--sg-border-subtle)] bg-[var(--sg-surface)] px-3 py-1.5">
+                <div data-testid="diff-panel-header" class="flex shrink-0 items-center gap-2 border-b border-[var(--sg-border-subtle)] bg-[var(--sg-surface)] px-3 py-1.5">
                   <span class="rounded-sm px-1 py-px text-[9px] font-bold {stagingDiffStaged ? 'bg-[var(--sg-primary)]/15 text-[var(--sg-primary)]' : 'bg-[var(--sg-warning)]/15 text-[var(--sg-warning)]'}">
                     {stagingDiffStaged ? "STAGED" : "UNSTAGED"}
                   </span>

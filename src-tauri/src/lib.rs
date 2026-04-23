@@ -19,6 +19,21 @@ fn get_home_dir() -> Result<String, String> {
     Ok(home.replace('\\', "/"))
 }
 
+/// Resize the main window to the given logical dimensions.
+/// Only compiled and registered when the `e2e-testing` feature is active so it
+/// is absent from production builds.
+#[cfg(feature = "e2e-testing")]
+#[tauri::command]
+fn set_window_size(app_handle: tauri::AppHandle, width: u32, height: u32) -> Result<(), String> {
+    use tauri::Manager;
+    let window = app_handle
+        .get_webview_window("main")
+        .ok_or_else(|| "main window not found".to_string())?;
+    window
+        .set_size(tauri::LogicalSize::new(width, height))
+        .map_err(|e| e.to_string())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 #[allow(clippy::expect_used)]
 pub fn run() {
@@ -124,6 +139,8 @@ pub fn run() {
             terminal::close_terminal,
             watcher::start_watching_worktrees,
             watcher::stop_watching_worktrees,
+            #[cfg(feature = "e2e-testing")]
+            set_window_size,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

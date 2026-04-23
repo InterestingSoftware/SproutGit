@@ -16,6 +16,10 @@ function isMissingMainWindowError(error: unknown): boolean {
   return error instanceof Error && error.message.includes("window 'main' not found");
 }
 
+function isWaitForFunctionTimeout(error: unknown): boolean {
+  return error instanceof Error && error.message.includes('waitForFunction timeout');
+}
+
 async function safeIsVisible(tauriPage: AdapterPage, selector: string) {
   try {
     return await tauriPage.isVisible(selector);
@@ -35,7 +39,7 @@ async function waitForMainWindow(tauriPage: AdapterPage, timeout: number) {
       await tauriPage.waitForFunction('document.readyState === "complete"', 1_000);
       return;
     } catch (error) {
-      if (!isMissingMainWindowError(error)) {
+      if (!isMissingMainWindowError(error) && !isWaitForFunctionTimeout(error)) {
         throw error;
       }
       await delay(200);

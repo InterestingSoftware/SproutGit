@@ -147,7 +147,10 @@ SproutGit builds this orchestration layer on top of native Git primitives so wor
 ## Screenshots
 
 <p align="center">
-  <img src="screenshots/nextjs.png" alt="SproutGit workspace view" width="800" />
+  <picture>
+    <source media="(prefers-color-scheme: dark)"  srcset="docs/readme-screenshot-dark.png" />
+    <img src="docs/readme-screenshot-light.png" alt="SproutGit workspace — commit graph with worktree markers" width="800" />
+  </picture>
 </p>
 
 ## Installation

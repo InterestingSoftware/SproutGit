@@ -15,6 +15,7 @@
     "format:check": "prettier --check .",
     "test": "pnpm run test:security",
     "test:security": "cd src-tauri && cargo test --all-targets",
+    "test:unit": "vitest run",
     "setup:playwright": "node scripts/setup-playwright.mjs",
     "cleanup:rust-targets": "node scripts/cleanup-rust-targets.mjs",
     "cleanup:rust-targets:delete": "node scripts/cleanup-rust-targets.mjs --delete",
@@ -22,7 +23,8 @@
     "test:e2e:build": "pnpm tauri build --config src-tauri/tauri.e2e.conf.json --no-bundle --features e2e-testing",
     "test:e2e": "playwright test -c e2e/playwright.config.ts",
     "test:e2e:full": "pnpm run test:e2e",
-    "test:e2e:screenshots": "cross-env CAPTURE_SCREENSHOTS=1 PLAYWRIGHT_SCREENSHOT_TARGET=./screenshots pnpm exec playwright test -c e2e/playwright.config.ts --grep @screenshots",
+    "test:e2e:screenshots": "cross-env CAPTURE_SCREENSHOTS=1 PLAYWRIGHT_SCREENSHOT_TARGET=./website/src/assets/screenshots pnpm exec playwright test -c e2e/playwright.config.ts --grep @screenshots",
+    "test:e2e:screenshots:fresh": "pnpm run test:e2e:build && pnpm run test:e2e:screenshots",
     "test:e2e:canary": "cross-env RUN_CANARY=1 pnpm exec playwright test -c e2e/playwright.config.ts --grep @canary",
     "test:tauri": "pnpm run test:e2e",
     "prepare": "husky && pnpm run setup:playwright"
@@ -55,6 +57,7 @@
     "monaco-editor": "^0.55.1"
   },
   "devDependencies": {
+    "@faker-js/faker": "^10.4.0",
     "@playwright/test": "^1.59.1",
     "@srsholmes/tauri-playwright": "^0.2.2",
     "@sveltejs/adapter-static": "^3.0.10",
@@ -62,8 +65,10 @@
     "@sveltejs/vite-plugin-svelte": "^7.0.0",
     "@tailwindcss/vite": "^4.2.4",
     "@tauri-apps/cli": "^2",
+    "@vitest/ui": "^4.1.5",
     "cross-env": "^10.1.0",
     "husky": "^9.1.7",
+    "jsdom": "^29.0.2",
     "oxlint": "^1.61.0",
     "prettier": "^3.8.3",
     "prettier-plugin-svelte": "^3.5.1",
@@ -71,6 +76,7 @@
     "svelte-check": "^4.4.6",
     "tailwindcss": "^4.2.4",
     "typescript": "~6.0.3",
-    "vite": "^8.0.9"
+    "vite": "^8.0.9",
+    "vitest": "^4.1.5"
   }
 }

@@ -66,6 +66,7 @@
 <!-- svelte-ignore a11y_no_static_element_interactions -->
 <div
   bind:this={menuEl}
+  data-testid="context-menu"
   class="fixed z-50 min-w-[160px] rounded-lg border border-[var(--sg-border)] bg-[var(--sg-surface)] py-1 shadow-xl"
   style="left: {adjustedPos.x}px; top: {adjustedPos.y}px; animation: sg-slide-up 0.1s ease-out"
   oncontextmenu={(e) => e.preventDefault()}
