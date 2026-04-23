@@ -16,6 +16,31 @@ const TAURI_COMMAND = process.env.SPROUTGIT_E2E_TAURI_COMMAND;
 const TAURI_CWD = process.env.SPROUTGIT_E2E_TAURI_CWD;
 const IS_WINDOWS = process.platform === 'win32';
 
+function parseCommandSpec(spec: string): { command: string; args: string[] } {
+  const tokens: string[] = [];
+  const tokenPattern = /[^\s"']+|"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'/g;
+
+  for (const match of spec.matchAll(tokenPattern)) {
+    const raw = match[0];
+    if (!raw) continue;
+
+    const isDoubleQuoted = raw.startsWith('"') && raw.endsWith('"');
+    const isSingleQuoted = raw.startsWith("'") && raw.endsWith("'");
+    const unwrapped = (isDoubleQuoted || isSingleQuoted) ? raw.slice(1, -1) : raw;
+    const value = unwrapped.replace(/\\([\\"'])/g, '$1');
+    tokens.push(value);
+  }
+
+  if (tokens.length === 0) {
+    throw new Error('SPROUTGIT_E2E_TAURI_COMMAND is set but could not be parsed.');
+  }
+
+  return {
+    command: tokens[0],
+    args: tokens.slice(1),
+  };
+}
+
 type Fixtures = {
   mode: 'tauri';
   tauriPage: TauriPage;
@@ -33,7 +58,7 @@ export const test = base.extend<Fixtures>({
 
     try {
       if (TAURI_COMMAND) {
-        const [command, ...args] = TAURI_COMMAND.split(' ');
+        const { command, args } = parseCommandSpec(TAURI_COMMAND);
         processManager = new TauriProcessManager({
           command,
           args,

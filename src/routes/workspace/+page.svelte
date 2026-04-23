@@ -260,16 +260,26 @@
   }
 
   async function inspectWorkspaceWithRetry(workspacePath: string): Promise<WorkspaceStatus> {
+    let lastError: unknown = null;
+
     for (let attempt = 0; attempt < 3; attempt += 1) {
-      const status = await inspectWorkspace(workspacePath);
-      if (isWorkspaceStatus(status)) {
-        return status;
+      try {
+        const status = await inspectWorkspace(workspacePath);
+        if (isWorkspaceStatus(status)) {
+          return status;
+        }
+      } catch (err) {
+        lastError = err;
       }
 
       await new Promise((resolveDelay) => setTimeout(resolveDelay, 150 * (attempt + 1)));
     }
 
-    throw new Error("Workspace inspection returned an invalid result.");
+    if (lastError) {
+      throw new Error(`Workspace inspection failed after retries: ${String(lastError)}`);
+    }
+
+    throw new Error("Workspace inspection returned an invalid result after retries.");
   }
 
   function isWorktreeListResult(value: { repoPath?: string; worktrees?: WorktreeInfo[] } | null | undefined): value is { repoPath: string; worktrees: WorktreeInfo[] } {
@@ -301,16 +311,26 @@
     isValid: (value: T | null | undefined) => boolean,
     label: string,
   ): Promise<T> {
+    let lastError: unknown = null;
+
     for (let attempt = 0; attempt < 10; attempt += 1) {
-      const result = await reader();
-      if (isValid(result)) {
-        return result;
+      try {
+        const result = await reader();
+        if (isValid(result)) {
+          return result;
+        }
+      } catch (err) {
+        lastError = err;
       }
 
       await new Promise((resolveDelay) => setTimeout(resolveDelay, 150));
     }
 
-    throw new Error(`${label} returned an invalid result.`);
+    if (lastError) {
+      throw new Error(`${label} failed after retries: ${String(lastError)}`);
+    }
+
+    throw new Error(`${label} returned an invalid result after retries.`);
   }
 
   function readWorkspaceHint(workspacePath: string): WorkspaceStatus | null {

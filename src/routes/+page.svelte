@@ -155,10 +155,10 @@
     }
   }
 
-  function toastAndThrow(context: string, err: unknown): never {
+  function toastAndSetError(context: string, err: unknown): void {
     const message = `${context}: ${String(err)}`;
     toast.error(message);
-    throw err instanceof Error ? err : new Error(message);
+    error = message;
   }
 
   function handleUrlInput() {
@@ -435,7 +435,7 @@
       await goto(`/workspace?workspace=${encodeURIComponent(created.workspacePath)}`);
     } catch (err) {
       error = String(err);
-      toastAndThrow('Create workspace failed', err);
+      toastAndSetError('Create workspace failed', err);
     } finally {
       unlisten();
       creating = false;
@@ -513,7 +513,7 @@
       await goto(`/workspace?workspace=${encodeURIComponent(imported.workspacePath)}`);
     } catch (err) {
       error = String(err);
-      toastAndThrow('Import workspace failed', err);
+      toastAndSetError('Import workspace failed', err);
     } finally {
       unlistenImport?.();
       importProgressMsg = '';
@@ -545,7 +545,7 @@
         toast.error(`Project removed — path no longer exists: ${workspaceNameFromPath(path)}`);
       } else {
         error = msg;
-        toastAndThrow('Open known workspace failed', err);
+        toastAndSetError('Open known workspace failed', err);
       }
     } finally {
       opening = false;
@@ -569,7 +569,7 @@
       cacheWorkspaceHint(status);
       await goto(`/workspace?workspace=${encodeURIComponent(status.workspacePath)}`);
     } catch (err) {
-      toastAndThrow('Open workspace dialog failed', err);
+      toastAndSetError('Open workspace dialog failed', err);
     } finally {
       opening = false;
     }
