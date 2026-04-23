@@ -240,6 +240,12 @@ fn base_git_command() -> Command {
     let mut command = Command::new("git");
     command.env("PATH", augmented_path());
     command.env("GIT_TERMINAL_PROMPT", "0");
+    // Avoid inheriting caller Git environment that can redirect repository
+    // state and cause incorrect index/worktree resolution.
+    command.env_remove("GIT_DIR");
+    command.env_remove("GIT_WORK_TREE");
+    command.env_remove("GIT_INDEX_FILE");
+    command.env_remove("GIT_COMMON_DIR");
     // Prevent a console window from flashing on Windows for every git call.
     #[cfg(target_os = "windows")]
     command.creation_flags(0x08000000); // CREATE_NO_WINDOW

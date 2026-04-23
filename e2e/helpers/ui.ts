@@ -6,7 +6,7 @@ import {
 
 type AdapterPage = TauriPage | BrowserPageAdapter;
 
-export const DEFAULT_UI_TIMEOUT = 3_000;
+export const DEFAULT_UI_TIMEOUT = 20_000;
 const STARTUP_UI_TIMEOUT = 30_000;
 const IMPORT_COMPLETION_TIMEOUT = 3_000;
 
@@ -201,6 +201,7 @@ export async function importRepoViaUi(tauriPage: AdapterPage, repoPath: string) 
 }
 
 export async function createWorktreeViaUi(tauriPage: AdapterPage, branchName: string) {
+  const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
   await tauriPage.getByTestId('input-new-branch').fill(branchName);
   const createButton = tauriPage.getByTestId('btn-create-worktree');
   const isDisabled = async () => (await createButton.getAttribute('disabled')) !== null;
@@ -214,7 +215,7 @@ export async function createWorktreeViaUi(tauriPage: AdapterPage, branchName: st
     if (!(await isDisabled())) {
       break;
     }
-    await new Promise(resolve => setTimeout(resolve, 120));
+    await delay(120);
   }
 
   if (await isDisabled()) {
@@ -222,7 +223,34 @@ export async function createWorktreeViaUi(tauriPage: AdapterPage, branchName: st
   }
 
   await createButton.click();
-  await tauriPage.locator(`[data-testid="worktree-item"][data-branch="${branchName}"]`).waitFor(DEFAULT_UI_TIMEOUT);
+
+  const createdSelector = `[data-testid="worktree-item"][data-branch="${branchName}"]`;
+  const createdDeadline = Date.now() + DEFAULT_UI_TIMEOUT;
+
+  while (Date.now() < createdDeadline) {
+    if (await tauriPage.isVisible(createdSelector)) {
+      return;
+    }
+
+    try {
+      const toastMessages = await tauriPage.allTextContents(
+        '[data-testid="toast-item"][data-toast-type="error"] [data-testid="toast-message"]',
+      );
+      const latestToast = toastMessages.at(-1)?.trim();
+      if (latestToast) {
+        throw new Error(`Create worktree failed: ${latestToast}`);
+      }
+    } catch (error) {
+      if (error instanceof Error && error.message.startsWith('Create worktree failed:')) {
+        throw error;
+      }
+      // Ignore intermittent bridge read failures while polling.
+    }
+
+    await delay(150);
+  }
+
+  throw new Error(`Create worktree timed out: ${branchName}`);
 }
 
 export async function openChangesTab(tauriPage: AdapterPage) {

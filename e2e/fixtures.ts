@@ -12,7 +12,6 @@ const TAURI_COMMAND = process.env.SPROUTGIT_E2E_TAURI_COMMAND;
 const TAURI_CWD = process.env.SPROUTGIT_E2E_TAURI_CWD;
 
 export const { test, expect } = createTauriTest({
-  devUrl: DEV_URL,
   mcpSocket: MCP_SOCKET,
   startTimeout: 120,
   ...(TAURI_COMMAND

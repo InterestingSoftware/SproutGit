@@ -2,8 +2,9 @@ use serde::Serialize;
 use std::path::{Path, PathBuf};
 
 use crate::git::helpers::{
-    ensure_git_success, git_command, normalize_existing_path, path_to_frontend, run_git,
-    slugify_for_path, validate_non_option_value, GitAction,
+    ensure_directory, ensure_git_success, git_command, normalize_existing_path,
+    normalize_or_create_dir, path_to_frontend, run_git, slugify_for_path,
+    validate_non_option_value, GitAction,
 };
 use crate::hooks::execute_workspace_hooks_for_trigger;
 
@@ -358,7 +359,7 @@ pub async fn create_managed_worktree(
     new_branch: String,
 ) -> Result<CreateWorktreeResult, String> {
     let root_repo = normalize_existing_path(&root_repo_path)?;
-    let worktrees_dir = normalize_existing_path(&managed_worktrees_path)?;
+    let worktrees_dir = normalize_or_create_dir(&managed_worktrees_path)?;
 
     let branch = new_branch.trim();
     let branch = validate_non_option_value(branch, "New branch")?;
@@ -395,6 +396,10 @@ pub async fn create_managed_worktree(
             ));
         }
     }
+
+    // Hooks or external processes can remove the managed worktrees directory
+    // between validation and git invocation. Ensure it exists at the point of use.
+    ensure_directory(&worktrees_dir)?;
 
     let output = run_git(
         GitAction::CreateManagedWorktree,
