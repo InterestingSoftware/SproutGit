@@ -457,19 +457,82 @@ jobs:
       - name: Extract PR release notes
         env:
           GH_TOKEN: ${{ github.token }}
+          GITHUB_EVENT_BEFORE: ${{ github.event.before }}
         run: |
           set -euo pipefail
-          gh api "repos/${{ github.repository }}/commits/${{ github.sha }}/pulls" \
-            --header "Accept: application/vnd.github+json" \
-            --jq '.[0].body // ""' > /tmp/pr_body.txt
           python3 - <<'PY' > pr_release_notes.txt
+          import json
+          import os
           import re
+          import subprocess
+          from typing import Any
 
-          with open('/tmp/pr_body.txt', encoding='utf-8') as handle:
-              body = handle.read()
 
-          match = re.search(r'^## Release Notes\s*\n(.*?)(?=^## |\Z)', body, re.M | re.S)
-          print(match.group(1).strip() if match else '', end='')
+          def gh_api(path: str, *, accept: str | None = None) -> Any:
+            cmd = ['gh', 'api', path]
+            if accept:
+              cmd.extend(['--header', f'Accept: {accept}'])
+            out = subprocess.check_output(cmd, text=True)
+            return json.loads(out)
+
+
+          def extract_release_notes(body: str) -> str:
+            match = re.search(r'^## Release Notes\s*\n(.*?)(?=^## |\Z)', body, re.M | re.S)
+            return match.group(1).strip() if match else ''
+
+
+          repo = os.environ['GITHUB_REPOSITORY']
+          head_sha = os.environ['GITHUB_SHA']
+          before_sha = os.environ.get('GITHUB_EVENT_BEFORE', '')
+
+          latest_tag = ''
+          try:
+            latest_release = gh_api(f'repos/{repo}/releases/latest')
+            latest_tag = (latest_release.get('tag_name') or '').strip()
+          except Exception:
+            latest_tag = ''
+
+          commit_shas: list[str]
+          if latest_tag:
+            compare = gh_api(f'repos/{repo}/compare/{latest_tag}...{head_sha}')
+            commit_shas = [c['sha'] for c in compare.get('commits', []) if c.get('sha')]
+          elif before_sha and before_sha != head_sha and before_sha != ('0' * 40):
+            compare = gh_api(f'repos/{repo}/compare/{before_sha}...{head_sha}')
+            commit_shas = [c['sha'] for c in compare.get('commits', []) if c.get('sha')]
+          else:
+            commit_shas = [head_sha]
+
+          pr_order: list[int] = []
+          pr_seen: set[int] = set()
+          pulls_accept = 'application/vnd.github+json'
+
+          for sha in commit_shas:
+            pulls = gh_api(f'repos/{repo}/commits/{sha}/pulls', accept=pulls_accept)
+            for pr in pulls:
+              number = pr.get('number')
+              if not isinstance(number, int):
+                continue
+              if number in pr_seen:
+                continue
+              # Keep only merged PRs so notes reflect released changes.
+              if not pr.get('merged_at'):
+                continue
+              pr_seen.add(number)
+              pr_order.append(number)
+
+          sections: list[str] = []
+          for number in pr_order:
+            pr = gh_api(f'repos/{repo}/pulls/{number}')
+            notes = extract_release_notes(pr.get('body') or '')
+            if not notes:
+              continue
+            title = pr.get('title') or f'PR #{number}'
+            sections.append(f'### PR #{number}: {title}\n\n{notes}')
+
+          if sections:
+            print('\n\n'.join(sections), end='')
+          else:
+            print('No PR release notes were found for merged PRs in this release.', end='')
           PY
 
       - name: Create GitHub Release
