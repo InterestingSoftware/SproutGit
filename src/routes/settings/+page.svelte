@@ -383,7 +383,7 @@
   }
 </script>
 
-<main class="sg-body flex h-screen flex-col">
+<main class="sg-body flex h-screen flex-col" data-testid="settings-page">
   <header data-tauri-drag-region class="flex shrink-0 items-center gap-3 border-b border-(--sg-border) bg-(--sg-surface) pt-1 pr-1 pb-1 pl-(--sg-titlebar-inset)">
     <button onclick={() => goto(workspacePath ? `/workspace?workspace=${encodeURIComponent(workspacePath)}` : '/')} class="rounded px-2 py-0.5 text-xs text-(--sg-text-dim) hover:bg-(--sg-surface-raised) hover:text-(--sg-text)">&larr; Projects</button>
     <div class="h-3 w-px bg-(--sg-border)"></div>

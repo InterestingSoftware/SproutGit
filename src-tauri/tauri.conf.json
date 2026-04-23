@@ -14,10 +14,10 @@
     "windows": [
       {
         "title": "SproutGit",
-        "width": 1200,
-        "height": 800,
-        "minWidth": 900,
-        "minHeight": 600,
+        "width": 1024,
+        "height": 768,
+        "minWidth": 640,
+        "minHeight": 480,
         "resizable": true,
         "hiddenTitle": true,
         "titleBarStyle": "Overlay"

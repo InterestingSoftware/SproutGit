@@ -173,6 +173,12 @@ CSS custom properties with auto dark mode:
 
 Always use `var(--sg-*)` tokens in components. Never hardcode colors outside of `app.css`.
 
+**Light and dark mode are both required.** Every component and UI surface must look correct in both. When designing or editing any UI:
+- Use only `var(--sg-*)` tokens — never hardcode hex colors in components.
+- Mentally verify the design in both light mode (`--sg-bg: #f5f5f5`, `--sg-text: #1e1e2e`) and dark mode (`--sg-bg: #1e1e2e`, `--sg-text: #cdd6f4`).
+- Components that use Canvas or WebGL rendering (e.g. xterm.js terminals) require explicit theme objects for both modes — detect `window.matchMedia('(prefers-color-scheme: dark)').matches` at init time and apply the correct theme.
+- For screenshot testing, `forceTheme()` in `e2e/helpers/screenshots.ts` handles CSS var injection and xterm canvas re-theming — keep it in sync with any new terminal-like components.
+
 ## Commit Graph Component
 
 `CommitGraph.svelte` implements a hand-rolled lane assignment algorithm:

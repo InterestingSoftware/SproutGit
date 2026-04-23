@@ -304,10 +304,10 @@
   }
 </script>
 
-<div class="flex min-h-0 flex-1 flex-col overflow-hidden bg-[#1e1e2e]">
+<div class="flex min-h-0 flex-1 flex-col overflow-hidden bg-[var(--sg-bg)]">
   <!-- ── Toolbar ─────────────────────────────────────────────────────────── -->
   <div
-    class="flex shrink-0 items-center gap-1 border-b border-[#313148] bg-[#181825] px-1.5"
+    class="flex shrink-0 items-center gap-1 border-b border-[var(--sg-border)] bg-[var(--sg-bg)] px-1.5"
     style="min-height: 32px;"
   >
     <!-- Session tab strip -->
@@ -324,7 +324,7 @@
         <div
           data-session-id={session.id}
           class="relative flex shrink-0 items-stretch overflow-hidden rounded transition-colors
-            {isActive ? 'bg-[#252535]' : 'hover:bg-[#1e1e30]'}
+            {isActive ? 'bg-[var(--sg-surface-raised)]' : 'hover:bg-[var(--sg-surface)]'}
             {dragFromId === session.id ? 'opacity-50' : ''}"
           onpointerdown={e => onTabPointerDown(e, session.id)}
           onpointermove={onTabPointerMove}
@@ -334,7 +334,7 @@
           <!-- Drop indicator: left edge -->
           {#if isDragTarget && dragToSide === 'before'}
             <span
-              class="pointer-events-none absolute top-0 left-0 h-full w-0.5 rounded-full bg-[#74c7a4]"
+              class="pointer-events-none absolute top-0 left-0 h-full w-0.5 rounded-full bg-[var(--sg-primary)]"
             ></span>
           {/if}
 
@@ -352,7 +352,7 @@
                 e.stopPropagation();
               }}
               onclick={e => e.stopPropagation()}
-              class="min-w-0 w-[100px] rounded bg-[#1e1e2e] px-2 py-1 text-[11px] font-medium text-[#cdd6f4] outline outline-1 outline-[#74c7a4] focus:outline-[#74c7a4]"
+              class="min-w-0 w-[100px] rounded bg-[var(--sg-input-bg)] px-2 py-1 text-[11px] font-medium text-[var(--sg-text)] outline outline-1 outline-[var(--sg-primary)] focus:outline-[var(--sg-primary)]"
             />
           {:else}
             <!--
@@ -374,11 +374,11 @@
                 activeId = session.id;
               }}
               class="select-none flex items-center gap-1.5 px-2.5 py-1 text-[11px] font-medium transition-colors
-                {isActive ? 'text-[#74c7a4]' : 'text-[#cdd6f4]'}"
+                {isActive ? 'text-[var(--sg-primary)]' : 'text-[var(--sg-text)]'}"
             >
               <span
                 class="h-1.5 w-1.5 shrink-0 rounded-full transition-colors
-                  {isActive ? 'bg-[#74c7a4]' : 'bg-[#6c7086]'}"
+                  {isActive ? 'bg-[var(--sg-primary)]' : 'bg-[var(--sg-text-faint)]'}"
               ></span>
               <span class="max-w-[100px] truncate">{session.label}</span>
             </button>
@@ -393,14 +393,14 @@
               closeSession(session.id);
             }}
             title="Close {session.label}"
-            class="select-none flex items-center px-1.5 text-[11px] leading-none text-[#a6adc8] transition-colors hover:text-[#f38ba8]"
+            class="select-none flex items-center px-1.5 text-[11px] leading-none text-[var(--sg-text-dim)] transition-colors hover:text-[var(--sg-danger)]"
             >✕</button
           >
 
           <!-- Drop indicator: right edge -->
           {#if isDragTarget && dragToSide === 'after'}
             <span
-              class="pointer-events-none absolute top-0 right-0 h-full w-0.5 rounded-full bg-[#74c7a4]"
+              class="pointer-events-none absolute top-0 right-0 h-full w-0.5 rounded-full bg-[var(--sg-primary)]"
             ></span>
           {/if}
         </div>
@@ -410,6 +410,7 @@
     <!-- Add terminal button + shell picker -->
     <div class="relative shrink-0">
       <button
+        data-testid="btn-add-terminal"
         onclick={e => {
           e.stopPropagation();
           if (availableShells.length <= 1) {
@@ -419,7 +420,7 @@
           }
         }}
         title="New terminal"
-        class="flex items-center gap-0.5 rounded px-2 py-1 text-[#6c7086] transition-colors hover:bg-[#252535] hover:text-[#a6adc8]"
+        class="flex items-center gap-0.5 rounded px-2 py-1 text-[var(--sg-text-faint)] transition-colors hover:bg-[var(--sg-surface-raised)] hover:text-[var(--sg-text-dim)]"
       >
         <svg width="13" height="13" viewBox="0 0 13 13" fill="none">
           <path
@@ -448,6 +449,7 @@
         >
           {#each availableShells as shell}
             <button
+              data-testid="terminal-shell-option"
               onclick={e => {
                 e.stopPropagation();
                 addSession(shell);
@@ -461,7 +463,7 @@
     </div>
 
     <!-- Separator -->
-    <div class="mx-0.5 h-3.5 w-px bg-[#313148]"></div>
+    <div class="mx-0.5 h-3.5 w-px bg-[var(--sg-border)]"></div>
 
     <!-- Layout toggles -->
     <div class="flex shrink-0 items-center gap-0.5 py-0.5">
@@ -469,8 +471,8 @@
         onclick={() => (layout = 'tabs')}
         title="Tabbed (one at a time)"
         class="rounded p-1 transition-colors {layout === 'tabs'
-          ? 'bg-[#313148] text-[#74c7a4]'
-          : 'text-[#6c7086] hover:bg-[#252535] hover:text-[#a6adc8]'}"
+          ? 'bg-[var(--sg-surface-raised)] text-[var(--sg-primary)]'
+          : 'text-[var(--sg-text-faint)] hover:bg-[var(--sg-surface-raised)] hover:text-[var(--sg-text-dim)]'}"
       >
         <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
           <rect x="1" y="5" width="12" height="8" rx="1" stroke="currentColor" stroke-width="1.2" />
@@ -486,8 +488,8 @@
         onclick={() => (layout = 'split')}
         title="Split (side by side)"
         class="rounded p-1 transition-colors {layout === 'split'
-          ? 'bg-[#313148] text-[#74c7a4]'
-          : 'text-[#6c7086] hover:bg-[#252535] hover:text-[#a6adc8]'}"
+          ? 'bg-[var(--sg-surface-raised)] text-[var(--sg-primary)]'
+          : 'text-[var(--sg-text-faint)] hover:bg-[var(--sg-surface-raised)] hover:text-[var(--sg-text-dim)]'}"
       >
         <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
           <rect
@@ -514,8 +516,8 @@
         onclick={() => (layout = 'grid')}
         title="Grid (2-column)"
         class="rounded p-1 transition-colors {layout === 'grid'
-          ? 'bg-[#313148] text-[#74c7a4]'
-          : 'text-[#6c7086] hover:bg-[#252535] hover:text-[#a6adc8]'}"
+          ? 'bg-[var(--sg-surface-raised)] text-[var(--sg-primary)]'
+          : 'text-[var(--sg-text-faint)] hover:bg-[var(--sg-surface-raised)] hover:text-[var(--sg-text-dim)]'}"
       >
         <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
           <rect
@@ -566,7 +568,7 @@
   -->
   {#if sessions.length === 0}
     <div class="flex flex-1 items-center justify-center">
-      <p class="text-sm text-[#6c7086]">No terminal sessions</p>
+      <p class="text-sm text-[var(--sg-text-faint)]">No terminal sessions</p>
     </div>
   {:else}
     <div class="min-h-0 flex-1 overflow-hidden" style={wrapperStyle}>
@@ -580,9 +582,9 @@
           style={panelStyle(session.id)}
           onpointerdown={() => (activeId = session.id)}
           class:border-l={layout === 'split' && sessions.indexOf(session) > 0}
-          class:border-[#313148]={layout === 'split' && sessions.indexOf(session) > 0}
+          class:border-[var(--sg-border)]={layout === 'split' && sessions.indexOf(session) > 0}
           class:border={layout === 'grid'}
-          class:border-[#252535]={layout === 'grid'}
+          class:border-[var(--sg-border-subtle)]={layout === 'grid'}
         >
           <TerminalPanel bind:this={panelInstances[session.id]} shell={session.shell} {cwd} />
         </div>

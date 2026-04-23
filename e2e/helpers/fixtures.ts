@@ -2,6 +2,7 @@ import { execFileSync } from 'node:child_process';
 import { appendFileSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { Faker, en } from '@faker-js/faker';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 
@@ -19,14 +20,50 @@ const BASE_GIT_ENV = {
   GIT_TERMINAL_PROMPT: '0',
 };
 
-function commitDate(sequence: number) {
-  return new Date(Date.UTC(2024, 0, 1, 12, sequence, 0)).toISOString();
+// Shared Faker instance — seeded per call to produce deterministic but
+// organic-looking commit timestamps spread over the past ~3 months.
+const _faker = new Faker({ locale: [en] });
+
+function commitDate(sequence: number): string {
+  const SPREAD_DAYS = 90;
+  const MAX_SEQ = 42;
+
+  // Linear interpolation: seq 0 = oldest (~90 days ago), higher = more recent.
+  const daysAgo = SPREAD_DAYS * (1 - sequence / MAX_SEQ);
+
+  // Seed per-sequence so dates are reproducible across test runs.
+  _faker.seed(sequence * 8_675_309);
+  const refDate = new Date(Date.now() - daysAgo * 86_400_000);
+  // Small jitter: pick a moment within ±6 hours of the reference point.
+  const d = _faker.date.between({
+    from: new Date(refDate.getTime() - 6 * 3_600_000),
+    to: new Date(refDate.getTime() + 6 * 3_600_000),
+  });
+  // Clamp to typical working hours so commits look human.
+  d.setHours(_faker.number.int({ min: 9, max: 18 }), _faker.number.int({ min: 0, max: 59 }), 0, 0);
+  return d.toISOString();
+}
+
+// Produce a realistic developer name and email for a given sequence number.
+// Seeded separately from commitDate so they're independent.
+function authorInfo(sequence: number): { name: string; email: string } {
+  _faker.seed(sequence * 3_141_592 + 1);
+  const firstName = _faker.person.firstName();
+  const lastName = _faker.person.lastName();
+  const name = `${firstName} ${lastName}`;
+  const email = _faker.internet.email({ firstName, lastName }).toLowerCase();
+  return { name, email };
 }
 
 function gitEnv(sequence: number) {
   const date = commitDate(sequence);
+  const { name, email } = authorInfo(sequence);
   return {
-    ...BASE_GIT_ENV,
+    GIT_AUTHOR_NAME: name,
+    GIT_AUTHOR_EMAIL: email,
+    GIT_COMMITTER_NAME: name,
+    GIT_COMMITTER_EMAIL: email,
+    GIT_TERMINAL_PROMPT: '0',
     GIT_AUTHOR_DATE: date,
     GIT_COMMITTER_DATE: date,
   };

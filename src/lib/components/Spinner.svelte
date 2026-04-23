@@ -9,7 +9,7 @@
   const sizeMap = { sm: "h-4 w-4", md: "h-6 w-6", lg: "h-8 w-8" };
 </script>
 
-<div class="flex items-center justify-center gap-2">
+<div data-testid="spinner" class="flex items-center justify-center gap-2">
   <svg
     class="{sizeMap[size]} text-[var(--sg-primary)]"
     style="animation: sg-spin 0.8s linear infinite"

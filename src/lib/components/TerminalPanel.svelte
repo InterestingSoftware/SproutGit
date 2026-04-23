@@ -40,9 +40,36 @@
   let unlistenClosed: UnlistenFn | null = null;
   let resizeObserver: ResizeObserver | null = null;
   let resizeTimer: ReturnType<typeof setTimeout> | null = null;
+  let colorSchemeQuery: MediaQueryList | null = null;
+  let colorSchemeListener: ((e: MediaQueryListEvent) => void) | null = null;
 
-  // ── Catppuccin-mocha terminal theme (matches SproutGit dark palette) ──────
-  const THEME = {
+  // ── Catppuccin Latte (light) terminal theme ─────────────────────────────
+  const LIGHT_THEME = {
+    background: '#eff1f5',
+    foreground: '#4c4f69',
+    cursor: '#179299',
+    cursorAccent: '#eff1f5',
+    selectionBackground: 'rgba(23,146,153,0.25)',
+    black: '#5c5f77',
+    red: '#d20f39',
+    green: '#40a02b',
+    yellow: '#df8e1d',
+    blue: '#1e66f5',
+    magenta: '#8839ef',
+    cyan: '#179299',
+    white: '#acb0be',
+    brightBlack: '#6c6f85',
+    brightRed: '#d20f39',
+    brightGreen: '#40a02b',
+    brightYellow: '#df8e1d',
+    brightBlue: '#1e66f5',
+    brightMagenta: '#8839ef',
+    brightCyan: '#179299',
+    brightWhite: '#bcc0cc',
+  };
+
+  // ── Catppuccin Mocha (dark) terminal theme ────────────────────────────────
+  const DARK_THEME = {
     background: '#1e1e2e',
     foreground: '#cdd6f4',
     cursor: '#74c7a4',
@@ -75,8 +102,17 @@
     const { WebLinksAddon } = await import('@xterm/addon-web-links');
     const { openUrl } = await import('@tauri-apps/plugin-opener');
 
+    // Derive theme from the computed CSS variable rather than matchMedia —
+    // WebKit/Tauri doesn't always propagate the system appearance to matchMedia
+    // at startup, but app.css already correctly applies --sg-bg via @media.
+    const computedBg = getComputedStyle(document.documentElement)
+      .getPropertyValue('--sg-bg')
+      .trim();
+    const prefersDark = computedBg !== '#f5f5f5';
+    const xTermTheme = prefersDark ? DARK_THEME : LIGHT_THEME;
+
     const options: ConstructorParameters<typeof Terminal>[0] & { windowsMode?: boolean } = {
-      theme: THEME,
+      theme: xTermTheme,
       fontFamily: '"Cascadia Code", "JetBrains Mono", "Fira Code", Menlo, monospace',
       fontSize: 13,
       lineHeight: 1.2,
@@ -98,7 +134,17 @@
     term.loadAddon(webLinksAddon);
 
     term.open(containerEl);
+    (containerEl as any).__xterm = term;
     fitAddon.fit();
+
+    // Keep xterm canvas in sync if the OS colour scheme changes after mount.
+    colorSchemeQuery = window.matchMedia('(prefers-color-scheme: dark)');
+    colorSchemeListener = (e: MediaQueryListEvent) => {
+      if (!term) return;
+      term.options.theme = e.matches ? DARK_THEME : LIGHT_THEME;
+      term.refresh(0, term.rows - 1);
+    };
+    colorSchemeQuery.addEventListener('change', colorSchemeListener);
 
     // Forward keyboard input to PTY
     term.onData(data => {
@@ -152,6 +198,12 @@
     }
     resizeObserver?.disconnect();
     resizeObserver = null;
+
+    if (colorSchemeQuery && colorSchemeListener) {
+      colorSchemeQuery.removeEventListener('change', colorSchemeListener);
+      colorSchemeQuery = null;
+      colorSchemeListener = null;
+    }
 
     unlistenOutput?.();
     unlistenOutput = null;
@@ -207,7 +259,7 @@
 
 <!-- xterm.css is imported at the top of the script block via Vite -->
 
-<div class="relative flex min-h-0 flex-1 flex-col overflow-hidden bg-[#1e1e2e]">
+<div class="relative flex min-h-0 flex-1 flex-col overflow-hidden bg-[var(--sg-bg)]" data-sg-terminal>
   {#if error}
     <div class="flex flex-1 items-center justify-center p-6">
       <div class="max-w-sm text-center">
@@ -219,6 +271,7 @@
     <!-- xterm mounts here -->
     <div
       bind:this={containerEl}
+      data-pty-id={ptyId ?? ''}
       class="min-h-0 flex-1"
       style="height: 100%; padding: 6px 8px; box-sizing: border-box;"
     ></div>

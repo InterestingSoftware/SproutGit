@@ -1,0 +1,447 @@
+---
+import { getImage } from 'astro:assets';
+import type { ImageMetadata } from 'astro';
+
+import commitGraphLight  from '../assets/screenshots/workspace/commit-graph-light.png';
+import commitGraphDark   from '../assets/screenshots/workspace/commit-graph-dark.png';
+import changesPanelLight from '../assets/screenshots/diff/changes-panel-light.png';
+import changesPanelDark  from '../assets/screenshots/diff/changes-panel-dark.png';
+import contextMenuLight  from '../assets/screenshots/context-menu/commit-history-light.png';
+import contextMenuDark   from '../assets/screenshots/context-menu/commit-history-dark.png';
+import settingsLight     from '../assets/screenshots/settings/preferences-light.png';
+import settingsDark      from '../assets/screenshots/settings/preferences-dark.png';
+import terminalLight     from '../assets/screenshots/terminal/grid-view-light.png';
+import terminalDark      from '../assets/screenshots/terminal/grid-view-dark.png';
+
+// Build optimised AVIF + WebP sources for a light/dark pair in parallel.
+async function optimise(l: ImageMetadata, d: ImageMetadata) {
+  const [la, lw, lp, da, dw, dp] = await Promise.all([
+    getImage({ src: l, format: 'avif' }),
+    getImage({ src: l, format: 'webp' }),
+    getImage({ src: l }),
+    getImage({ src: d, format: 'avif' }),
+    getImage({ src: d, format: 'webp' }),
+    getImage({ src: d }),
+  ]);
+  return { la, lw, lp, da, dw, dp };
+}
+
+const rawSlides = [
+  { id: 'commit-graph',  label: 'Commit graph',       caption: 'Lane-based history with worktree markers, ref badges, and right-click actions.', l: commitGraphLight,  d: commitGraphDark  },
+  { id: 'changes-panel', label: 'Changes & diff',      caption: 'Staged/unstaged files alongside a syntax-highlighted unified diff.',              l: changesPanelLight, d: changesPanelDark },
+  { id: 'context-menu',  label: 'Context menu',        caption: 'Right-click any commit to copy hashes, checkout, reset, or open a worktree.',    l: contextMenuLight,  d: contextMenuDark  },
+  { id: 'settings',      label: 'Settings',            caption: 'Git identity, editor, shell, merge tool, and GitHub auth — all in one place.',   l: settingsLight,     d: settingsDark     },
+  { id: 'terminal',      label: 'Integrated terminal', caption: 'Multiple shell sessions per worktree in tabs, split, or grid layout.',            l: terminalLight,     d: terminalDark     },
+];
+
+// Run all 5 image pairs concurrently.
+const optimised = await Promise.all(rawSlides.map(s => optimise(s.l, s.d)));
+const slides = rawSlides.map((s, i) => ({ ...s, ...optimised[i] }));
+---
+
+<section id="screenshots" class="sg-slider-section" aria-label="App screenshots">
+  <div class="sg-slider-inner">
+
+    <div class="sg-slider-header">
+      <p class="sg-slider-eyebrow">In action</p>
+      <h2 class="sg-slider-heading">See SproutGit at work.</h2>
+    </div>
+
+    <div class="sg-slider" data-slider>
+
+      <!-- Stories-style progress bars (also act as nav) -->
+      <div class="sg-progress-row" role="tablist" aria-label="Screenshot navigation">
+        {slides.map((slide, i) => (
+          <button
+            class="sg-progress-btn"
+            role="tab"
+            data-bar={i}
+            aria-selected={i === 0}
+            aria-controls={`slide-${slide.id}`}
+            title={slide.label}
+          >
+            <span class="sg-bar-track">
+              <span class="sg-bar-fill" />
+            </span>
+            <span class="sr-only">{slide.label}</span>
+          </button>
+        ))}
+      </div>
+
+      <!-- Image track -->
+      <div class="sg-slider-track" role="region" aria-live="polite">
+        {slides.map((slide, i) => (
+          <figure
+            class="sg-slide"
+            data-index={i}
+            data-active={i === 0 ? 'true' : 'false'}
+            data-caption={slide.caption}
+            aria-hidden={i !== 0}
+            id={`slide-${slide.id}`}
+            role="tabpanel"
+          >
+            <picture class="sg-slide-picture">
+              <source media="(prefers-color-scheme: dark)" type="image/avif" srcset={slide.da.src} />
+              <source media="(prefers-color-scheme: dark)" type="image/webp" srcset={slide.dw.src} />
+              <source media="(prefers-color-scheme: dark)"                   srcset={slide.dp.src} />
+              <source                                       type="image/avif" srcset={slide.la.src} />
+              <source                                       type="image/webp" srcset={slide.lw.src} />
+              <img
+                src={slide.lp.src}
+                alt={slide.label}
+                width={commitGraphLight.width}
+                height={commitGraphLight.height}
+                loading={i === 0 ? 'eager' : 'lazy'}
+                decoding="async"
+                class="sg-slide-img"
+              />
+            </picture>
+          </figure>
+        ))}
+
+        <!-- Prev / Next arrows (inside track for visual alignment) -->
+        <button class="sg-arrow sg-arrow-prev" data-prev aria-label="Previous screenshot" disabled>
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="15 18 9 12 15 6"/></svg>
+        </button>
+        <button class="sg-arrow sg-arrow-next" data-next aria-label="Next screenshot">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="9 18 15 12 9 6"/></svg>
+        </button>
+      </div>
+
+      <!-- Label row + caption -->
+      <div class="sg-label-row">
+        {slides.map((slide, i) => (
+          <button class="sg-label-btn" data-dot={i} aria-current={i === 0}>
+            {slide.label}
+          </button>
+        ))}
+      </div>
+      <p class="sg-caption" data-slider-caption aria-live="polite">
+        {slides[0].caption}
+      </p>
+
+    </div>
+  </div>
+</section>
+
+<style>
+  .sr-only {
+    position: absolute; width: 1px; height: 1px;
+    padding: 0; margin: -1px; overflow: hidden;
+    clip: rect(0,0,0,0); white-space: nowrap; border: 0;
+  }
+
+  .sg-slider-section {
+    padding: 3.5rem 1.5rem 4rem;
+  }
+  .sg-slider-inner {
+    max-width: 860px;
+    margin: 0 auto;
+  }
+
+  /* Header */
+  .sg-slider-header {
+    text-align: center;
+    margin-bottom: 1.75rem;
+  }
+  .sg-slider-eyebrow {
+    font-size: 0.7rem;
+    font-weight: 700;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--sg-primary);
+    margin: 0 0 0.5rem;
+  }
+  .sg-slider-heading {
+    font-size: clamp(1.5rem, 3vw, 2rem);
+    font-weight: 700;
+    letter-spacing: -0.03em;
+    color: var(--sg-text);
+    margin: 0;
+  }
+
+  /* Progress bar row */
+  .sg-progress-row {
+    display: flex;
+    gap: 4px;
+    margin-bottom: 10px;
+  }
+  .sg-progress-btn {
+    flex: 1;
+    padding: 6px 0;
+    background: none;
+    border: none;
+    cursor: pointer;
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .sg-bar-track {
+    display: block;
+    height: 3px;
+    background: color-mix(in srgb, var(--sg-border) 60%, transparent);
+    border-radius: 2px;
+    overflow: hidden;
+  }
+  .sg-bar-fill {
+    display: block;
+    height: 100%;
+    width: 0%;
+    background: var(--sg-primary);
+    border-radius: 2px;
+    /* No CSS transition — the rAF loop drives smooth 60fps updates directly. */
+  }
+  /* Active bar: animate via JS-driven custom property */
+  .sg-progress-btn[aria-selected="true"] .sg-bar-fill {
+    width: var(--bar-progress, 0%);
+  }
+  /* Past bars: full */
+  .sg-progress-btn[data-past] .sg-bar-fill {
+    width: 100%;
+  }
+
+  /* Image track */
+  .sg-slider-track {
+    position: relative;
+    border-radius: 10px;
+    overflow: hidden;
+    border: 1px solid var(--sg-border);
+    background: var(--sg-surface);
+    box-shadow: 0 8px 32px color-mix(in srgb, #000 16%, transparent);
+    aspect-ratio: 960 / 620;
+  }
+
+  /* Slides */
+  .sg-slide {
+    position: absolute;
+    inset: 0;
+    margin: 0;
+    padding: 0;
+    opacity: 0;
+    transition: opacity 0.35s cubic-bezier(0.4, 0, 0.2, 1);
+    pointer-events: none;
+  }
+  .sg-slide[data-active="true"] {
+    opacity: 1;
+    pointer-events: auto;
+  }
+  .sg-slide-picture {
+    display: block;
+    width: 100%;
+    height: 100%;
+  }
+  .sg-slide-img {
+    display: block;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+
+  /* Arrows */
+  .sg-arrow {
+    position: absolute;
+    top: 50%;
+    transform: translateY(-50%);
+    z-index: 10;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 34px;
+    height: 34px;
+    border-radius: 50%;
+    border: 1px solid color-mix(in srgb, var(--sg-border) 70%, transparent);
+    background: color-mix(in srgb, var(--sg-surface) 85%, transparent);
+    color: var(--sg-text-dim);
+    cursor: pointer;
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    transition: background 0.18s, border-color 0.18s, color 0.18s, transform 0.18s;
+  }
+  .sg-arrow:hover:not(:disabled) {
+    background: var(--sg-surface-raised);
+    border-color: var(--sg-primary);
+    color: var(--sg-primary);
+    transform: translateY(-50%) scale(1.1);
+  }
+  .sg-arrow:disabled { opacity: 0.25; cursor: default; }
+  .sg-arrow-prev { left: 10px; }
+  .sg-arrow-next { right: 10px; }
+
+  /* Label row */
+  .sg-label-row {
+    display: flex;
+    justify-content: center;
+    gap: 0;
+    margin-top: 12px;
+    flex-wrap: wrap;
+  }
+  .sg-label-btn {
+    font-family: inherit;
+    font-size: 0.78rem;
+    font-weight: 500;
+    padding: 0.25rem 0.65rem;
+    border: none;
+    background: none;
+    color: var(--sg-text-faint);
+    cursor: pointer;
+    border-radius: 4px;
+    transition: color 0.18s, background 0.18s;
+    white-space: nowrap;
+  }
+  .sg-label-btn:hover {
+    color: var(--sg-text-dim);
+    background: color-mix(in srgb, var(--sg-surface-raised) 60%, transparent);
+  }
+  .sg-label-btn[aria-current="true"] {
+    color: var(--sg-primary);
+    font-weight: 600;
+  }
+
+  /* Caption */
+  .sg-caption {
+    text-align: center;
+    font-size: 0.78rem;
+    color: var(--sg-text-faint);
+    margin: 6px 0 0;
+    min-height: 1.2em;
+    transition: opacity 0.2s;
+    font-style: italic;
+  }
+  .sg-caption[data-fading] { opacity: 0; }
+</style>
+
+<script is:inline>
+  (() => {
+    const AUTOPLAY_MS = 4500;
+
+    const slider    = document.querySelector('[data-slider]');
+    if (!slider) return;
+
+    const slides    = Array.from(slider.querySelectorAll('.sg-slide'));
+    const bars      = Array.from(slider.querySelectorAll('[data-bar]'));
+    const dots      = Array.from(slider.querySelectorAll('[data-dot]'));
+    const prev      = slider.querySelector('[data-prev]');
+    const next      = slider.querySelector('[data-next]');
+    const captionEl = slider.querySelector('[data-slider-caption]');
+
+    let current     = 0;
+    let paused      = false;
+    let startTime   = null;
+    let elapsed     = 0;        // ms elapsed for current slide before last pause
+    let rafId       = null;
+
+    // ── Progress bar animation ────────────────────────────────────────────────
+    function tickProgress(ts) {
+      if (paused) { rafId = null; return; }
+      if (startTime === null) startTime = ts;
+      const total = elapsed + (ts - startTime);
+      const pct   = Math.min(total / AUTOPLAY_MS * 100, 100);
+
+      // Drive the active bar's width via CSS custom property
+      bars[current].style.setProperty('--bar-progress', pct.toFixed(1) + '%');
+
+      if (total >= AUTOPLAY_MS) {
+        goTo(current + 1);
+      } else {
+        rafId = requestAnimationFrame(tickProgress);
+      }
+    }
+
+    function startTick() {
+      if (rafId) cancelAnimationFrame(rafId);
+      rafId = requestAnimationFrame(tickProgress);
+    }
+
+    function pauseTick() {
+      if (rafId) { cancelAnimationFrame(rafId); rafId = null; }
+      if (startTime !== null) {
+        elapsed += performance.now() - startTime;
+        startTime = null;
+      }
+    }
+
+    // ── Slide change ──────────────────────────────────────────────────────────
+    function goTo(index) {
+      const next_idx = ((index % slides.length) + slides.length) % slides.length;
+
+      // Update slides
+      slides[current].dataset.active = 'false';
+      slides[current].setAttribute('aria-hidden', 'true');
+      bars[current].setAttribute('aria-selected', 'false');
+      bars[current].style.setProperty('--bar-progress', '100%');
+      bars[current].dataset.past = next_idx > current ? '' : null;
+      if (next_idx <= current) delete bars[current].dataset.past;
+      dots[current].setAttribute('aria-current', 'false');
+
+      current = next_idx;
+
+      slides[current].dataset.active = 'true';
+      slides[current].setAttribute('aria-hidden', 'false');
+      delete bars[current].dataset.past;           // clear any stale past-marker on the new current bar
+      bars[current].setAttribute('aria-selected', 'true');
+      bars[current].style.setProperty('--bar-progress', '0%');
+      dots[current].setAttribute('aria-current', 'true');
+
+      // Mark past bars as full, future bars as empty
+      bars.forEach((b, i) => {
+        if (i < current) {
+          b.dataset.past = '';
+          b.style.setProperty('--bar-progress', '100%');
+        } else if (i > current) {
+          delete b.dataset.past;
+          b.style.setProperty('--bar-progress', '0%');
+        }
+      });
+
+      // Update caption with a brief fade
+      if (captionEl) {
+        captionEl.setAttribute('data-fading', '');
+        setTimeout(() => {
+          captionEl.textContent = slides[current].dataset.caption ?? '';
+          captionEl.removeAttribute('data-fading');
+        }, 150);
+      }
+
+      // Disable prev at first slide; next always enabled (wraps to start).
+      if (prev) prev.disabled = current === 0;
+
+      // Reset timer
+      elapsed    = 0;
+      startTime  = null;
+      if (!paused) startTick();
+    }
+
+    // ── Controls ──────────────────────────────────────────────────────────────
+    bars.forEach((bar, i) => bar.addEventListener('click', () => goTo(i)));
+    dots.forEach((dot, i) => dot.addEventListener('click', () => goTo(i)));
+    prev?.addEventListener('click', () => goTo(current - 1));
+    next?.addEventListener('click', () => goTo(current + 1));
+
+    // Keyboard on the slider container
+    slider.addEventListener('keydown', (e) => {
+      if (e.key === 'ArrowLeft')  { e.preventDefault(); goTo(current - 1); }
+      if (e.key === 'ArrowRight') { e.preventDefault(); goTo(current + 1); }
+    });
+
+    // Pause on hover / focus
+    slider.addEventListener('mouseenter', () => { paused = true;  pauseTick(); });
+    slider.addEventListener('mouseleave', () => { paused = false; startTime = null; startTick(); });
+    slider.addEventListener('focusin',    () => { paused = true;  pauseTick(); });
+    slider.addEventListener('focusout',   (e) => {
+      if (!slider.contains(e.relatedTarget)) { paused = false; startTime = null; startTick(); }
+    });
+
+    // Pause when tab is hidden
+    document.addEventListener('visibilitychange', () => {
+      if (document.hidden) { paused = true; pauseTick(); }
+      else { paused = false; startTime = null; startTick(); }
+    });
+
+    // ── Init ──────────────────────────────────────────────────────────────────
+    if (captionEl) {
+      captionEl.textContent = slides[0].dataset.caption ?? '';
+    }
+    if (prev) prev.disabled = true;  // disabled at first slide; goTo() manages it
+    startTick();
+  })();
+</script>
