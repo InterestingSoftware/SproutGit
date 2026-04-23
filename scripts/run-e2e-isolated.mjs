@@ -2,7 +2,7 @@ import { execFileSync, spawnSync } from 'node:child_process';
 import { resolve } from 'node:path';
 
 const ROOT = resolve(process.cwd());
-const CONFIG_PATH = 'e2e/playwright.config.ts';
+const CONFIG_PATH = 'e2e/playwright.built.config.ts';
 const rawArgs = process.argv.slice(2).filter(arg => arg !== '--');
 const tauriHeaded = rawArgs.includes('--headed');
 const passthroughArgs = rawArgs.filter(arg => arg !== '--headed');
