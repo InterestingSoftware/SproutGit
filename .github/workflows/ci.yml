@@ -387,6 +387,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+      pull-requests: read
     steps:
       - name: Download all artifacts
         uses: actions/download-artifact@v4
@@ -453,11 +454,27 @@ jobs:
               }
             }' > latest.json
 
+      - name: Extract PR release notes
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh api "repos/${{ github.repository }}/commits/${{ github.sha }}/pulls" \
+            --header "Accept: application/vnd.github+json" \
+            --jq '.[0].body // ""' > /tmp/pr_body.txt
+          python3 -c "
+import re, sys
+body = open('/tmp/pr_body.txt').read()
+m = re.search(r'^## Release Notes\\s*\\n(.*?)(?=^## |\\Z)', body, re.M | re.S)
+print(m.group(1).strip() if m else '', end='')
+" > pr_release_notes.txt
+
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: v${{ env.BASE_VERSION }}.${{ github.run_number }}
           name: v${{ env.BASE_VERSION }}.${{ github.run_number }}
+          body_path: pr_release_notes.txt
           generate_release_notes: true
           files: |
             artifacts/**/*

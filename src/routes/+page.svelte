@@ -31,6 +31,7 @@
   } from '$lib/sproutgit';
   import { toast } from '$lib/toast.svelte';
   import WindowControls from '$lib/components/WindowControls.svelte';
+  import UpdateBadge from '$lib/components/UpdateBadge.svelte';
 
   type GitHubRepoItem = { label: string; value: string; detail?: string };
 
@@ -684,6 +685,7 @@
             /></svg
           >
         </button>
+        <UpdateBadge href="/settings" />
         <WindowControls />
       </div>
     </header>

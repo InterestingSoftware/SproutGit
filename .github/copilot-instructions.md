@@ -323,6 +323,31 @@ pnpm run tauri dev
 - Linting failures block PR merge
 - Format violations reported as annotations on PR
 
+## Release Notes Standard (Required)
+
+Every pull request the agent creates or updates **must** include a `## Release Notes` section in the PR body. The CI pipeline extracts this section and prepends it to the GitHub Release created when the PR merges to `main`.
+
+**Format:**
+1. One to three sentences explaining what the change is and why it matters — written for a user, not a developer.
+2. A bullet list of specific user-facing changes. Skip purely internal work (refactors, CI fixes, test-only changes) unless it has a visible effect.
+
+**Example:**
+
+```markdown
+## Release Notes
+
+This release hardens the E2E test setup so the Playwright testing bridge is never included in production builds, and fixes concurrent test runs interfering with each other.
+
+- `tauri-plugin-playwright` is now compiled only when the `e2e-testing` Cargo feature is active — it is absent from all production builds
+- E2E test run directories now use 12-hour TTL cleanup instead of deleting all sibling runs at startup, making concurrent CI runs safe
+- Production capability manifest no longer grants Playwright permissions
+```
+
+**Rules:**
+- Always write this section before opening or updating a PR — do not omit it.
+- Use plain language. Avoid Rust/TypeScript jargon in the explanatory sentences.
+- If a PR contains no user-facing changes (e.g. pure CI/infra work), write: `No user-facing changes in this release.`
+
 ## Agent Interaction Rules
 
 - **Pause and ask when the user asks multiple questions or a request has multiple open design decisions.** Use `vscode_askQuestions` to collect answers before implementing. Do not assume and proceed; gather answers first.
