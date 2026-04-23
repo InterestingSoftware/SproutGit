@@ -33,9 +33,15 @@ function gitEnv(sequence: number) {
 }
 
 export function runGit(cwd: string, args: string[], extraEnv: Record<string, string> = {}) {
+  const env = { ...process.env };
+  delete env.GIT_DIR;
+  delete env.GIT_WORK_TREE;
+  delete env.GIT_INDEX_FILE;
+  delete env.GIT_COMMON_DIR;
+
   return execFileSync('git', args, {
     cwd,
-    env: { ...process.env, ...BASE_GIT_ENV, ...extraEnv },
+    env: { ...env, ...BASE_GIT_ENV, ...extraEnv },
     stdio: 'pipe',
   })
     .toString()

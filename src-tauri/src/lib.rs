@@ -22,6 +22,7 @@ fn get_home_dir() -> Result<String, String> {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 #[allow(clippy::expect_used)]
 pub fn run() {
+    #[cfg_attr(not(feature = "e2e-testing"), allow(unused_mut))]
     let mut builder = tauri::Builder::default();
 
     #[cfg(feature = "e2e-testing")]
