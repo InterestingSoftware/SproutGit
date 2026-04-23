@@ -352,6 +352,7 @@ This release hardens the E2E test setup so the Playwright testing bridge is neve
 
 - **Pause and ask when the user asks multiple questions or a request has multiple open design decisions.** Use `vscode_askQuestions` to collect answers before implementing. Do not assume and proceed; gather answers first.
 - This is especially important for cross-cutting concerns like testing strategy, CI setup, and architectural choices.
+- **Never push without explicit user approval.** Before running `git push` (or any command that publishes commits to a remote), ask the user for confirmation in the current thread and wait for a clear yes.
 
 ## Coding Conventions
 
