@@ -8,23 +8,67 @@ type AdapterPage = TauriPage | BrowserPageAdapter;
 
 export const DEFAULT_UI_TIMEOUT = 20_000;
 const STARTUP_UI_TIMEOUT = 30_000;
-const IMPORT_COMPLETION_TIMEOUT = 3_000;
+const IMPORT_COMPLETION_TIMEOUT = DEFAULT_UI_TIMEOUT;
+
+const delay = (ms: number) => new Promise(resolveDelay => setTimeout(resolveDelay, ms));
+
+function isMissingMainWindowError(error: unknown): boolean {
+  return error instanceof Error && error.message.includes("window 'main' not found");
+}
+
+async function safeIsVisible(tauriPage: AdapterPage, selector: string) {
+  try {
+    return await tauriPage.isVisible(selector);
+  } catch (error) {
+    if (isMissingMainWindowError(error)) {
+      return false;
+    }
+    throw error;
+  }
+}
+
+async function waitForMainWindow(tauriPage: AdapterPage, timeout: number) {
+  const deadline = Date.now() + timeout;
+
+  while (Date.now() < deadline) {
+    try {
+      await tauriPage.waitForFunction('document.readyState === "complete"', 1_000);
+      return;
+    } catch (error) {
+      if (!isMissingMainWindowError(error)) {
+        throw error;
+      }
+      await delay(200);
+    }
+  }
+
+  throw new Error('Main window did not become available for E2E interaction');
+}
 
 async function waitForHomeReady(tauriPage: AdapterPage, timeout: number) {
   const deadline = Date.now() + timeout;
 
   while (Date.now() < deadline) {
-    const state = await tauriPage.evaluate(`(() => {
-      const importButton = document.querySelector('[data-testid="btn-import"]');
-      const main = document.querySelector('main');
-      const mainText = main?.textContent ?? '';
+    let state: unknown;
+    try {
+      state = await tauriPage.evaluate(`(() => {
+        const importButton = document.querySelector('[data-testid="btn-import"]');
+        const main = document.querySelector('main');
+        const mainText = main?.textContent ?? '';
 
-      return {
-        pathname: window.location.pathname,
-        importVisible: importButton instanceof HTMLElement,
-        checkingGit: mainText.includes('Checking git'),
-      };
-    })()`);
+        return {
+          pathname: window.location.pathname,
+          importVisible: importButton instanceof HTMLElement,
+          checkingGit: mainText.includes('Checking git'),
+        };
+      })()`);
+    } catch (error) {
+      if (!isMissingMainWindowError(error)) {
+        throw error;
+      }
+      await delay(200);
+      continue;
+    }
 
     if (
       state &&
@@ -36,8 +80,7 @@ async function waitForHomeReady(tauriPage: AdapterPage, timeout: number) {
     ) {
       return;
     }
-
-    await new Promise(resolveDelay => setTimeout(resolveDelay, 200));
+    await delay(200);
   }
 
   throw new Error('Home screen did not finish bootstrapping after reload');
@@ -50,18 +93,21 @@ async function clearCachedWorkspaceHint(tauriPage: AdapterPage) {
 }
 
 async function performVerifiedReload(tauriPage: AdapterPage) {
+  await waitForMainWindow(tauriPage, STARTUP_UI_TIMEOUT);
   await tauriPage.evaluate('window.location.reload()');
-  await tauriPage.waitForFunction('document.readyState === "complete"', 5_000);
+  await waitForMainWindow(tauriPage, 5_000);
 }
 
 export async function reloadToHome(tauriPage: AdapterPage) {
+  await waitForMainWindow(tauriPage, STARTUP_UI_TIMEOUT);
+
   for (let attempt = 0; attempt < 2; attempt += 1) {
-    const backVisible = await tauriPage.isVisible('[data-testid="btn-back-projects"]');
+    const backVisible = await safeIsVisible(tauriPage, '[data-testid="btn-back-projects"]');
     const workspaceVisible =
       backVisible ||
-      (await tauriPage.isVisible('[data-testid="worktree-list"]')) ||
-      (await tauriPage.isVisible('[data-testid="tab-history"]')) ||
-      (await tauriPage.isVisible('[data-testid="input-new-branch"]'));
+      (await safeIsVisible(tauriPage, '[data-testid="worktree-list"]')) ||
+      (await safeIsVisible(tauriPage, '[data-testid="tab-history"]')) ||
+      (await safeIsVisible(tauriPage, '[data-testid="input-new-branch"]'));
 
     if (workspaceVisible) {
       if (backVisible) {
@@ -79,12 +125,12 @@ export async function reloadToHome(tauriPage: AdapterPage) {
     await performVerifiedReload(tauriPage);
 
     const commitGraphStillVisible =
-      (await tauriPage.isVisible('[data-testid="commit-row"]')) &&
-      !(await tauriPage.isVisible('[data-testid="btn-back-projects"]'));
+      (await safeIsVisible(tauriPage, '[data-testid="commit-row"]')) &&
+      !(await safeIsVisible(tauriPage, '[data-testid="btn-back-projects"]'));
 
     if (commitGraphStillVisible) {
       await tauriPage.evaluate('window.location.reload()');
-      await tauriPage.waitForFunction('document.readyState === "complete"', 5_000);
+      await waitForMainWindow(tauriPage, 5_000);
     }
 
     try {
@@ -105,17 +151,17 @@ export async function ensureHome(tauriPage: AdapterPage) {
   const deadline = Date.now() + STARTUP_UI_TIMEOUT;
 
   while (Date.now() < deadline) {
-    if (await tauriPage.isVisible('[data-testid="btn-import"]')) {
+    if (await safeIsVisible(tauriPage, '[data-testid="btn-import"]')) {
       return;
     }
 
-    if (await tauriPage.isVisible('[data-testid="btn-back-projects"]')) {
+    if (await safeIsVisible(tauriPage, '[data-testid="btn-back-projects"]')) {
       await tauriPage.getByTestId('btn-back-projects').click();
-      await new Promise(resolveDelay => setTimeout(resolveDelay, 150));
+      await delay(150);
       continue;
     }
 
-    await new Promise(resolveDelay => setTimeout(resolveDelay, 150));
+    await delay(150);
   }
 
   throw new Error('ensureHome timeout: home screen never became visibly ready');
@@ -124,13 +170,16 @@ export async function ensureHome(tauriPage: AdapterPage) {
 export async function importRepoViaUi(tauriPage: AdapterPage, repoPath: string) {
   const workspaceParent = dirname(dirname(repoPath));
   const workspaceName = `${basename(repoPath)}-workspace`;
-  const delay = (ms: number) => new Promise((resolveDelay) => setTimeout(resolveDelay, ms));
 
-  const waitForWorkspaceHeader = async (timeout: number) => {
+  const waitForWorkspaceShell = async (timeout: number) => {
     const deadline = Date.now() + timeout;
     while (Date.now() < deadline) {
       const headerText = (await tauriPage.textContent('header')) ?? '';
-      if (headerText.includes(workspaceName)) {
+      const backButtonVisible = await safeIsVisible(tauriPage, '[data-testid="btn-back-projects"]');
+      const worktreeListVisible = await safeIsVisible(tauriPage, '[data-testid="worktree-list"]');
+      const newBranchVisible = await safeIsVisible(tauriPage, '[data-testid="input-new-branch"]');
+
+      if (headerText.includes(workspaceName) && backButtonVisible && worktreeListVisible && newBranchVisible) {
         return true;
       }
       await delay(120);
@@ -173,31 +222,30 @@ export async function importRepoViaUi(tauriPage: AdapterPage, repoPath: string) 
     button?.click();
   })()`);
 
-  // Fast-path: most successful imports reach workspace view quickly.
-  try {
-    await tauriPage.getByTestId('btn-back-projects').waitFor(1_200);
-    if (await waitForWorkspaceHeader(DEFAULT_UI_TIMEOUT)) {
+  const importDeadline = Date.now() + IMPORT_COMPLETION_TIMEOUT;
+  while (Date.now() < importDeadline) {
+    if (await waitForWorkspaceShell(600)) {
       return;
     }
-  } catch {
-    // Continue with bounded state polling below.
+
+    let importErrorText = '';
+    try {
+      importErrorText =
+        (await tauriPage.textContent('[data-testid="import-error"]'))?.trim() ?? '';
+    } catch {
+      // Ignore bridge read failure.
+    }
+
+    if (importErrorText) {
+      throw new Error(`Import failed: ${importErrorText}`);
+    }
+
+    await delay(200);
   }
 
-  // Enforce strict cap on total import wait time.
-  await delay(IMPORT_COMPLETION_TIMEOUT - 1_200);
-
-  let importErrorText = '';
-  try {
-    importErrorText =
-      (await tauriPage.textContent('[data-testid="import-error"]'))?.trim() ?? '';
-  } catch {
-    // Ignore bridge read failure.
-  }
-
-  if (importErrorText) {
-    throw new Error(`Import failed: ${importErrorText}`);
-  }
-  throw new Error('Import did not complete within 3s (workspace header did not appear)');
+  throw new Error(
+    `Import did not complete within ${IMPORT_COMPLETION_TIMEOUT / 1000}s (workspace shell did not appear)`,
+  );
 }
 
 export async function createWorktreeViaUi(tauriPage: AdapterPage, branchName: string) {

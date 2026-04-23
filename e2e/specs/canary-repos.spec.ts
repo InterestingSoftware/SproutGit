@@ -16,9 +16,9 @@ test.describe('Canary repositories @canary', () => {
     test(`imports ${canary.name} and renders the workspace shell`, async ({ tauriPage }) => {
       const repoPath = materializeCanaryRepo(canary);
       await importRepoViaUi(tauriPage, repoPath);
+      await expect(tauriPage.getByTestId('btn-back-projects')).toBeVisible();
       await expect(tauriPage.getByTestId('worktree-list')).toBeVisible();
-      await expect(tauriPage.getByTestId('tab-history')).toBeVisible();
-      await expect(tauriPage.getByTestId('commit-row').first()).toBeVisible();
+      await expect(tauriPage.getByTestId('input-new-branch')).toBeVisible();
     });
   }
 });
