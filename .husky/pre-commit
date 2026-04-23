@@ -14,14 +14,11 @@ echo "--- [pre-commit] 2/7 Rust unit tests"
 echo "--- [pre-commit] 3/7 pnpm tests"
 pnpm run test
 
-echo "--- [pre-commit] 4/7 Rust compile check"
-(cd src-tauri && cargo check)
-
-echo "--- [pre-commit] 5/7 oxlint"
+echo "--- [pre-commit] 4/6 oxlint"
 pnpm run lint
 
-echo "--- [pre-commit] 6/7 TypeScript/Svelte check"
+echo "--- [pre-commit] 5/6 TypeScript/Svelte check"
 pnpm run check
 
-echo "--- [pre-commit] 7/7 Playwright E2E tests"
+echo "--- [pre-commit] 6/6 Playwright E2E tests"
 pnpm run test:e2e:full

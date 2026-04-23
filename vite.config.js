@@ -3,6 +3,8 @@ import { sveltekit } from "@sveltejs/kit/vite";
 import tailwindcss from "@tailwindcss/vite";
 
 const host = process.env.TAURI_DEV_HOST;
+const port = Number.parseInt(process.env.SPROUTGIT_E2E_DEV_PORT ?? "1420", 10);
+const hmrPort = Number.parseInt(process.env.SPROUTGIT_E2E_HMR_PORT ?? "1421", 10);
 
 // https://vite.dev/config/
 export default defineConfig(async () => ({
@@ -14,14 +16,14 @@ export default defineConfig(async () => ({
   clearScreen: false,
   // 2. tauri expects a fixed port, fail if that port is not available
   server: {
-    port: 1420,
+    port,
     strictPort: true,
     host: host || false,
     hmr: host
       ? {
           protocol: "ws",
           host,
-          port: 1421,
+          port: hmrPort,
         }
       : undefined,
     watch: {
