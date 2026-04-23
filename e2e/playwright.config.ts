@@ -8,8 +8,22 @@ import { defineConfig } from '@playwright/test';
 const HERE = dirname(fileURLToPath(import.meta.url));
 const ROOT = resolve(HERE, '..');
 const DEV_HOST = process.env.SPROUTGIT_E2E_DEV_HOST ?? 'localhost';
+const MIN_TEST_PORT = 1024;
+const MAX_TEST_PORT = 45_000;
+
+function parseSafePort(raw: string | undefined): number | null {
+  if (!raw) return null;
+  const parsed = Number.parseInt(raw, 10);
+  if (!Number.isInteger(parsed)) return null;
+  if (parsed < MIN_TEST_PORT || parsed > MAX_TEST_PORT) return null;
+  return parsed;
+}
 
 async function isPortAvailable(port: number): Promise<boolean> {
+  if (port < MIN_TEST_PORT || port > 65_535) {
+    return false;
+  }
+
   return new Promise(resolveAvailability => {
     const server = createServer();
     server.once('error', () => resolveAvailability(false));
@@ -20,24 +34,25 @@ async function isPortAvailable(port: number): Promise<boolean> {
 }
 
 async function findOpenPort(startPort: number): Promise<number> {
-  for (let candidate = startPort; candidate < startPort + 1000; candidate += 1) {
+  const start = Math.max(MIN_TEST_PORT, startPort);
+  const endExclusive = Math.min(MAX_TEST_PORT + 1, start + 1000);
+
+  for (let candidate = start; candidate < endExclusive; candidate += 1) {
     if (await isPortAvailable(candidate)) {
       return candidate;
     }
   }
-  throw new Error(`Could not find an open port starting at ${startPort}`);
+  throw new Error(`Could not find an open port in safe range starting at ${startPort}`);
 }
 
-const inheritedDevPort = Number.parseInt(process.env.SPROUTGIT_E2E_DEV_PORT ?? '', 10);
-const inheritedPluginPort = Number.parseInt(process.env.SPROUTGIT_PLAYWRIGHT_TCP_PORT ?? '', 10);
+const inheritedDevPort = parseSafePort(process.env.SPROUTGIT_E2E_DEV_PORT);
+const inheritedPluginPort = parseSafePort(process.env.SPROUTGIT_PLAYWRIGHT_TCP_PORT);
 const inheritedSocketPath = process.env.SPROUTGIT_PLAYWRIGHT_SOCKET_PATH;
 const inheritedConfigPath = process.env.SPROUTGIT_E2E_TAURI_CONFIG_PATH;
 
 const hasInheritedRuntime =
-  Number.isInteger(inheritedDevPort) &&
-  inheritedDevPort > 0 &&
-  Number.isInteger(inheritedPluginPort) &&
-  inheritedPluginPort > 0 &&
+  typeof inheritedDevPort === 'number' &&
+  typeof inheritedPluginPort === 'number' &&
   typeof inheritedSocketPath === 'string' &&
   inheritedSocketPath.length > 0;
 
