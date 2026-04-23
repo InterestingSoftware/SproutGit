@@ -5,13 +5,13 @@
 
 set -e
 
-echo "--- [pre-commit] 1/7 Rust target cleanup"
+echo "--- [pre-commit] 1/6 Rust target cleanup"
 pnpm run cleanup:rust-targets:delete
 
-echo "--- [pre-commit] 2/7 Rust unit tests"
+echo "--- [pre-commit] 2/6 Rust unit tests"
 (cd src-tauri && cargo test --lib)
 
-echo "--- [pre-commit] 3/7 pnpm tests"
+echo "--- [pre-commit] 3/6 pnpm tests"
 pnpm run test
 
 echo "--- [pre-commit] 4/6 oxlint"
