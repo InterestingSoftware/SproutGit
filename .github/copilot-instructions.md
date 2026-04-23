@@ -89,7 +89,7 @@ Key reminders:
 - Prefer per-spec `beforeEach` reset hooks over global Playwright lifecycle hooks for stateful E2E flows.
 - For E2E isolation, reset both the test workspace directory and the isolated config DB, then return to the project picker with stable in-app navigation (`ensureHome()`-style helpers). Avoid making full webview reloads the default reset path for the suite.
 - Current default runtime is headless Playwright in `e2e/playwright.config.ts`; do not switch to headed by default.
-- During reset, clear recent projects in-app using stable test IDs so each test starts from a clean project picker list.
+- During reset, clear cached workspace hints (`sg_workspace_hint`) and perform a verified in-webview reload so each test starts from a clean project picker state.
 
 ### E2E Selector Strategy (Required)
 

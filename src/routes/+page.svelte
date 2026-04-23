@@ -789,7 +789,6 @@
                   <button
                     class="shrink-0 cursor-pointer rounded p-1.5 text-[var(--sg-text-faint)] opacity-0 transition-opacity hover:text-[var(--sg-danger)] group-hover:opacity-100"
                     title="Remove from recent projects"
-                    data-testid="recent-project-remove"
                     onclick={e => {
                       e.stopPropagation();
                       void removeKnownProject(project.workspacePath)

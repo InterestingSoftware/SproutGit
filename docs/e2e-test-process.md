@@ -15,9 +15,10 @@ Each E2E spec should reset state in `beforeEach` with existing helpers:
 1. Reset workspace test directories.
 2. Reset isolated config DB path for the run.
 3. Return to home screen with stable UI helpers.
-4. Clear recent projects from the home list before test actions.
+4. Clear cached workspace hints in session storage.
+5. Force a verified app reload before test actions.
 
-The `reloadToHome()` helper in `e2e/helpers/ui.ts` is the source of truth for the in-app reset path and now clears recent projects explicitly using stable test IDs.
+The `reloadToHome()` helper in `e2e/helpers/ui.ts` is the source of truth for the in-app reset path and performs a verified reload after clearing `sg_workspace_hint` from session storage.
 
 ## Browser Dependency Setup
 

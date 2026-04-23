@@ -65,27 +65,10 @@ async function waitForHomeReady(tauriPage: AdapterPage, timeout: number) {
   throw new Error('Home screen did not finish bootstrapping after reload');
 }
 
-async function clearRecentProjects(tauriPage: AdapterPage) {
-  const deadline = Date.now() + STARTUP_UI_TIMEOUT;
-
-  while (Date.now() < deadline) {
-    const removed = await tauriPage.evaluate(`(() => {
-      const button = document.querySelector('[data-testid="recent-project-remove"]');
-      if (!(button instanceof HTMLElement)) {
-        return false;
-      }
-      button.click();
-      return true;
-    })()`);
-
-    if (!removed) {
-      return;
-    }
-
-    await new Promise(resolveDelay => setTimeout(resolveDelay, 120));
-  }
-
-  throw new Error('Timed out while clearing recent projects during E2E reset');
+async function clearCachedWorkspaceHint(tauriPage: AdapterPage) {
+  await tauriPage.evaluate(`(() => {
+    sessionStorage.removeItem('sg_workspace_hint');
+  })()`);
 }
 
 async function performVerifiedReload(tauriPage: AdapterPage) {
@@ -130,8 +113,9 @@ export async function reloadToHome(tauriPage: AdapterPage) {
 
     try {
       await ensureHome(tauriPage);
+      await clearCachedWorkspaceHint(tauriPage);
+      await performVerifiedReload(tauriPage);
       await waitForHomeReady(tauriPage, STARTUP_UI_TIMEOUT);
-      await clearRecentProjects(tauriPage);
       return;
     } catch (error) {
       if (attempt === 1) {
