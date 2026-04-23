@@ -30,7 +30,12 @@ pub fn run() {
             .ok()
             .map(|value| value.trim().to_string())
             .filter(|value| !value.is_empty())
-            .unwrap_or_else(|| "/tmp/sproutgit-playwright.sock".to_string());
+            .unwrap_or_else(|| {
+                std::env::temp_dir()
+                    .join("sproutgit-playwright.sock")
+                    .to_string_lossy()
+                    .to_string()
+            });
 
         let tcp_port = std::env::var("SPROUTGIT_PLAYWRIGHT_TCP_PORT")
             .ok()
