@@ -7,7 +7,7 @@
     status: number;
   };
 
-  let { status }: Props = $props();
+  const { status }: Props = $props();
 
   onMount(() => {
     if (status === 404) {

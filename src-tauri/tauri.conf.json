@@ -10,6 +10,7 @@
     "frontendDist": "../build"
   },
   "app": {
+    "withGlobalTauri": true,
     "windows": [
       {
         "title": "SproutGit",
@@ -23,6 +24,9 @@
       }
     ],
     "security": {
+      "capabilities": [
+        "default"
+      ],
       "csp": null
     }
   },

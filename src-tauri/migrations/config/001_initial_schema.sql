@@ -1,11 +1,5 @@
 -- App-global config database: lives in the OS app-data directory
 
-PRAGMA journal_mode = WAL;
-PRAGMA synchronous   = NORMAL;
-PRAGMA foreign_keys  = ON;
-PRAGMA cache_size    = -2048; -- 2 MiB page cache
-PRAGMA temp_store    = MEMORY;
-
 CREATE TABLE IF NOT EXISTS app_settings (
     key   TEXT PRIMARY KEY,
     value TEXT NOT NULL

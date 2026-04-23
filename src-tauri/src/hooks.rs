@@ -13,7 +13,7 @@ use tokio::time::timeout;
 use crate::db::connect_workspace_db;
 use crate::git::helpers::{
     command_exists, now_epoch_seconds, run_git, system_command, validate_no_control_chars,
-    GitAction, SystemAction,
+    shell_candidates_for_current_os, GitAction, SystemAction,
 };
 
 #[derive(Serialize, FromQueryResult)]
@@ -124,16 +124,6 @@ const ALLOWED_TRIGGERS: &[&str] = &[
 const MAX_HOOK_OUTPUT_BYTES: usize = 64 * 1024;
 
 const ALLOWED_SCOPES: &[&str] = &["worktree", "workspace"];
-
-fn shell_candidates_for_current_os() -> &'static [&'static str] {
-    if cfg!(target_os = "windows") {
-        &["pwsh", "powershell", "bash"]
-    } else if cfg!(target_os = "macos") {
-        &["zsh", "bash"]
-    } else {
-        &["bash", "zsh", "pwsh"]
-    }
-}
 
 fn detect_available_hook_shells() -> Vec<String> {
     let detected: Vec<String> = shell_candidates_for_current_os()

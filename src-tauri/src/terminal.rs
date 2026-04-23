@@ -7,19 +7,9 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use portable_pty::{native_pty_system, CommandBuilder, MasterPty, PtySize};
 use tauri::{AppHandle, Emitter};
 
-use crate::git::helpers::{command_exists, validate_no_control_chars};
+use crate::git::helpers::{command_exists, shell_candidates_for_current_os, validate_no_control_chars};
 
 // ── Shell detection ──────────────────────────────────────────────────────────
-
-fn shell_candidates_for_current_os() -> &'static [&'static str] {
-    if cfg!(target_os = "windows") {
-        &["pwsh", "powershell", "bash"]
-    } else if cfg!(target_os = "macos") {
-        &["zsh", "bash"]
-    } else {
-        &["bash", "zsh", "pwsh"]
-    }
-}
 
 pub fn detect_available_shells() -> Vec<String> {
     let detected: Vec<String> = shell_candidates_for_current_os()

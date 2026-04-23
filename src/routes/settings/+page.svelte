@@ -2,10 +2,10 @@
   import { goto } from '$app/navigation';
   import { getVersion } from '@tauri-apps/api/app';
   import { openUrl } from '@tauri-apps/plugin-opener';
-  import type { Update } from '@tauri-apps/plugin-updater';
+  import { updateState } from '$lib/update.svelte';
   import { GitBranch, Info, Pencil, Settings, SquareTerminal, User } from 'lucide-svelte';
-  import { onMount } from 'svelte';
   import Spinner from '$lib/components/Spinner.svelte';
+  import UpdateBadge from '$lib/components/UpdateBadge.svelte';
   import WindowControls from '$lib/components/WindowControls.svelte';
   import {
     detectEditors,
@@ -68,8 +68,6 @@
   let appVersion = $state<string | null>(null);
   const updaterEnabled = !import.meta.env.DEV;
   let updateChecking = $state(false);
-  let updateChecked = $state(false);
-  let updateAvailable = $state<Update | null>(null);
   let updateInstalling = $state(false);
 
   let editingAuthor = $state(false);
@@ -77,10 +75,10 @@
   let editingDiffTool = $state(false);
   let editingMergeTool = $state(false);
 
-  let installedEditors = $derived(editors.filter((e) => e.installed));
-  let unavailableEditors = $derived(editors.filter((e) => !e.installed));
-  let installedDiffTools = $derived(gitTools.filter((t) => t.installed && t.supportsDiff));
-  let installedMergeTools = $derived(gitTools.filter((t) => t.installed && t.supportsMerge));
+  const installedEditors = $derived(editors.filter((e) => e.installed));
+  const unavailableEditors = $derived(editors.filter((e) => !e.installed));
+  const installedDiffTools = $derived(gitTools.filter((t) => t.installed && t.supportsDiff));
+  const installedMergeTools = $derived(gitTools.filter((t) => t.installed && t.supportsMerge));
 
   type ToolDisplay = {
     id: string;
@@ -126,9 +124,9 @@
     return fallbackDisplay(value);
   }
 
-  let editorDisplay = $derived(findEditorDisplay(currentEditor));
-  let diffToolDisplay = $derived(findToolDisplay(currentDiffTool));
-  let mergeToolDisplay = $derived(findToolDisplay(currentMergeTool));
+  const editorDisplay = $derived(findEditorDisplay(currentEditor));
+  const diffToolDisplay = $derived(findToolDisplay(currentDiffTool));
+  const mergeToolDisplay = $derived(findToolDisplay(currentMergeTool));
 
   getVersion().then((v) => (appVersion = import.meta.env.DEV ? 'dev build' : v)).catch(() => (appVersion = 'unknown'));
   getGitInfo()
@@ -179,20 +177,6 @@
         })
         .catch(() => (githubAuth = { authenticated: false, username: null, provider: 'github' }));
     });
-
-  onMount(async () => {
-    if (!updaterEnabled) return;
-    updateChecking = true;
-    try {
-      const { check } = await import('@tauri-apps/plugin-updater');
-      updateAvailable = await check();
-      updateChecked = true;
-    } catch {
-      // silently ignore — update check is best-effort
-    } finally {
-      updateChecking = false;
-    }
-  });
 
   function matchesEditor(editor: EditorInfo, configured: string): boolean {
     const stripped = configured.replace(/^["']|["']$/g, '');
@@ -404,7 +388,10 @@
     <button onclick={() => goto(workspacePath ? `/workspace?workspace=${encodeURIComponent(workspacePath)}` : '/')} class="rounded px-2 py-0.5 text-xs text-(--sg-text-dim) hover:bg-(--sg-surface-raised) hover:text-(--sg-text)">&larr; Projects</button>
     <div class="h-3 w-px bg-(--sg-border)"></div>
     <span class="sg-heading text-xs font-medium text-(--sg-text)">Settings</span>
-    <div class="ml-auto"><WindowControls /></div>
+    <div class="ml-auto flex items-center gap-2">
+      <UpdateBadge href={workspacePath ? `/settings?workspace=${encodeURIComponent(workspacePath)}` : '/settings'} />
+      <WindowControls />
+    </div>
   </header>
 
   <div class="flex-1 overflow-auto p-6">
@@ -494,12 +481,17 @@
             <div class="mt-3 border-t border-(--sg-border) pt-3">
               {#if !updaterEnabled}
                 <p class="mb-2 text-xs text-(--sg-text-faint)">Updater is disabled in development builds.</p>
-              {:else if updateAvailable}
-                <p class="mb-2 text-xs text-(--sg-text)">Update v{updateAvailable.version} available</p>
+              {:else if updateState.available}
+                <p class="mb-2 text-xs font-medium text-(--sg-text)">Update v{updateState.available.version} available</p>
+                {#if updateState.available.body}
+                  <div class="mb-3 max-h-40 overflow-y-auto rounded border border-(--sg-border) bg-(--sg-bg) p-2">
+                    <pre class="whitespace-pre-wrap text-xs leading-relaxed text-(--sg-text-dim)">{updateState.available.body}</pre>
+                  </div>
+                {/if}
                 <button class="rounded border border-(--sg-border) px-3 py-1.5 text-xs text-(--sg-text)" disabled={updateInstalling} onclick={async () => {
                   updateInstalling = true;
                   try {
-                    await updateAvailable!.downloadAndInstall();
+                    await updateState.available!.downloadAndInstall();
                     const { relaunch } = await import('@tauri-apps/plugin-process');
                     await relaunch();
                   } catch (err) {
@@ -509,15 +501,13 @@
                   }
                 }}>{updateInstalling ? 'Installing...' : 'Install & Restart'}</button>
               {:else}
-                <p class="mb-2 text-xs text-(--sg-text-faint)">{#if updateChecked}Up to date{:else}Check for the latest version{/if}</p>
+                <p class="mb-2 text-xs text-(--sg-text-faint)">{#if updateState.checked}Up to date{:else}Check for the latest version{/if}</p>
                 <button class="rounded border border-(--sg-border) bg-(--sg-surface-raised) px-3 py-1.5 text-xs text-(--sg-text)" disabled={updateChecking} onclick={async () => {
                   updateChecking = true;
-                  updateChecked = false;
                   try {
                     const { check } = await import('@tauri-apps/plugin-updater');
-                    updateAvailable = await check();
-                    updateChecked = true;
-                    if (!updateAvailable) toast.info("You're on the latest version");
+                    updateState.set(await check());
+                    if (!updateState.available) toast.info("You're on the latest version");
                   } catch (err) {
                     toast.error('Update check failed: ' + String(err));
                   } finally {

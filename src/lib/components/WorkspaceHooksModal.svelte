@@ -25,7 +25,7 @@
     onClose: () => void;
   };
 
-  let { open, workspacePath, onClose }: Props = $props();
+  const { open, workspacePath, onClose }: Props = $props();
 
   const triggerOptions: WorkspaceHookTrigger[] = [
     'before_worktree_create',
@@ -269,7 +269,7 @@
     };
   }
 
-  let dependencyCandidates = $derived(
+  const dependencyCandidates = $derived(
     hooks.filter(
       hook =>
         hook.id !== editingHookId &&

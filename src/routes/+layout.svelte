@@ -1,7 +1,7 @@
 <script lang="ts">
   import "../app.css";
   import ToastContainer from "$lib/components/ToastContainer.svelte";
-  import { toast } from "$lib/toast.svelte";
+  import { updateState } from "$lib/update.svelte";
   import { onMount } from "svelte";
   import { onNavigate } from "$app/navigation";
 
@@ -32,20 +32,7 @@
     try {
       const { check } = await import("@tauri-apps/plugin-updater");
       const update = await check();
-      if (update) {
-        toast.info(`Update v${update.version} is available`, 0, {
-          label: 'Update Now',
-          onClick: async () => {
-            try {
-              await update.downloadAndInstall();
-              const { relaunch } = await import('@tauri-apps/plugin-process');
-              await relaunch();
-            } catch {
-              toast.error('Update failed — try again from Settings');
-            }
-          },
-        });
-      }
+      updateState.set(update);
     } catch {
       // Silently ignore — update check is best-effort
     }

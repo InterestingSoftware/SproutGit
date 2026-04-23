@@ -82,6 +82,13 @@ fn apply_connection_pragmas(conn: &rusqlite::Connection) -> Result<(), String> {
 }
 
 fn config_db_path() -> Result<PathBuf, String> {
+    if let Ok(override_path) = std::env::var("SPROUTGIT_CONFIG_DB_PATH") {
+        let trimmed = override_path.trim();
+        if !trimmed.is_empty() {
+            return Ok(PathBuf::from(trimmed));
+        }
+    }
+
     #[cfg(target_os = "macos")]
     {
         let home = std::env::var("HOME")

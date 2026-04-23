@@ -140,7 +140,12 @@ pub async fn start_watching_worktrees(
                         if let Some(wt) =
                             match_git_index_to_worktree(event_path, git_dir_path, &paths_for_closure)
                         {
-                            affected.insert(wt);
+                            // Only enqueue the path if the directory still exists;
+                            // a concurrent worktree deletion could race with the
+                            // index write that triggered this event.
+                            if Path::new(&wt).is_dir() {
+                                affected.insert(wt);
+                            }
                         }
                         // Skip further processing for all .git dir events regardless.
                         continue;

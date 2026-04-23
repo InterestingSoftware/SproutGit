@@ -21,7 +21,7 @@
     cwd: string;
   };
 
-  let { shell, cwd }: Props = $props();
+  const { shell, cwd }: Props = $props();
   const isWindows = typeof navigator !== 'undefined' && /windows/i.test(navigator.userAgent);
 
   // ── DOM & xterm refs ──────────────────────────────────────────────────────

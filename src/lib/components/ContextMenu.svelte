@@ -18,7 +18,7 @@
     onclose: () => void;
   };
 
-  let { items, x, y, onclose }: Props = $props();
+  const { items, x, y, onclose }: Props = $props();
 
   let menuEl = $state<HTMLDivElement | null>(null);
 

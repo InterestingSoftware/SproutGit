@@ -18,7 +18,7 @@
     onloadmore?: () => void;
   };
 
-  let {
+  const {
     commits,
     worktrees = [],
     activeWorktree = null,
@@ -647,6 +647,8 @@
           {@const isSelected = selectedSet.has(i)}
           {@const isWtRow = !!row.worktreeBranch}
           <div
+            data-testid="commit-row"
+            data-commit-hash={row.hash}
             class="flex cursor-pointer select-none items-center gap-2 border-b border-[var(--sg-border-subtle)] px-3 {dimmed ? 'opacity-30' : ''} {isSelected ? 'bg-[var(--sg-primary)]/15' : isActive ? 'bg-[var(--sg-primary)]/10' : isWtRow ? 'bg-[var(--sg-accent)]/5' : 'hover:bg-[var(--sg-surface-raised)]'}"
             style="height: {ROW_H}px"
             role="button"

@@ -11,7 +11,7 @@
     onChange?: (next: string) => void;
   };
 
-  let {
+  const {
     value,
     language = "shell",
     theme = "auto",

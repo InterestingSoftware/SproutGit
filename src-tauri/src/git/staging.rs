@@ -47,7 +47,17 @@ pub fn validate_commit_message(message: &str) -> Result<String, String> {
     if trimmed.is_empty() {
         return Err("Commit message is required".to_string());
     }
-    validate_no_control_chars(trimmed, "Commit message")?;
+    // Allow newline, carriage return, and tab (common in commit bodies),
+    // but reject all other control characters.  This mirrors the frontend
+    // validateCommitMessage regex which permits \t (\x09) explicitly.
+    if trimmed
+        .chars()
+        .any(|c| c.is_control() && c != '\n' && c != '\r' && c != '\t')
+    {
+        return Err(
+            "Commit message contains unsupported control characters".to_string(),
+        );
+    }
     if trimmed.len() > 10_000 {
         return Err("Commit message is too long (max 10,000 characters)".to_string());
     }
@@ -196,40 +206,41 @@ pub async fn unstage_files(
     match unstage_result {
         Ok(output) if output.status.success() => {},
         Ok(output) => {
-            // Check for "no HEAD" scenario (initial commit)
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            if stderr.contains("Failed to resolve")
-                || stderr.contains("does not have")
-                || stderr.contains("ambiguous argument 'HEAD'")
-            {
-                // Fallback: use git rm --cached for initial commits
-                if paths.is_empty() {
-                    let output = run_git(
-                        GitAction::UnstageFiles,
-                        &["-C", &wt_str, "rm", "--cached", "-r", "."],
-                    )?;
-                    ensure_git_success(output, "Failed to unstage files")?;
-                } else {
-                    let validated = validate_file_paths(&paths)?;
-                    let mut args: Vec<String> = vec![
-                        "-C".to_string(),
-                        wt_str.to_string(),
-                        "rm".to_string(),
-                        "--cached".to_string(),
-                        "--".to_string(),
-                    ];
-                    args.extend(validated);
-                    let arg_refs: Vec<&str> = args.iter().map(|s| s.as_str()).collect();
-                    let output = run_git(GitAction::UnstageFiles, &arg_refs)?;
-                    ensure_git_success(output, "Failed to unstage files")?;
-                }
+            // `reset HEAD` fails when there is no initial commit yet.
+            // Detect this by checking whether HEAD resolves; if not, fall back
+            // to `git rm --cached` which works on an empty index.
+            let head_exists = run_git(
+                GitAction::RevParse,
+                &["-C", &wt_str, "rev-parse", "--verify", "HEAD"],
+            )
+            .map(|o| o.status.success())
+            .unwrap_or(false);
+
+            if head_exists {
+                // HEAD exists but reset still failed — surface the real error.
+                ensure_git_success(output, "Failed to unstage files")?;
+            }
+
+            // Initial commit: unstage with git rm --cached instead.
+            if paths.is_empty() {
+                let output = run_git(
+                    GitAction::UnstageFiles,
+                    &["-C", &wt_str, "rm", "--cached", "-r", "."],
+                )?;
+                ensure_git_success(output, "Failed to unstage files")?;
             } else {
-                let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
-                return Err(if stderr.is_empty() {
-                    "Failed to unstage files".to_string()
-                } else {
-                    stderr
-                });
+                let validated = validate_file_paths(&paths)?;
+                let mut args: Vec<String> = vec![
+                    "-C".to_string(),
+                    wt_str.to_string(),
+                    "rm".to_string(),
+                    "--cached".to_string(),
+                    "--".to_string(),
+                ];
+                args.extend(validated);
+                let arg_refs: Vec<&str> = args.iter().map(|s| s.as_str()).collect();
+                let output = run_git(GitAction::UnstageFiles, &arg_refs)?;
+                ensure_git_success(output, "Failed to unstage files")?;
             }
         },
         Err(e) => return Err(e),
@@ -443,8 +454,16 @@ mod tests {
     }
 
     #[test]
+    fn validate_commit_message_allows_tabs_in_body() {
+        // Tabs are valid in commit message bodies (e.g. indented code snippets).
+        assert!(validate_commit_message("Subject\n\n\tcode block").is_ok());
+    }
+
+    #[test]
     fn validate_commit_message_rejects_other_control_characters() {
-        assert!(validate_commit_message("hello\tworld").is_err());
+        // Non-printable control characters (except \n, \r, \t) must be rejected.
+        assert!(validate_commit_message("hello\x07world").is_err()); // BEL
+        assert!(validate_commit_message("hello\x00world").is_err()); // NUL
     }
 
     #[test]

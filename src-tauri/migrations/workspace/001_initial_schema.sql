@@ -1,11 +1,5 @@
 -- Workspace-scoped database: lives at <workspace>/.sproutgit/state.db
 
-PRAGMA journal_mode = WAL;
-PRAGMA synchronous   = NORMAL;
-PRAGMA foreign_keys  = ON;
-PRAGMA cache_size    = -4096; -- 4 MiB page cache
-PRAGMA temp_store    = MEMORY;
-
 CREATE TABLE IF NOT EXISTS meta (
     key   TEXT PRIMARY KEY,
     value TEXT NOT NULL

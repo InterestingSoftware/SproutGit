@@ -60,6 +60,7 @@
     Settings,
   } from "lucide-svelte";
   import WindowControls from "$lib/components/WindowControls.svelte";
+  import UpdateBadge from "$lib/components/UpdateBadge.svelte";
 
   const GRAPH_PAGE_SIZE = 2000;
 
@@ -231,6 +232,120 @@
     });
   }
 
+  function slugifyForPath(name: string): string {
+    let output = "";
+    let previousDash = false;
+
+    for (const ch of name) {
+      const isWord = /[A-Za-z0-9_-]/.test(ch);
+      if (isWord) {
+        output += ch.toLowerCase();
+        previousDash = false;
+      } else if (!previousDash) {
+        output += "-";
+        previousDash = true;
+      }
+    }
+
+    return output.replace(/^-+|-+$/g, "");
+  }
+
+  function isWorkspaceStatus(value: WorkspaceStatus | null | undefined): value is WorkspaceStatus {
+    return Boolean(
+      value
+      && typeof value.workspacePath === "string"
+      && typeof value.rootPath === "string"
+      && typeof value.isSproutgitProject === "boolean"
+    );
+  }
+
+  async function inspectWorkspaceWithRetry(workspacePath: string): Promise<WorkspaceStatus> {
+    let lastError: unknown = null;
+
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      try {
+        const status = await inspectWorkspace(workspacePath);
+        if (isWorkspaceStatus(status)) {
+          return status;
+        }
+      } catch (err) {
+        lastError = err;
+      }
+
+      await new Promise((resolveDelay) => setTimeout(resolveDelay, 150 * (attempt + 1)));
+    }
+
+    if (lastError) {
+      throw new Error(`Workspace inspection failed after retries: ${String(lastError)}`);
+    }
+
+    throw new Error("Workspace inspection returned an invalid result after retries.");
+  }
+
+  function isWorktreeListResult(value: { repoPath?: string; worktrees?: WorktreeInfo[] } | null | undefined): value is { repoPath: string; worktrees: WorktreeInfo[] } {
+    return Boolean(
+      value
+      && typeof value.repoPath === "string"
+      && Array.isArray(value.worktrees)
+    );
+  }
+
+  function isRefsResult(value: { repoPath?: string; refs?: RefInfo[] } | null | undefined): value is { repoPath: string; refs: RefInfo[] } {
+    return Boolean(
+      value
+      && typeof value.repoPath === "string"
+      && Array.isArray(value.refs)
+    );
+  }
+
+  function isCommitGraphResult(value: CommitGraphResult | null | undefined): value is CommitGraphResult {
+    return Boolean(
+      value
+      && typeof value.repoPath === "string"
+      && Array.isArray(value.commits)
+    );
+  }
+
+  async function readWithRetry<T>(
+    reader: () => Promise<T>,
+    isValid: (value: T | null | undefined) => boolean,
+    label: string,
+  ): Promise<T> {
+    let lastError: unknown = null;
+
+    for (let attempt = 0; attempt < 10; attempt += 1) {
+      try {
+        const result = await reader();
+        if (isValid(result)) {
+          return result;
+        }
+      } catch (err) {
+        lastError = err;
+      }
+
+      await new Promise((resolveDelay) => setTimeout(resolveDelay, 150));
+    }
+
+    if (lastError) {
+      throw new Error(`${label} failed after retries: ${String(lastError)}`);
+    }
+
+    throw new Error(`${label} returned an invalid result after retries.`);
+  }
+
+  function readWorkspaceHint(workspacePath: string): WorkspaceStatus | null {
+    const raw = sessionStorage.getItem("sg_workspace_hint");
+    if (!raw) return null;
+
+    try {
+      const parsed = JSON.parse(raw) as WorkspaceStatus | null;
+      if (!isWorkspaceStatus(parsed)) return null;
+      return parsed.workspacePath === workspacePath ? parsed : null;
+    } catch {
+      return null;
+    }
+  }
+
   function collectHookClosure(allHooks: WorkspaceHook[], rootHookId: string): WorkspaceHook[] {
     const hooksById = new Map(allHooks.map((hook) => [hook.id, hook]));
     const collectedIds = new Set<string>();
@@ -276,7 +391,10 @@
 
     try {
       const hookLists = await Promise.all(
-        triggers.map((trigger) => listWorkspaceHooks(workspacePath, trigger)),
+        triggers.map(async (trigger) => {
+          const hooks = await listWorkspaceHooks(workspacePath, trigger);
+          return Array.isArray(hooks) ? hooks : [];
+        }),
       );
 
       const seen = new Set<string>();
@@ -416,8 +534,8 @@
 
   // ── Staging/Unstaging State ──
   let worktreeStatus = $state<StatusFileEntry[]>([]);
-  let stagedFiles = $derived(worktreeStatus.filter((f) => f.indexStatus !== " " && f.indexStatus !== "?"));
-  let unstagedFiles = $derived(worktreeStatus.filter((f) => f.workTreeStatus !== " "));
+  const stagedFiles = $derived(worktreeStatus.filter((f) => f.indexStatus !== " " && f.indexStatus !== "?"));
+  const unstagedFiles = $derived(worktreeStatus.filter((f) => f.workTreeStatus !== " "));
   let commitMessage = $state("");
   let statusLoading = $state(false);
   let stagingAction = $state<string | null>(null);
@@ -776,7 +894,13 @@
         throw new Error("Missing workspace path. Open a project from the home screen.");
       }
 
-      const status = await inspectWorkspace(workspacePath);
+      const hintedStatus = readWorkspaceHint(workspacePath);
+      const status = await inspectWorkspaceWithRetry(workspacePath).catch((err) => {
+        if (hintedStatus) {
+          return hintedStatus;
+        }
+        throw err;
+      });
       if (!status.isSproutgitProject) {
         throw new Error("Path is not a SproutGit project.");
       }
@@ -784,9 +908,13 @@
       workspace = status;
 
       const [worktreeData, refsData, graphData] = await Promise.all([
-        listWorktrees(status.rootPath),
-        listRefs(status.rootPath),
-        getCommitGraph(status.rootPath, GRAPH_PAGE_SIZE, 0),
+        readWithRetry(() => listWorktrees(status.rootPath), isWorktreeListResult, "Worktree list"),
+        readWithRetry(() => listRefs(status.rootPath), isRefsResult, "Ref list"),
+        readWithRetry(
+          () => getCommitGraph(status.rootPath, GRAPH_PAGE_SIZE, 0),
+          isCommitGraphResult,
+          "Commit graph",
+        ),
       ]);
 
       worktrees = worktreeData.worktrees;
@@ -854,20 +982,46 @@
         throw new Error("Workspace context is unavailable");
       }
 
+      const requestedBranch = newBranch;
+
       const result = await createManagedWorktree(
         currentWorkspace.rootPath,
         currentWorkspace.worktreesPath,
         selectedRef,
-        newBranch,
+        requestedBranch,
       );
 
-      toast.success(`Worktree created: ${result.branch}`);
+      const createdBranch =
+        result && typeof result.branch === "string" && result.branch.trim()
+          ? result.branch
+          : requestedBranch;
+      const createdWorktreePath =
+        result && typeof result.worktreePath === "string" && result.worktreePath.trim()
+          ? result.worktreePath
+          : `${currentWorkspace.worktreesPath}/${slugifyForPath(createdBranch)}`;
 
-      await refreshWorkspaceData();
-      activeWorktreePath =
-        worktrees.find((wt) => wt.path !== currentWorkspace.rootPath)?.path ??
-        worktrees[0]?.path ??
-        null;
+      toast.success(`Worktree created: ${createdBranch}`);
+
+      try {
+        await refreshWorkspaceData();
+        activeWorktreePath =
+          worktrees.find((wt) => wt.path !== currentWorkspace.rootPath)?.path ??
+          worktrees[0]?.path ??
+          null;
+      } catch {
+        const fallbackWorktree: WorktreeInfo = {
+          path: createdWorktreePath,
+          branch: createdBranch,
+          head: null,
+          detached: false,
+        };
+        worktrees = [
+          ...worktrees.filter((wt) => wt.path !== fallbackWorktree.path),
+          fallbackWorktree,
+        ];
+        activeWorktreePath = fallbackWorktree.path;
+      }
+
       newBranch = "";
       formTouched = { branch: false, ref: false };
     } catch (err) {
@@ -1016,7 +1170,11 @@
           );
           await deleteManagedWorktree(workspace!.rootPath, wt.path, true);
           toast.success(`Deleted worktree: ${label}`);
-          await refreshWorkspaceData();
+          try {
+            await refreshWorkspaceData();
+          } catch {
+            worktrees = worktrees.filter((worktree) => worktree.path !== wt.path);
+          }
           if (activeWorktreePath === wt.path) {
             activeWorktreePath =
               worktrees.find((w) => w.path !== workspace!.rootPath)?.path ??
@@ -1036,10 +1194,15 @@
 
   async function refreshWorkspaceData() {
     if (!workspace) return;
+    const workspaceRootPath = workspace.rootPath;
     const [refreshedWt, refreshedGraph, refreshedRefs] = await Promise.all([
-      listWorktrees(workspace.rootPath),
-      getCommitGraph(workspace.rootPath, GRAPH_PAGE_SIZE, 0),
-      listRefs(workspace.rootPath),
+      readWithRetry(() => listWorktrees(workspaceRootPath), isWorktreeListResult, "Worktree list"),
+      readWithRetry(
+        () => getCommitGraph(workspaceRootPath, GRAPH_PAGE_SIZE, 0),
+        isCommitGraphResult,
+        "Commit graph",
+      ),
+      readWithRetry(() => listRefs(workspaceRootPath), isRefsResult, "Ref list"),
     ]);
     worktrees = refreshedWt.worktrees;
     initializeGraphState(refreshedGraph);
@@ -1047,13 +1210,13 @@
     if (graphHasMore) {
       // Refresh total commit count in the background only when the graph is partial.
       totalCommitCount = null;
-      countCommits(workspace.rootPath).then((n) => { totalCommitCount = n; }).catch(() => {});
+      countCommits(workspaceRootPath).then((n) => { totalCommitCount = n; }).catch(() => {});
     } else {
       totalCommitCount = refreshedGraph.commits.length;
     }
     // Refresh change counts for all non-root worktrees
     const nonRoot = refreshedWt.worktrees
-      .filter((wt) => wt.path !== workspace!.rootPath)
+      .filter((wt) => wt.path !== workspaceRootPath)
       .map((wt) => wt.path);
     void loadAllWorktreeChangeCounts(nonRoot);
     // Restart watcher so any newly created/deleted worktrees are included.
@@ -1302,7 +1465,7 @@
 <main class="flex h-screen flex-col">
   <!-- Context header -->
   <header data-tauri-drag-region class="flex shrink-0 items-center gap-3 border-b border-[var(--sg-border)] bg-[var(--sg-surface)] pt-1 pr-1 pb-1 pl-[var(--sg-titlebar-inset)]" style="view-transition-name: sg-app-header">
-    <button onclick={() => goto("/")} class="rounded px-2 py-0.5 text-xs text-[var(--sg-text-dim)] hover:bg-[var(--sg-surface-raised)] hover:text-[var(--sg-text)]">
+    <button onclick={() => goto("/")} data-testid="btn-back-projects" class="rounded px-2 py-0.5 text-xs text-[var(--sg-text-dim)] hover:bg-[var(--sg-surface-raised)] hover:text-[var(--sg-text)]">
       &larr; Projects
     </button>
     <div class="h-3 w-px bg-[var(--sg-border)]"></div>
@@ -1324,6 +1487,7 @@
       >
         <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
       </button>
+      <UpdateBadge href={workspace?.workspacePath ? `/settings?workspace=${encodeURIComponent(workspace.workspacePath)}` : '/settings'} />
       <WindowControls />
     </div>
   </header>
@@ -1367,6 +1531,7 @@
             <Autocomplete
               items={refItems}
               bind:value={selectedRef}
+              testId="input-source-ref"
               placeholder="Type to search branches…"
               id="source-ref"
               onselect={() => (formTouched.ref = true)}
@@ -1382,6 +1547,7 @@
             id="new-branch"
             bind:value={newBranch}
             oninput={() => (formTouched.branch = true)}
+            data-testid="input-new-branch"
             class="w-full rounded border bg-[var(--sg-input-bg)] px-2 py-1 text-xs text-[var(--sg-text)] placeholder-[var(--sg-text-faint)] outline-none {formTouched.branch && branchError ? 'border-[var(--sg-danger)] focus:border-[var(--sg-danger)]' : 'border-[var(--sg-input-border)] focus:border-[var(--sg-input-focus)]'}"
             placeholder="feature/my-task"
           />
@@ -1393,6 +1559,7 @@
           <button
             type="submit"
             disabled={creating || !formValid}
+            data-testid="btn-create-worktree"
             class="flex w-full items-center justify-center gap-2 rounded bg-[var(--sg-primary)] px-2.5 py-1 text-xs font-semibold text-[var(--sg-bg)] hover:bg-[var(--sg-primary-hover)] disabled:cursor-not-allowed disabled:opacity-40"
           >
             {#if creating}
@@ -1419,7 +1586,7 @@
               <Settings class="h-3.5 w-3.5" />
             </button>
           </div>
-          <div class="flex-1 overflow-auto px-2">
+          <div class="flex-1 overflow-auto px-2" data-testid="worktree-list">
             {#if nonRootWorktrees.length === 0}
               <p class="px-1 text-xs text-[var(--sg-text-faint)]">No managed worktrees yet.</p>
             {:else}
@@ -1428,6 +1595,9 @@
                 <!-- svelte-ignore a11y_click_events_have_key_events -->
                 <div
                   class="group mb-0.5 flex w-full cursor-pointer items-center gap-2 rounded px-2 py-1.5 text-left text-xs {activeWorktreePath === wt.path ? 'bg-[var(--sg-surface-raised)] text-[var(--sg-primary)]' : 'text-[var(--sg-text-dim)] hover:bg-[var(--sg-surface-raised)]'}"
+                  data-testid="worktree-item"
+                  data-branch={wt.branch}
+                  data-path={wt.path}
                   onclick={() => { activeWorktreePath = activeWorktreePath === wt.path ? null : wt.path; }}
                   oncontextmenu={(e) => handleWorktreeContextMenu(wt, e)}
                 >
@@ -1465,6 +1635,7 @@
                     <button
                       onclick={() => handleDeleteWorktree(wt)}
                       disabled={deleting === wt.path}
+                      data-testid="btn-delete-worktree"
                       class="rounded p-0.5 text-[var(--sg-text-faint)] hover:bg-[var(--sg-surface)] hover:text-[var(--sg-danger)] disabled:opacity-40"
                       title="Delete worktree"
                     >
@@ -1541,6 +1712,7 @@
           <div class="flex items-center gap-1 border-b border-[var(--sg-border)] bg-[var(--sg-surface)] px-4">
             <button
               onclick={() => (activeTab = "history")}
+              data-testid="tab-history"
               class="border-b-2 px-3 py-2 text-xs font-medium transition {activeTab === 'history'
                 ? 'border-[var(--sg-primary)] text-[var(--sg-primary)]'
                 : 'border-transparent text-[var(--sg-text-dim)] hover:text-[var(--sg-text)]'}"
@@ -1549,6 +1721,7 @@
             </button>
             <button
               onclick={() => (activeTab = "changes")}
+              data-testid="tab-changes"
               class="flex items-center gap-1.5 border-b-2 px-3 py-2 text-xs font-medium transition {activeTab === 'changes'
                 ? 'border-[var(--sg-primary)] text-[var(--sg-primary)]'
                 : 'border-transparent text-[var(--sg-text-dim)] hover:text-[var(--sg-text)]'}"
@@ -1562,6 +1735,7 @@
             </button>
             <button
               onclick={() => (activeTab = "terminal")}
+              data-testid="tab-terminal"
               class="border-b-2 px-3 py-2 text-xs font-medium transition {activeTab === 'terminal'
                 ? 'border-[var(--sg-primary)] text-[var(--sg-primary)]'
                 : 'border-transparent text-[var(--sg-text-dim)] hover:text-[var(--sg-text)]'}"
@@ -1600,6 +1774,7 @@
                             ? handleStageFiles([...selectedFilePaths].filter((k) => k.startsWith("unstaged:")).map((k) => k.slice(9)))
                             : handleStageFiles(unstagedFiles.map((f) => f.path))}
                           disabled={!!stagingAction}
+                          data-testid="btn-stage-all"
                           class="text-[9px] text-[var(--sg-text-dim)] hover:text-[var(--sg-text)] disabled:opacity-40"
                         >{hasMultiSelection ? "Stage selected" : "Stage all"}</button>
                       {/if}
@@ -1612,6 +1787,8 @@
                         <!-- svelte-ignore a11y_click_events_have_key_events -->
                         <div
                           class="group flex cursor-pointer items-center gap-1 px-2 py-0.5 {selectedFilePaths.has(`unstaged:${file.path}`) ? 'bg-[var(--sg-primary)]/10' : stagingDiffFile === file.path && !stagingDiffStaged ? 'bg-[var(--sg-surface-raised)]' : 'hover:bg-[var(--sg-surface-raised)]'}"
+                          data-testid="unstaged-file"
+                          data-filepath={file.path}
                           onmousedown={(e) => handleFileMouseDown(e, `unstaged:${file.path}`)}
                           onmouseenter={() => handleFileMouseEnter(`unstaged:${file.path}`)}
                           onclick={(e) => handleFileClick(e, `unstaged:${file.path}`)}
@@ -1675,6 +1852,8 @@
                         <!-- svelte-ignore a11y_click_events_have_key_events -->
                         <div
                           class="group flex cursor-pointer items-center gap-1 px-2 py-0.5 {selectedFilePaths.has(`staged:${file.path}`) ? 'bg-[var(--sg-primary)]/10' : stagingDiffFile === file.path && stagingDiffStaged ? 'bg-[var(--sg-surface-raised)]' : 'hover:bg-[var(--sg-surface-raised)]'}"
+                          data-testid="staged-file"
+                          data-filepath={file.path}
                           onmousedown={(e) => handleFileMouseDown(e, `staged:${file.path}`)}
                           onmouseenter={() => handleFileMouseEnter(`staged:${file.path}`)}
                           onclick={(e) => handleFileClick(e, `staged:${file.path}`)}
@@ -1709,12 +1888,14 @@
                     bind:value={commitMessage}
                     placeholder="Commit message"
                     rows="3"
+                    data-testid="commit-message"
                     onkeydown={(e) => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); handleCreateCommit(); } }}
                     class="w-full resize-none rounded border border-[var(--sg-input-border)] bg-[var(--sg-input-bg)] px-2 py-1.5 text-xs text-[var(--sg-text)] placeholder-[var(--sg-text-faint)] outline-none focus:border-[var(--sg-input-focus)]"
                   ></textarea>
                   <button
                     onclick={handleCreateCommit}
                     disabled={committing || !commitMessage.trim() || stagedFiles.length === 0}
+                    data-testid="btn-commit"
                     class="mt-1.5 flex w-full items-center justify-center gap-2 rounded bg-[var(--sg-primary)] px-2.5 py-1.5 text-xs font-semibold text-[var(--sg-bg)] hover:bg-[var(--sg-primary-hover)] disabled:cursor-not-allowed disabled:opacity-40"
                     title={stagedFiles.length === 0 ? "Stage changes first" : "Commit staged changes"}
                   >

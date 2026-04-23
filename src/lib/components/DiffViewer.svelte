@@ -44,7 +44,7 @@
     onclose?: () => void;
   };
 
-  let {
+  const {
     diff,
     loading,
     filePath = null,

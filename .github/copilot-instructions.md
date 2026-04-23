@@ -77,6 +77,26 @@ Agent requirements:
 - When adding, renaming, removing, or substantially repurposing a document in `docs/`, update `docs/index.md` in the same change.
 - Treat `docs/index.md` as the maintained entry point for the repository documentation set.
 
+## Tauri Playwright Adapter (Required For E2E Changes)
+
+When working on `e2e/**`, adapter fixtures, or Playwright/Tauri bridge behavior, read `docs/tauri-playwright-adapter-cheatsheet.md` before editing.
+
+Key reminders:
+- `TauriPage` is Playwright-like but not identical to `Page`.
+- `TauriLocator.waitFor` expects a numeric timeout, not a Playwright options object.
+- Keep plugin socket/port values consistent across setup/launch and worker processes for each run.
+- In `tauri` mode, do not use `page.goto()` for app reset or startup navigation.
+- Prefer per-spec `beforeEach` reset hooks over global Playwright lifecycle hooks for stateful E2E flows.
+- For E2E isolation, reset both the test workspace directory and the isolated config DB, then return to the project picker with stable in-app navigation (`ensureHome()`-style helpers). Avoid making full webview reloads the default reset path for the suite.
+- Current default runtime is headless Playwright in `e2e/playwright.config.ts`; do not switch to headed by default.
+- During reset, clear cached workspace hints (`sg_workspace_hint`) and perform a verified in-webview reload so each test starts from a clean project picker state.
+
+### E2E Selector Strategy (Required)
+
+- Prefer `getByTestId(...)` for all E2E element interactions and waits.
+- Use CSS selectors only when no stable test ID exists, and keep those selectors narrow and local.
+- If an interaction depends on visual state (hover-only controls, transient overlays), add or use a dedicated test ID before introducing brittle structural selectors.
+
 ## Workspace Layout (User Projects)
 
 SproutGit manages user repos in a prescribed directory layout:
@@ -302,6 +322,36 @@ pnpm run tauri dev
 - All linters run in GitHub Actions on every push (see `.github/workflows/`)
 - Linting failures block PR merge
 - Format violations reported as annotations on PR
+
+## Release Notes Standard (Required)
+
+Every pull request the agent creates or updates **must** include a `## Release Notes` section in the PR body. The CI pipeline extracts this section and prepends it to the GitHub Release created when the PR merges to `main`.
+
+**Format:**
+1. One to three sentences explaining what the change is and why it matters — written for a user, not a developer.
+2. A bullet list of specific user-facing changes. Skip purely internal work (refactors, CI fixes, test-only changes) unless it has a visible effect.
+
+**Example:**
+
+```markdown
+## Release Notes
+
+This release hardens the E2E test setup so the Playwright testing bridge is never included in production builds, and fixes concurrent test runs interfering with each other.
+
+- `tauri-plugin-playwright` is now compiled only when the `e2e-testing` Cargo feature is active — it is absent from all production builds
+- E2E test run directories now use 12-hour TTL cleanup instead of deleting all sibling runs at startup, making concurrent CI runs safe
+- Production capability manifest no longer grants Playwright permissions
+```
+
+**Rules:**
+- Always write this section before opening or updating a PR — do not omit it.
+- Use plain language. Avoid Rust/TypeScript jargon in the explanatory sentences.
+- If a PR contains no user-facing changes (e.g. pure CI/infra work), write: `No user-facing changes in this release.`
+
+## Agent Interaction Rules
+
+- **Pause and ask when the user asks multiple questions or a request has multiple open design decisions.** Use `vscode_askQuestions` to collect answers before implementing. Do not assume and proceed; gather answers first.
+- This is especially important for cross-cutting concerns like testing strategy, CI setup, and architectural choices.
 
 ## Coding Conventions
 

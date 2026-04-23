@@ -12,7 +12,7 @@
     onChange?: (value: string) => void;
   };
 
-  let {
+  const {
     value,
     options,
     disabled = false,

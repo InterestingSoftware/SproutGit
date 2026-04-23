@@ -335,6 +335,10 @@ pub async fn open_in_editor(worktree_path: String) -> Result<String, String> {
     }
 
     validate_non_option_value(&parts[0], "Editor command")?;
+    // Validate extra editor arguments for control characters before spawning.
+    for part in &parts[1..] {
+        validate_no_control_chars(part, "Editor argument")?;
+    }
     validate_no_control_chars(&wt_str, "Worktree path")?;
 
     let mut args: Vec<&str> = parts[1..]

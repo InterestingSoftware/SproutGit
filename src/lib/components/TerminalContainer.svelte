@@ -17,7 +17,7 @@
     cwd: string;
   };
 
-  let { defaultShell, availableShells, cwd }: Props = $props();
+  const { defaultShell, availableShells, cwd }: Props = $props();
 
   // ── Session state ─────────────────────────────────────────────────────────
   let sessions = $state<Session[]>([]);

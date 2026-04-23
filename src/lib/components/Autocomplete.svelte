@@ -6,10 +6,11 @@
     value: string;
     placeholder?: string;
     id?: string;
+    testId?: string;
     onselect?: (value: string) => void;
   };
 
-  let { items, value = $bindable(), placeholder = "", id, onselect }: Props = $props();
+  let { items, value = $bindable(), placeholder = "", id, testId, onselect }: Props = $props();
 
   let query = $state("");
   let open = $state(false);
@@ -96,6 +97,7 @@
   <input
     bind:this={inputEl}
     bind:value={query}
+    data-testid={testId}
     oninput={handleInput}
     onfocus={handleFocus}
     onkeydown={handleKeydown}

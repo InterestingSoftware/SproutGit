@@ -22,7 +22,39 @@ fn get_home_dir() -> Result<String, String> {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 #[allow(clippy::expect_used)]
 pub fn run() {
-    tauri::Builder::default()
+    #[cfg_attr(not(feature = "e2e-testing"), allow(unused_mut))]
+    let mut builder = tauri::Builder::default();
+
+    #[cfg(feature = "e2e-testing")]
+    {
+        let socket_path = std::env::var("SPROUTGIT_PLAYWRIGHT_SOCKET_PATH")
+            .ok()
+            .map(|value| value.trim().to_string())
+            .filter(|value| !value.is_empty())
+            .unwrap_or_else(|| {
+                std::env::temp_dir()
+                    .join("sproutgit-playwright.sock")
+                    .to_string_lossy()
+                    .to_string()
+            });
+
+        let tcp_port = std::env::var("SPROUTGIT_PLAYWRIGHT_TCP_PORT")
+            .ok()
+            .and_then(|value| value.trim().parse::<u16>().ok())
+            .filter(|value| *value > 0)
+            .unwrap_or(6274);
+
+        builder = builder.plugin(
+            tauri_plugin_playwright::init_with_config(
+                tauri_plugin_playwright::PluginConfig::new()
+                    .socket_path(&socket_path)
+                    .tcp_port(tcp_port)
+                    .window_label("main"),
+            ),
+        );
+    }
+
+    builder
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_process::init())

@@ -14,7 +14,7 @@
     children?: Snippet;
   };
 
-  let {
+  const {
     checked,
     disabled = false,
     variant = 'primary',

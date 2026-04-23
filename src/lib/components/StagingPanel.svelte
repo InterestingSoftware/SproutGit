@@ -49,7 +49,7 @@
     refreshSignal?: number;
   };
 
-  let { worktreePath, branch, oncommit, onclose, onstatuschange, refreshSignal = 0 }: Props =
+  const { worktreePath, branch, oncommit, onclose, onstatuschange, refreshSignal = 0 }: Props =
     $props();
 
   let statusFiles = $state<StatusFileEntry[]>([]);

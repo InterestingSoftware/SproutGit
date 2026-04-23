@@ -23,6 +23,8 @@
 <div class="pointer-events-none fixed right-0 top-0 z-50 flex flex-col gap-2 p-4">
   {#each toasts() as t (t.id)}
     <div
+      data-testid="toast-item"
+      data-toast-type={t.type}
       class="pointer-events-auto flex max-w-xs items-start gap-2 rounded-lg border border-[var(--sg-border)] bg-[var(--sg-surface)] px-3 py-2.5 shadow-lg"
       style="animation: {t.removing ? 'sg-toast-out' : 'sg-toast-in'} 0.2s ease-out forwards"
     >
@@ -30,7 +32,7 @@
         <path d={iconPaths[t.type]} />
       </svg>
       <div class="min-w-0 flex-1">
-        <p class="select-text text-xs leading-relaxed text-[var(--sg-text)]">{t.message}</p>
+        <p data-testid="toast-message" class="select-text text-xs leading-relaxed text-[var(--sg-text)]">{t.message}</p>
         {#if t.action}
           <button
             onclick={() => { t.action!.onClick(); removeToast(t.id); }}

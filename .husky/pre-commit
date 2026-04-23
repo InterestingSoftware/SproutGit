@@ -1,0 +1,24 @@
+#!/usr/bin/env sh
+
+# Ensure cargo is available (required for Rust checks and tests).
+[ -f "$HOME/.cargo/env" ] && . "$HOME/.cargo/env"
+
+set -e
+
+echo "--- [pre-commit] 1/6 Rust target cleanup"
+pnpm run cleanup:rust-targets:delete
+
+echo "--- [pre-commit] 2/6 Rust unit tests"
+(cd src-tauri && cargo test --lib)
+
+echo "--- [pre-commit] 3/6 pnpm tests"
+pnpm run test
+
+echo "--- [pre-commit] 4/6 oxlint"
+pnpm run lint
+
+echo "--- [pre-commit] 5/6 TypeScript/Svelte check"
+pnpm run check
+
+echo "--- [pre-commit] 6/6 Playwright E2E tests"
+pnpm run test:e2e:full

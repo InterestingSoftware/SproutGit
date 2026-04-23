@@ -9,7 +9,7 @@
     oncancel: () => void;
   };
 
-  let {
+  const {
     title,
     message,
     confirmLabel = "Confirm",
@@ -26,6 +26,7 @@
 
 <!-- svelte-ignore a11y_no_static_element_interactions -->
 <div
+  data-testid="confirm-dialog"
   class="fixed inset-0 z-50 flex items-center justify-center bg-black/40"
   style="animation: sg-fade-in 0.1s ease-out"
   onkeydown={handleKeydown}
@@ -42,12 +43,14 @@
     <div class="flex items-center justify-end gap-2">
       <button
         onclick={oncancel}
+        data-testid="confirm-dialog-cancel"
         class="rounded px-3 py-1.5 text-xs text-[var(--sg-text-dim)] hover:bg-[var(--sg-surface-raised)] hover:text-[var(--sg-text)]"
       >
         {cancelLabel}
       </button>
       <button
         onclick={onconfirm}
+        data-testid="confirm-dialog-confirm"
         class="rounded px-3 py-1.5 text-xs font-semibold {danger
           ? 'bg-[var(--sg-danger)] text-white hover:opacity-90'
           : 'bg-[var(--sg-primary)] text-[var(--sg-bg)] hover:bg-[var(--sg-primary-hover)]'}"

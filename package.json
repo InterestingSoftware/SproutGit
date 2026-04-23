@@ -13,18 +13,29 @@
     "lint:fix": "oxlint --fix",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
+    "test": "pnpm run test:security",
     "test:security": "cd src-tauri && cargo test --all-targets",
+    "setup:playwright": "node scripts/setup-playwright.mjs",
+    "cleanup:rust-targets": "node scripts/cleanup-rust-targets.mjs",
+    "cleanup:rust-targets:delete": "node scripts/cleanup-rust-targets.mjs --delete",
     "tauri": "tauri",
-    "test:tauri:prepare": "pnpm run build && cd src-tauri && cargo build",
-    "test:tauri:driver": "node tests/tauri-driver/smoke.mjs",
-    "test:tauri": "npm run test:tauri:prepare && npm run test:tauri:driver"
+    "test:e2e:build": "pnpm tauri build --config src-tauri/tauri.e2e.conf.json --no-bundle --features e2e-testing",
+    "test:e2e": "playwright test -c e2e/playwright.config.ts",
+    "test:e2e:full": "pnpm run test:e2e",
+    "test:e2e:screenshots": "cross-env CAPTURE_SCREENSHOTS=1 PLAYWRIGHT_SCREENSHOT_TARGET=./screenshots pnpm exec playwright test -c e2e/playwright.config.ts --grep @screenshots",
+    "test:e2e:canary": "cross-env RUN_CANARY=1 pnpm exec playwright test -c e2e/playwright.config.ts --grep @canary",
+    "test:tauri": "pnpm run test:e2e",
+    "prepare": "husky && pnpm run setup:playwright"
   },
   "license": "MIT",
   "pnpm": {
     "overrides": {
       "cookie": "0.7.2",
       "dompurify": "3.4.0"
-    }
+    },
+    "ignoredBuiltDependencies": [
+      "better-sqlite3"
+    ]
   },
   "dependencies": {
     "@fontsource/fira-code": "^5.2.7",
@@ -44,20 +55,22 @@
     "monaco-editor": "^0.55.1"
   },
   "devDependencies": {
-    "@sveltejs/adapter-static": "^3.0.6",
-    "@sveltejs/kit": "^2.9.0",
-    "@sveltejs/vite-plugin-svelte": "^5.0.0",
-    "@tailwindcss/vite": "^4.2.2",
+    "@playwright/test": "^1.59.1",
+    "@srsholmes/tauri-playwright": "^0.2.2",
+    "@sveltejs/adapter-static": "^3.0.10",
+    "@sveltejs/kit": "^2.57.1",
+    "@sveltejs/vite-plugin-svelte": "^7.0.0",
+    "@tailwindcss/vite": "^4.2.4",
     "@tauri-apps/cli": "^2",
-    "oxlint": "^0.3.0",
-    "playwright": "^1.59.1",
-    "prettier": "^3.2.5",
-    "prettier-plugin-svelte": "^3.2.2",
-    "svelte": "^5.0.0",
-    "svelte-check": "^4.0.0",
-    "tailwindcss": "^4.2.2",
-    "typescript": "~5.6.2",
-    "vite": "^6.0.3",
-    "webdriverio": "^9.27.0"
+    "cross-env": "^10.1.0",
+    "husky": "^9.1.7",
+    "oxlint": "^1.61.0",
+    "prettier": "^3.8.3",
+    "prettier-plugin-svelte": "^3.5.1",
+    "svelte": "^5.55.4",
+    "svelte-check": "^4.4.6",
+    "tailwindcss": "^4.2.4",
+    "typescript": "~6.0.3",
+    "vite": "^8.0.9"
   }
 }
