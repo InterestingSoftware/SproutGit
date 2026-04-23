@@ -60,7 +60,6 @@ const PLUGIN_PORT_BASE = 22000 + (PORT_SEED % 2000);
 
 const devPort = hasInheritedRuntime ? inheritedDevPort : await findOpenPort(DEV_PORT_BASE);
 const pluginPort = hasInheritedRuntime ? inheritedPluginPort : await findOpenPort(PLUGIN_PORT_BASE);
-const devUrl = `http://${DEV_HOST}:${devPort}`;
 const socketPath =
   hasInheritedRuntime && inheritedSocketPath
     ? inheritedSocketPath
