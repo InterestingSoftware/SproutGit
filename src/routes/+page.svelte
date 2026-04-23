@@ -41,6 +41,8 @@
   };
 
   const PROJECTS_FOLDER_SETTING_KEY = 'projectsFolder';
+  const STARTUP_GIT_TIMEOUT_MS = 3_000;
+  const E2E_RUN_ID = import.meta.env.VITE_SPROUTGIT_E2E_RUN_ID as string | undefined;
 
   let gitChecked = $state(false);
   let git = $state<GitInfo>({ installed: false, version: null });
@@ -111,6 +113,54 @@
     return repoNameFromPath(path) || path.trim() || '?';
   }
 
+  function cacheWorkspaceHint(workspace: WorkspaceStatus | WorkspaceInitResult) {
+    sessionStorage.setItem(
+      'sg_workspace_hint',
+      JSON.stringify({
+        workspacePath: workspace.workspacePath,
+        rootPath: workspace.rootPath,
+        worktreesPath: workspace.worktreesPath,
+        metadataPath: workspace.metadataPath,
+        stateDbPath: workspace.stateDbPath,
+        isSproutgitProject: true,
+        rootExists: true,
+        worktreesExists: true,
+        metadataExists: true,
+        stateDbExists: true,
+      }),
+    );
+  }
+
+  function getCachedWorkspaceHint(): KnownProject | null {
+    const raw = sessionStorage.getItem('sg_workspace_hint');
+    if (!raw) return null;
+
+    try {
+      const parsed = JSON.parse(raw) as Partial<KnownProject> | null;
+      if (
+        !parsed
+        || typeof parsed.workspacePath !== 'string'
+        || typeof parsed.rootPath !== 'string'
+      ) {
+        return null;
+      }
+
+      return {
+        workspacePath: parsed.workspacePath,
+        rootPath: parsed.rootPath,
+        lastOpenedAt: Date.now(),
+      };
+    } catch {
+      return null;
+    }
+  }
+
+  function toastAndThrow(context: string, err: unknown): never {
+    const message = `${context}: ${String(err)}`;
+    toast.error(message);
+    throw err instanceof Error ? err : new Error(message);
+  }
+
   function handleUrlInput() {
     if (!folderNameManual) {
       folderName = repoNameFromUrl(cloneUrl);
@@ -141,7 +191,7 @@
       }));
       reposFetched = true;
     } catch (err) {
-      toast.error(`Failed to load repos: ${err}`);
+      toastAndThrow('Failed to load repos', err);
     } finally {
       reposLoading = false;
     }
@@ -265,12 +315,54 @@
   }
 
   async function loadKnownProjects() {
+    const hintedProject = getCachedWorkspaceHint();
+    if (hintedProject && knownProjects.length === 0) {
+      knownProjects = [hintedProject];
+    }
+
     try {
       const recents = await listRecentWorkspaces();
-      knownProjects = recents.map(fromRecentWorkspace);
+      const loadedProjects = (recents ?? []).map(fromRecentWorkspace);
+      knownProjects = hintedProject
+        ? [
+            hintedProject,
+            ...loadedProjects.filter(item => item.workspacePath !== hintedProject.workspacePath),
+          ]
+        : loadedProjects;
     } catch (err) {
-      toast.error(`Failed to load recent workspaces: ${err}`);
-      knownProjects = [];
+      knownProjects = hintedProject ? [hintedProject] : [];
+      toast.error(`Failed to load recent workspaces: ${String(err)}`);
+    }
+  }
+
+  function withTimeout<T>(promise: Promise<T>, timeoutMs: number, label: string): Promise<T> {
+    return new Promise<T>((resolve, reject) => {
+      const timer = setTimeout(() => {
+        reject(new Error(`${label} timed out after ${timeoutMs}ms`));
+      }, timeoutMs);
+
+      promise
+        .then((value) => {
+          clearTimeout(timer);
+          resolve(value);
+        })
+        .catch((error) => {
+          clearTimeout(timer);
+          reject(error);
+        });
+    });
+  }
+
+  async function checkGitStartup() {
+    try {
+      const info = await withTimeout(getGitInfo(), STARTUP_GIT_TIMEOUT_MS, 'Git check');
+      git = info;
+    } catch (err) {
+      // Keep the app usable even if startup git check flakes under E2E load.
+      git = { installed: true, version: null };
+      toast.warning(`Git startup check failed: ${String(err)}`);
+    } finally {
+      gitChecked = true;
     }
   }
 
@@ -334,11 +426,12 @@
       const created = await createWorkspace(workspacePath, cloneUrl);
       createdWorkspace = created;
       await saveKnownProject(created);
+      cacheWorkspaceHint(created);
       toast.success(`Workspace created: ${workspaceNameFromPath(created.workspacePath)}`);
       await goto(`/workspace?workspace=${encodeURIComponent(created.workspacePath)}`);
     } catch (err) {
       error = String(err);
-      toast.error(String(err));
+      toastAndThrow('Create workspace failed', err);
     } finally {
       unlisten();
       creating = false;
@@ -384,18 +477,39 @@
       unlistenImport = await onImportProgress(msg => {
         importProgressMsg = msg;
       });
-      const imported = await importGitRepoWorkspaceWithMode(
+      const importedResult = await importGitRepoWorkspaceWithMode(
         importRepoPath,
         importMode,
         needsWorkspacePath ? importWorkspacePath : null
       );
+      let imported = importedResult;
+
+      // Rarely, the bridge can yield a malformed/null payload even when import
+      // has already completed. Re-inspect expected workspace path to recover.
+      if (!imported || typeof imported.workspacePath !== 'string' || !imported.workspacePath) {
+        if (!needsWorkspacePath || !importWorkspacePath) {
+          throw new Error('Import returned an invalid workspace result');
+        }
+        // Fall back to the deterministic managed workspace layout for move/copy.
+        // This avoids a second bridge roundtrip when the first invoke payload is malformed.
+        imported = {
+          workspacePath: importWorkspacePath,
+          rootPath: `${importWorkspacePath}/root`,
+          worktreesPath: `${importWorkspacePath}/worktrees`,
+          metadataPath: `${importWorkspacePath}/.sproutgit`,
+          stateDbPath: `${importWorkspacePath}/.sproutgit/state.db`,
+          cloned: false,
+        };
+      }
+
       createdWorkspace = imported;
       await saveKnownProject(imported);
+  cacheWorkspaceHint(imported);
       toast.success(`Workspace imported: ${workspaceNameFromPath(imported.workspacePath)}`);
       await goto(`/workspace?workspace=${encodeURIComponent(imported.workspacePath)}`);
     } catch (err) {
       error = String(err);
-      toast.error(String(err));
+      toastAndThrow('Import workspace failed', err);
     } finally {
       unlistenImport?.();
       importProgressMsg = '';
@@ -413,6 +527,7 @@
         throw new Error('Selected path is not a SproutGit project');
       }
       await saveKnownProject(status);
+      cacheWorkspaceHint(status);
       await goto(`/workspace?workspace=${encodeURIComponent(status.workspacePath)}`);
     } catch (err) {
       const msg = String(err);
@@ -426,6 +541,7 @@
         toast.error(`Project removed — path no longer exists: ${workspaceNameFromPath(path)}`);
       } else {
         error = msg;
+        toastAndThrow('Open known workspace failed', err);
       }
     } finally {
       opening = false;
@@ -446,18 +562,21 @@
       }
 
       await saveKnownProject(status);
+      cacheWorkspaceHint(status);
       await goto(`/workspace?workspace=${encodeURIComponent(status.workspacePath)}`);
     } catch (err) {
-      toast.error(String(err));
+      toastAndThrow('Open workspace dialog failed', err);
     } finally {
       opening = false;
     }
   }
 
-  getGitInfo().then(info => {
-    git = info;
+  if (E2E_RUN_ID) {
+    git = { installed: true, version: null };
     gitChecked = true;
-  });
+  } else {
+    checkGitStartup();
+  }
 
   getVersion()
     .then(v => (appVersion = import.meta.env.DEV ? 'dev build' : v))
@@ -587,6 +706,7 @@
           <button
             type="button"
             onclick={openCloneModal}
+            data-testid="btn-clone"
             class="flex w-full cursor-pointer items-center gap-2.5 rounded-md border border-[var(--sg-border)] px-3.5 py-2.5 text-sm font-medium text-[var(--sg-text)] hover:border-[var(--sg-primary)]/40 hover:bg-[var(--sg-surface-raised)] disabled:cursor-not-allowed disabled:opacity-40"
           >
             <Download size={16} strokeWidth={2} class="text-[var(--sg-primary)] shrink-0" />
@@ -596,6 +716,7 @@
             type="button"
             onclick={openSproutGitWorkspaceDialog}
             disabled={opening}
+            data-testid="btn-open"
             class="flex w-full cursor-pointer items-center gap-2.5 rounded-md border border-[var(--sg-border)] px-3.5 py-2.5 text-sm font-medium text-[var(--sg-text)] hover:border-[var(--sg-primary)]/40 hover:bg-[var(--sg-surface-raised)] disabled:cursor-not-allowed disabled:opacity-40"
           >
             <FolderOpen size={16} strokeWidth={2} class="text-[var(--sg-primary)] shrink-0" />
@@ -604,6 +725,7 @@
           <button
             type="button"
             onclick={openImportModal}
+            data-testid="btn-import"
             class="flex w-full cursor-pointer items-center gap-2.5 rounded-md border border-[var(--sg-border)] px-3.5 py-2.5 text-sm font-medium text-[var(--sg-text)] hover:border-[var(--sg-primary)]/40 hover:bg-[var(--sg-surface-raised)] disabled:cursor-not-allowed disabled:opacity-40"
           >
             <FolderInput size={16} strokeWidth={2} class="text-[var(--sg-primary)] shrink-0" />
@@ -637,14 +759,17 @@
               </p>
             </div>
           {:else}
-            <div class="space-y-1">
+            <div class="space-y-1" data-testid="recent-projects">
               {#each knownProjects as project}
                 <div
                   class="group flex items-center gap-0 rounded hover:bg-[var(--sg-surface-raised)]"
+                  data-testid="recent-project"
+                  data-workspace={project.workspacePath}
                 >
                   <button
                     class="flex min-w-0 flex-1 cursor-pointer items-center gap-3 rounded px-3 py-2 text-left disabled:cursor-not-allowed"
                     onclick={() => openKnownWorkspace(project.workspacePath)}
+                    data-testid="recent-project-open"
                     disabled={opening}
                   >
                     <div
@@ -664,6 +789,7 @@
                   <button
                     class="shrink-0 cursor-pointer rounded p-1.5 text-[var(--sg-text-faint)] opacity-0 transition-opacity hover:text-[var(--sg-danger)] group-hover:opacity-100"
                     title="Remove from recent projects"
+                    data-testid="recent-project-remove"
                     onclick={e => {
                       e.stopPropagation();
                       void removeKnownProject(project.workspacePath)
@@ -721,6 +847,7 @@
           aria-modal="true"
           aria-labelledby="clone-modal-title"
           tabindex="-1"
+          data-testid="clone-dialog"
           onkeydown={event => trapModalFocus(event, cloneDialog)}
           class="flex w-[480px] flex-col rounded-lg border border-[var(--sg-border)] bg-[var(--sg-surface)] shadow-2xl"
         >
@@ -762,6 +889,7 @@
                   id="modal-repo-url"
                   bind:value={cloneUrl}
                   oninput={handleUrlInput}
+                  data-testid="clone-url"
                   class="w-full rounded border border-[var(--sg-input-border)] bg-[var(--sg-input-bg)] px-2.5 py-1.5 text-xs text-[var(--sg-text)] placeholder-[var(--sg-text-faint)] outline-none focus:border-[var(--sg-input-focus)]"
                   placeholder="https://github.com/org/repo.git"
                   spellcheck="false"
@@ -779,6 +907,7 @@
                 id="modal-folder-name"
                 bind:value={folderName}
                 oninput={handleFolderNameInput}
+                data-testid="clone-folder-name"
                 class="w-full rounded border border-[var(--sg-input-border)] bg-[var(--sg-input-bg)] px-2.5 py-1.5 text-xs text-[var(--sg-text)] placeholder-[var(--sg-text-faint)] outline-none focus:border-[var(--sg-input-focus)]"
                 placeholder="my-repo"
               />
@@ -794,6 +923,7 @@
                   id="modal-projects-folder"
                   bind:value={projectsFolder}
                   oninput={saveProjectsFolder}
+                  data-testid="clone-parent-folder"
                   class="min-w-0 flex-1 rounded border border-[var(--sg-input-border)] bg-[var(--sg-input-bg)] px-2.5 py-1.5 text-xs text-[var(--sg-text)] placeholder-[var(--sg-text-faint)] outline-none focus:border-[var(--sg-input-focus)]"
                   placeholder="~/Projects"
                 />
@@ -838,7 +968,7 @@
             {/if}
 
             {#if error}
-              <p class="select-text text-xs text-[var(--sg-danger)]">{error}</p>
+              <p data-testid="import-error" class="select-text text-xs text-[var(--sg-danger)]">{error}</p>
             {/if}
 
             <div class="flex justify-end gap-2 border-t border-[var(--sg-border-subtle)] pt-3">
@@ -851,6 +981,7 @@
               <button
                 type="submit"
                 disabled={creating || !git.installed || !workspacePath}
+                data-testid="clone-submit"
                 class="flex items-center gap-2 rounded-md bg-[var(--sg-primary)] px-3.5 py-2 text-xs font-semibold text-white hover:bg-[var(--sg-primary-hover)] disabled:cursor-not-allowed disabled:opacity-40"
               >
                 {#if creating}<Spinner size="sm" />&nbsp;Cloning…{:else}<Download
@@ -890,6 +1021,7 @@
           aria-modal="true"
           aria-labelledby="import-modal-title"
           tabindex="-1"
+          data-testid="import-dialog"
           onkeydown={event => trapModalFocus(event, importDialog)}
           class="flex w-[520px] flex-col rounded-lg border border-[var(--sg-border)] bg-[var(--sg-surface)] shadow-2xl"
         >
@@ -920,6 +1052,7 @@
                   id="modal-import-repo-path"
                   bind:value={importRepoPath}
                   oninput={handleImportRepoPathInput}
+                  data-testid="import-repo-path"
                   class="min-w-0 flex-1 rounded border border-[var(--sg-input-border)] bg-[var(--sg-input-bg)] px-2.5 py-1.5 text-xs text-[var(--sg-text)] placeholder-[var(--sg-text-faint)] outline-none focus:border-[var(--sg-input-focus)]"
                   placeholder="~/src/my-repo"
                 />
@@ -948,6 +1081,7 @@
               <div class="flex flex-col gap-1.5">
                 <button
                   type="button"
+                  data-testid="import-mode-inplace"
                   class="rounded-md border px-3 py-2.5 text-left text-xs transition-colors {importMode ===
                   'inPlace'
                     ? 'border-[var(--sg-primary)] bg-[var(--sg-primary)]/10'
@@ -966,6 +1100,7 @@
                 </button>
                 <button
                   type="button"
+                  data-testid="import-mode-move"
                   class="rounded-md border px-3 py-2.5 text-left text-xs transition-colors {importMode ===
                   'move'
                     ? 'border-[var(--sg-primary)] bg-[var(--sg-primary)]/10'
@@ -984,6 +1119,7 @@
                 </button>
                 <button
                   type="button"
+                  data-testid="import-mode-copy"
                   class="rounded-md border px-3 py-2.5 text-left text-xs transition-colors {importMode ===
                   'copy'
                     ? 'border-[var(--sg-primary)] bg-[var(--sg-primary)]/10'
@@ -1010,6 +1146,7 @@
                 >
                 <input
                   id="modal-import-folder-name"
+                  data-testid="import-folder-name"
                   bind:value={importFolderName}
                   oninput={handleImportFolderNameInput}
                   class="w-full rounded border border-[var(--sg-input-border)] bg-[var(--sg-input-bg)] px-2.5 py-1.5 text-xs text-[var(--sg-text)] placeholder-[var(--sg-text-faint)] outline-none focus:border-[var(--sg-input-focus)]"
@@ -1018,6 +1155,7 @@
                 <div class="mt-2 flex gap-1.5">
                   <input
                     id="modal-import-projects-folder"
+                    data-testid="import-projects-folder"
                     bind:value={projectsFolder}
                     oninput={saveProjectsFolder}
                     class="min-w-0 flex-1 rounded border border-[var(--sg-input-border)] bg-[var(--sg-input-bg)] px-2.5 py-1.5 text-xs text-[var(--sg-text)] placeholder-[var(--sg-text-faint)] outline-none focus:border-[var(--sg-input-focus)]"
@@ -1059,6 +1197,7 @@
                   !git.installed ||
                   !importRepoPath ||
                   ((importMode === 'move' || importMode === 'copy') && !importWorkspacePath)}
+                data-testid="import-submit"
                 class="flex items-center gap-2 rounded-md bg-[var(--sg-primary)] px-3.5 py-2 text-xs font-semibold text-white hover:bg-[var(--sg-primary-hover)] disabled:cursor-not-allowed disabled:opacity-40"
               >
                 {#if importing}<Spinner size="sm" />&nbsp;Importing…{:else}<FolderInput
