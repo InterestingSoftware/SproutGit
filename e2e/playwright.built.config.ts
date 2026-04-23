@@ -1,5 +1,6 @@
 import { mkdirSync, readdirSync, rmSync, statSync } from 'node:fs';
 import { createServer } from 'node:net';
+import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -63,7 +64,7 @@ const pluginPort = hasInheritedRuntime ? inheritedPluginPort : await findOpenPor
 const socketPath =
   hasInheritedRuntime && inheritedSocketPath
     ? inheritedSocketPath
-    : `/tmp/sproutgit-playwright-${process.pid}-${Date.now()}.sock`;
+    : join(tmpdir(), `sproutgit-playwright-${process.pid}-${Date.now()}.sock`);
 
 const runId = `${process.pid}-${Date.now()}`;
 const e2eRunsBaseDir = resolve(ROOT, 'tmp', 'e2e-runs');
