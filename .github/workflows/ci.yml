@@ -132,10 +132,14 @@ jobs:
       - name: Run E2E tests (Linux)
         if: runner.os == 'Linux'
         run: xvfb-run -a pnpm run test:e2e
+        env:
+          SPROUTGIT_E2E_SKIP_BUILD: "1"
 
       - name: Run E2E tests (macOS/Windows)
         if: runner.os != 'Linux'
         run: pnpm run test:e2e
+        env:
+          SPROUTGIT_E2E_SKIP_BUILD: "1"
 
       - name: Report E2E test results
         if: always()
@@ -198,6 +202,8 @@ jobs:
 
       - name: Run canary E2E tests
         run: xvfb-run -a pnpm run test:e2e:canary
+        env:
+          SPROUTGIT_E2E_SKIP_BUILD: "1"
 
       - name: Report canary E2E test results
         if: always()
