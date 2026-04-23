@@ -1,6 +1,8 @@
 declare module '@tauri-apps/plugin-updater' {
   export type Update = {
     version: string;
+    body: string | null;
+    date: string | null;
     downloadAndInstall(): Promise<void>;
   };
 
