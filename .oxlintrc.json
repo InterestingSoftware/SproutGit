@@ -11,11 +11,12 @@
     "fetch": "readonly"
   },
   "rules": {
-    "no-console": ["warn", { "allow": ["warn", "error"] }],
+    "no-console": ["warn", { "allow": ["warn", "error", "log"] }],
+    "no-unused-expressions": "off",
     "no-debugger": "warn",
     "no-eval": "error",
     "no-implied-eval": "error",
     "no-unused-vars": "off",
-    "prefer-const": "warn"
+    "prefer-const": "off"
   }
 }

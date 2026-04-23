@@ -29,6 +29,7 @@ vite.config.ts.timestamp-*
 src-tauri/target/
 src-tauri/gen/
 src-tauri/coverage/
+.cargo/local.toml
 
 # IDE/editor
 .idea/
@@ -41,3 +42,10 @@ src-tauri/coverage/
 *.swp
 *.swo
 *~
+
+# E2E test artifacts
+tmp/
+test-results/
+playwright-report/
+
+.tmp/

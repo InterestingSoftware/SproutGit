@@ -1,3 +1,5 @@
+include = [{ path = "local.toml", optional = true }]
+
 # Cargo configuration with lint policy
 # Clippy lint levels enforce code quality while remaining pragmatic
 
