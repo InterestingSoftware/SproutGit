@@ -218,7 +218,7 @@ pub async fn unstage_files(
 
             if head_exists {
                 // HEAD exists but reset still failed — surface the real error.
-                return Err("Failed to unstage files".to_string());
+                ensure_git_success(output, "Failed to unstage files")?;
             }
 
             // Initial commit: unstage with git rm --cached instead.
