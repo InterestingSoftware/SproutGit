@@ -1,5 +1,8 @@
 name: CI
-run-name: "v0.1.${{ github.run_number }} (${{ github.ref_name }})"
+run-name: >-
+  CI ·
+  ${{ github.event_name == 'pull_request' && format('PR #{0}', github.event.pull_request.number) || github.ref_name }}
+  · v0.1.${{ github.run_number }}
 
 on:
   push:
@@ -20,7 +23,7 @@ env:
 
 jobs:
   check-frontend:
-    name: Frontend (check + build)
+    name: "01 · Frontend · Check + Build"
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -41,7 +44,7 @@ jobs:
       - run: pnpm run build
 
   check-rust:
-    name: Rust (${{ matrix.os }})
+    name: "02 · Rust · Validate (${{ matrix.os }})"
     runs-on: ${{ matrix.os }}
     permissions:
       contents: read
@@ -80,7 +83,7 @@ jobs:
         run: cargo clippy -- -D warnings
 
   e2e-generated:
-    name: E2E Generated (${{ matrix.os }})
+    name: "03 · E2E · Generated (${{ matrix.os }})"
     needs: [check-frontend, check-rust]
     runs-on: ${{ matrix.os }}
     permissions:
@@ -170,7 +173,7 @@ jobs:
           if-no-files-found: warn
 
   e2e-canary:
-    name: E2E Canary (non-blocking)
+    name: "04 · E2E · Canary (non-blocking)"
     needs: [check-frontend, check-rust]
     runs-on: ubuntu-latest
     continue-on-error: true
@@ -234,7 +237,7 @@ jobs:
           if-no-files-found: warn
 
   rust-coverage:
-    name: Rust Coverage (Linux)
+    name: "05 · Rust · Coverage (Linux)"
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -272,7 +275,7 @@ jobs:
           verbose: true
 
   build:
-    name: Build (${{ matrix.os }})
+    name: "06 · Release · Build Artifacts (${{ matrix.os }})"
     needs: [check-frontend, check-rust, e2e-generated]
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
     environment: CI
@@ -379,7 +382,7 @@ jobs:
             src-tauri/target/release/bundle/appimage/*.AppImage.sig
 
   release:
-    name: Release
+    name: "07 · Release · Publish"
     needs: build
     runs-on: ubuntu-latest
     permissions:
