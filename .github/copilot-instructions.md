@@ -77,6 +77,26 @@ Agent requirements:
 - When adding, renaming, removing, or substantially repurposing a document in `docs/`, update `docs/index.md` in the same change.
 - Treat `docs/index.md` as the maintained entry point for the repository documentation set.
 
+## Tauri Playwright Adapter (Required For E2E Changes)
+
+When working on `e2e/**`, adapter fixtures, or Playwright/Tauri bridge behavior, read `docs/tauri-playwright-adapter-cheatsheet.md` before editing.
+
+Key reminders:
+- `TauriPage` is Playwright-like but not identical to `Page`.
+- `TauriLocator.waitFor` expects a numeric timeout, not a Playwright options object.
+- Keep plugin socket/port values consistent across webServer and worker processes for each run.
+- In `tauri` mode, do not use `page.goto()` for app reset or startup navigation.
+- Prefer per-spec `beforeEach` reset hooks over global Playwright lifecycle hooks for stateful E2E flows.
+- For E2E isolation, reset both the test workspace directory and the isolated config DB, then return to the project picker with stable in-app navigation (`ensureHome()`-style helpers). Avoid making full webview reloads the default reset path for the suite.
+- Current default runtime is headless Playwright in `e2e/playwright.config.ts`; do not switch to headed by default.
+- During reset, clear recent projects in-app using stable test IDs so each test starts from a clean project picker list.
+
+### E2E Selector Strategy (Required)
+
+- Prefer `getByTestId(...)` for all E2E element interactions and waits.
+- Use CSS selectors only when no stable test ID exists, and keep those selectors narrow and local.
+- If an interaction depends on visual state (hover-only controls, transient overlays), add or use a dedicated test ID before introducing brittle structural selectors.
+
 ## Workspace Layout (User Projects)
 
 SproutGit manages user repos in a prescribed directory layout:
@@ -302,6 +322,11 @@ pnpm run tauri dev
 - All linters run in GitHub Actions on every push (see `.github/workflows/`)
 - Linting failures block PR merge
 - Format violations reported as annotations on PR
+
+## Agent Interaction Rules
+
+- **Pause and ask when the user asks multiple questions or a request has multiple open design decisions.** Use `vscode_askQuestions` to collect answers before implementing. Do not assume and proceed; gather answers first.
+- This is especially important for cross-cutting concerns like testing strategy, CI setup, and architectural choices.
 
 ## Coding Conventions
 

@@ -196,6 +196,48 @@ pnpm run build
 cd src-tauri && cargo check
 ```
 
+### Shared Cargo build cache for worktrees
+
+SproutGit uses Git worktrees heavily, and Rust's default behavior is to put build artifacts in a `target/` directory inside each checkout. For a Tauri app, that cache can grow to many gigabytes per worktree because it contains dependency artifacts, incremental compilation state, build-script output, and debug symbols.
+
+This repository supports an optional machine-local Cargo override to move that cache outside individual worktrees:
+
+```toml
+# .cargo/config.toml
+include = [{ path = "local.toml", optional = true }]
+```
+
+Create `.cargo/local.toml` on your machine with an OS-appropriate shared cache path:
+
+```toml
+[build]
+target-dir = "/absolute/path/to/shared/cargo-target"
+```
+
+Examples:
+
+- macOS: `/Users/<you>/Library/Caches/SproutGit/cargo-target`
+- Linux: `/home/<you>/.cache/sproutgit/cargo-target`
+- Windows: `C:\\Users\\<you>\\AppData\\Local\\SproutGit\\cargo-target`
+
+Notes:
+
+- The include mechanism is cross-platform. The path inside `.cargo/local.toml` is intentionally machine-specific and should not be committed.
+- This only changes where future Cargo artifacts are written. It does not delete existing `src-tauri/target` directories that were already created in older worktrees.
+- If disk usage is still high after enabling a shared target dir, remove stale per-worktree build output with `cargo clean` or by deleting old `src-tauri/target` directories.
+
+To inspect or clean Rust build caches across all Git worktrees for this repository:
+
+```bash
+# Report per-worktree src-tauri/target usage without deleting anything
+pnpm run cleanup:rust-targets
+
+# Delete all per-worktree src-tauri/target directories for this repository's worktrees
+pnpm run cleanup:rust-targets:delete
+```
+
+These commands only touch worktree-local `src-tauri/target` directories discovered via `git worktree list`. They do not remove the shared Cargo cache configured in `.cargo/local.toml`.
+
 ## Testing & Coverage
 
 ```bash
@@ -214,6 +256,44 @@ open coverage/tarpaulin-report.html
 ```
 
 All git and system interactions are security-hardened and tested. See [docs/security-audit.md](docs/security-audit.md) for details.
+
+### E2E test process
+
+- E2E tests live under `e2e/` and run headless by default.
+- The suite uses one worker and a shared app process with per-test in-app reset helpers.
+- `reloadToHome()` is the reset source of truth and clears recent projects between tests.
+
+Commands:
+
+```bash
+# Run E2E suite
+pnpm run test:e2e
+
+# Build then run E2E suite
+pnpm run test:e2e:full
+
+# Canary-only checks
+pnpm run test:e2e:canary
+
+# Screenshot capture checks
+pnpm run test:e2e:screenshots
+```
+
+Playwright browser setup:
+
+- `pnpm run setup:playwright` installs Chromium for local E2E runs.
+- `prepare` runs `husky && pnpm run setup:playwright` after install.
+- Set `SPROUTGIT_SKIP_PLAYWRIGHT_SETUP=1` to skip automatic browser setup.
+
+Pre-commit gate (`.husky/pre-commit`) runs:
+
+1. `pnpm run cleanup:rust-targets:delete`
+2. Rust unit tests
+3. `pnpm run test`
+4. Rust compile check
+5. lint
+6. type check
+7. full E2E suite
 
 ## Project Structure
 
