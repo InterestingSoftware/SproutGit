@@ -205,7 +205,7 @@ pub async fn unstage_files(
 
     match unstage_result {
         Ok(output) if output.status.success() => {},
-        Ok(_) => {
+        Ok(output) => {
             // `reset HEAD` fails when there is no initial commit yet.
             // Detect this by checking whether HEAD resolves; if not, fall back
             // to `git rm --cached` which works on an empty index.
