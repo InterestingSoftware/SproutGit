@@ -6,6 +6,9 @@ const CONFIG_PATH = 'e2e/playwright.config.ts';
 const rawArgs = process.argv.slice(2).filter(arg => arg !== '--');
 const tauriHeaded = rawArgs.includes('--headed');
 const passthroughArgs = rawArgs.filter(arg => arg !== '--headed');
+const skipPrebuild = process.env.SPROUTGIT_E2E_SKIP_PREBUILD === '1';
+const suiteSeed = process.env.PW_PORT_SEED ?? String(Date.now());
+const suiteConfigPath = resolve(ROOT, `.tmp/tauri.playwright.isolated.${suiteSeed}.json`);
 
 if (tauriHeaded) {
   console.warn('[e2e-isolated] --headed detected; enabling Tauri headed mode without forwarding --headed to Playwright CLI.');
@@ -13,6 +16,29 @@ if (tauriHeaded) {
 
 function escapeRegex(value) {
   return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function runPrebuildOnce() {
+  if (skipPrebuild) {
+    console.warn('[e2e-isolated] Skipping prebuild (SPROUTGIT_E2E_SKIP_PREBUILD=1).');
+    return;
+  }
+
+  console.warn('[e2e-isolated] Running one-time prebuild before isolated test invocations...');
+  const result = spawnSync('pnpm', ['run', 'test:e2e:build'], {
+    cwd: ROOT,
+    stdio: 'inherit',
+    env: {
+      ...process.env,
+      PW_PORT_SEED: suiteSeed,
+      SPROUTGIT_E2E_TAURI_CONFIG_PATH: suiteConfigPath,
+    },
+  });
+
+  if ((result.status ?? 1) !== 0) {
+    console.error('[e2e-isolated] Prebuild failed; aborting isolated runs.');
+    process.exit(result.status ?? 1);
+  }
 }
 
 function listTests() {
@@ -65,21 +91,22 @@ function runSingleTest(file, fullTitle) {
   ];
 
   console.warn(`\n[e2e-isolated] Running ${file} :: ${fullTitle}`);
-  const numericSeed = String(Date.now() + Math.floor(Math.random() * 1_000_000));
   const result = spawnSync('pnpm', commandArgs, {
     cwd: ROOT,
     stdio: 'inherit',
     env: {
       ...process.env,
       SPROUTGIT_E2E_HEADED: tauriHeaded ? '1' : '0',
-      // Ensure each test invocation gets a unique seed for runtime port selection.
-      PW_PORT_SEED: numericSeed,
+      // Keep a stable suite seed/config path to avoid forcing Tauri rebuild work per test.
+      PW_PORT_SEED: suiteSeed,
+      SPROUTGIT_E2E_TAURI_CONFIG_PATH: suiteConfigPath,
     },
   });
 
   return result.status ?? 1;
 }
 
+runPrebuildOnce();
 const tests = listTests();
 
 if (tests.length === 0) {
