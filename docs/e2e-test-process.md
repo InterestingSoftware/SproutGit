@@ -7,6 +7,7 @@ This document defines the default E2E workflow for SproutGit.
 - Playwright runs in headless mode by default via `e2e/playwright.config.ts`.
 - E2E uses `@srsholmes/tauri-playwright` in `tauri` mode.
 - Test workers are pinned to `1` for deterministic stateful desktop flows.
+- `pnpm run test:e2e` executes tests in process-isolated mode (fresh Playwright/Tauri invocation per test).
 
 ## Per-Test Isolation
 
@@ -54,8 +55,11 @@ To skip local auto-setup:
 ## Common Commands
 
 ```bash
-# Standard e2e run
+# Standard e2e run (isolated process per test)
 pnpm run test:e2e
+
+# Tauri headed mode (runner maps this safely; do not pass --headed to Playwright directly)
+pnpm run test:e2e --headed
 
 # Build + e2e
 pnpm run test:e2e:full

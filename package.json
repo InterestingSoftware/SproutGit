@@ -20,7 +20,7 @@
     "cleanup:rust-targets:delete": "node scripts/cleanup-rust-targets.mjs --delete",
     "tauri": "tauri",
     "test:e2e:build": "pnpm run build && cd src-tauri && cargo build --features e2e-testing",
-    "test:e2e": "playwright test -c e2e/playwright.config.ts",
+    "test:e2e": "node scripts/run-e2e-isolated.mjs",
     "test:e2e:full": "pnpm run test:e2e:build && pnpm run test:e2e",
     "test:e2e:screenshots": "cross-env CAPTURE_SCREENSHOTS=1 PLAYWRIGHT_SCREENSHOT_TARGET=./screenshots pnpm exec playwright test -c e2e/playwright.config.ts --grep @screenshots",
     "test:e2e:canary": "cross-env RUN_CANARY=1 pnpm exec playwright test -c e2e/playwright.config.ts --grep @canary",

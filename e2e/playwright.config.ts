@@ -110,6 +110,7 @@ process.env.SPROUTGIT_E2E_TAURI_CONFIG_PATH = tauriConfigPath;
 process.env.SPROUTGIT_CONFIG_DB_PATH = e2eConfigDbPath;
 process.env.SPROUTGIT_E2E_TEST_DIR = e2eTestDir;
 process.env.VITE_SPROUTGIT_E2E_RUN_ID = runId;
+const headedViaEnv = process.env.SPROUTGIT_E2E_HEADED === '1';
 
 export default defineConfig({
   testDir: join(HERE, 'specs'),
@@ -120,7 +121,7 @@ export default defineConfig({
   timeout: 45_000,
   use: {
     mode: 'tauri',
-    headless: true,
+    headless: !headedViaEnv,
   },
   reporter: [
     ['list'],
