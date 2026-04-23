@@ -11,7 +11,10 @@ const STARTUP_UI_TIMEOUT = 30_000;
 const IMPORT_COMPLETION_TIMEOUT = 3_000;
 
 async function getBootMarkerText(tauriPage: AdapterPage) {
-  return ((await tauriPage.textContent('[data-testid="e2e-run-watermark"]')) ?? '').trim();
+  return await tauriPage.evaluate(`(() => {
+    const marker = document.querySelector('[data-testid="e2e-run-watermark"]');
+    return (marker?.textContent ?? '').trim();
+  })()`);
 }
 
 async function waitForBootMarkerChange(
@@ -75,7 +78,11 @@ async function performVerifiedReload(tauriPage: AdapterPage) {
   const previousBootMarker = await getBootMarkerText(tauriPage);
   await tauriPage.evaluate('window.location.reload()');
   await tauriPage.waitForFunction('document.readyState === "complete"', 5_000);
-  await waitForBootMarkerChange(tauriPage, previousBootMarker, 5_000);
+  // In built-app mode the E2E watermark may not be present; only require marker
+  // advancement when a marker exists.
+  if (previousBootMarker) {
+    await waitForBootMarkerChange(tauriPage, previousBootMarker, 5_000);
+  }
 }
 
 export async function reloadToHome(tauriPage: AdapterPage) {

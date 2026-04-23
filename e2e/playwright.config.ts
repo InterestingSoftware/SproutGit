@@ -1,4 +1,4 @@
-import { mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readdirSync, rmSync, statSync } from 'node:fs';
 import { createServer } from 'node:net';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -48,8 +48,6 @@ async function findOpenPort(startPort: number): Promise<number> {
 const inheritedDevPort = parseSafePort(process.env.SPROUTGIT_E2E_DEV_PORT);
 const inheritedPluginPort = parseSafePort(process.env.SPROUTGIT_PLAYWRIGHT_TCP_PORT);
 const inheritedSocketPath = process.env.SPROUTGIT_PLAYWRIGHT_SOCKET_PATH;
-const inheritedConfigPath = process.env.SPROUTGIT_E2E_TAURI_CONFIG_PATH;
-
 const hasInheritedRuntime =
   typeof inheritedDevPort === 'number' &&
   typeof inheritedPluginPort === 'number' &&
@@ -67,11 +65,6 @@ const socketPath =
   hasInheritedRuntime && inheritedSocketPath
     ? inheritedSocketPath
     : `/tmp/sproutgit-playwright-${process.pid}-${Date.now()}.sock`;
-
-const tauriConfigPath =
-  typeof inheritedConfigPath === 'string' && inheritedConfigPath.length > 0
-    ? inheritedConfigPath
-    : resolve(ROOT, `.tmp/tauri.playwright.${process.pid}.json`);
 
 const runId = `${process.pid}-${Date.now()}`;
 const e2eRunsBaseDir = resolve(ROOT, 'tmp', 'e2e-runs');
@@ -95,25 +88,18 @@ const e2eTestDir = resolve(e2eRunDir, 'workspace-data');
 mkdirSync(resolve(e2eRunDir, 'config'), { recursive: true });
 mkdirSync(e2eTestDir, { recursive: true });
 
-const tauriConfig = JSON.parse(readFileSync(resolve(ROOT, 'src-tauri/tauri.conf.json'), 'utf8'));
-tauriConfig.build = {
-  ...tauriConfig.build,
-  devUrl,
-};
-mkdirSync(resolve(ROOT, '.tmp'), { recursive: true });
-writeFileSync(tauriConfigPath, JSON.stringify(tauriConfig));
-
 process.env.SPROUTGIT_E2E_DEV_PORT = String(devPort);
 process.env.SPROUTGIT_PLAYWRIGHT_TCP_PORT = String(pluginPort);
 process.env.SPROUTGIT_PLAYWRIGHT_SOCKET_PATH = socketPath;
-process.env.SPROUTGIT_E2E_TAURI_CONFIG_PATH = tauriConfigPath;
 process.env.SPROUTGIT_CONFIG_DB_PATH = e2eConfigDbPath;
 process.env.SPROUTGIT_E2E_TEST_DIR = e2eTestDir;
 process.env.VITE_SPROUTGIT_E2E_RUN_ID = runId;
+process.env.SPROUTGIT_E2E_TAURI_CWD = ROOT;
 const headedViaEnv = process.env.SPROUTGIT_E2E_HEADED === '1';
 
 export default defineConfig({
   testDir: join(HERE, 'specs'),
+  globalSetup: join(HERE, 'global.setup.mjs'),
   fullyParallel: false,
   forbidOnly: !!process.env.CI,
   retries: 0,
@@ -128,27 +114,6 @@ export default defineConfig({
     ['junit', { outputFile: join(ROOT, 'test-results', 'e2e-junit.xml') }],
     ['html', { open: 'never', outputFolder: join(ROOT, 'test-results', 'playwright-report') }],
   ],
-  webServer: {
-    command: `pnpm tauri dev --features e2e-testing --config "${tauriConfigPath}"`,
-    env: {
-      ...process.env,
-      SPROUTGIT_E2E_DEV_PORT: String(devPort),
-      SPROUTGIT_PLAYWRIGHT_TCP_PORT: String(pluginPort),
-      SPROUTGIT_PLAYWRIGHT_SOCKET_PATH: socketPath,
-      SPROUTGIT_CONFIG_DB_PATH: e2eConfigDbPath,
-      SPROUTGIT_E2E_TEST_DIR: e2eTestDir,
-      VITE_SPROUTGIT_E2E_RUN_ID: runId,
-    },
-    url: devUrl,
-    reuseExistingServer: false,
-    gracefulShutdown: {
-      signal: 'SIGTERM',
-      timeout: 5_000,
-    },
-    timeout: 180_000,
-    stdout: 'pipe',
-    stderr: 'pipe',
-  },
   outputDir: join(ROOT, 'test-results', 'playwright-output'),
   preserveOutput: 'failures-only',
 });
