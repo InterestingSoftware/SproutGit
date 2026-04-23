@@ -35,6 +35,8 @@ On a new task:
 ### Testing, QA, And Benchmarks
 
 - [benchmark-repository-strategy.md](benchmark-repository-strategy.md) — Strategy for sample repositories used in screenshots, demos, regression validation, and performance testing.
+- [tauri-playwright-adapter-cheatsheet.md](tauri-playwright-adapter-cheatsheet.md) — API signatures, adapter-specific gotchas, and runtime port/socket guidance for `@srsholmes/tauri-playwright`.
+- [e2e-test-process.md](e2e-test-process.md) — Default E2E runtime behavior, per-test isolation flow, Playwright dependency setup, and pre-commit test gates.
 
 ## Quick Relevance Guide
 
@@ -45,3 +47,5 @@ On a new task:
 - Screen structure, navigation, or UI flow changes: read [design-review-and-screen-plan.md](design-review-and-screen-plan.md).
 - Docs-site or documentation-process work: read [docs-platform-plan.md](docs-platform-plan.md).
 - Benchmark/demo/test repository work: read [benchmark-repository-strategy.md](benchmark-repository-strategy.md).
+- Tauri E2E harness behavior, adapter APIs, or test fixture issues: read [tauri-playwright-adapter-cheatsheet.md](tauri-playwright-adapter-cheatsheet.md).
+- E2E reset behavior, headless defaults, test command usage, or local browser setup flow: read [e2e-test-process.md](e2e-test-process.md).
