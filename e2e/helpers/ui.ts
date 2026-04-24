@@ -12,6 +12,27 @@ const IMPORT_COMPLETION_TIMEOUT = DEFAULT_UI_TIMEOUT;
 
 const delay = (ms: number) => new Promise(resolveDelay => setTimeout(resolveDelay, ms));
 
+export async function waitForToastMessage(
+  tauriPage: AdapterPage,
+  type: 'success' | 'error' | 'warning' | 'info',
+  messageFragment: string,
+  timeout = DEFAULT_UI_TIMEOUT,
+) {
+  const deadline = Date.now() + timeout;
+
+  while (Date.now() < deadline) {
+    const messages = await tauriPage.allTextContents(
+      `[data-testid="toast-item"][data-toast-type="${type}"] [data-testid="toast-message"]`,
+    );
+    if (messages.some((message) => message.includes(messageFragment))) {
+      return;
+    }
+    await delay(120);
+  }
+
+  throw new Error(`Timed out waiting for ${type} toast containing: ${messageFragment}`);
+}
+
 function isMissingMainWindowError(error: unknown): boolean {
   return error instanceof Error && error.message.includes("window 'main' not found");
 }
@@ -229,6 +250,7 @@ export async function importRepoViaUi(tauriPage: AdapterPage, repoPath: string) 
   const importDeadline = Date.now() + IMPORT_COMPLETION_TIMEOUT;
   while (Date.now() < importDeadline) {
     if (await waitForWorkspaceShell(600)) {
+      await waitForToastMessage(tauriPage, 'success', `Workspace imported: ${workspaceName}`);
       return;
     }
 
@@ -281,6 +303,7 @@ export async function createWorktreeViaUi(tauriPage: AdapterPage, branchName: st
 
   while (Date.now() < createdDeadline) {
     if (await tauriPage.isVisible(createdSelector)) {
+      await waitForToastMessage(tauriPage, 'success', `Worktree created: ${branchName}`);
       return;
     }
 
@@ -315,4 +338,143 @@ export async function openHistoryTab(tauriPage: AdapterPage) {
   const tab = tauriPage.getByTestId('tab-history');
   await tab.waitFor(DEFAULT_UI_TIMEOUT);
   await tab.click();
+}
+
+/** Ensure a worktree is active (selected + tab bar visible) without accidentally toggling it off.
+ *
+ * The sidebar click handler is a toggle — if the worktree is already active, clicking it
+ * deselects it and the tab bar disappears. We handle this by checking active state before
+ * clicking, and re-clicking if we detect we accidentally toggled off.
+ */
+export async function selectWorktreeViaUi(tauriPage: AdapterPage, branchName: string) {
+  const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+  const itemSelector = `[data-testid="worktree-item"][data-branch="${branchName}"]`;
+  const tabSelector = '[data-testid="tab-changes"]';
+  const item = tauriPage.locator(itemSelector);
+  await item.waitFor(DEFAULT_UI_TIMEOUT);
+
+  // Check whether this worktree is already the active one.
+  // Use the data-active attribute (present in newer builds) or fall back to the class heuristic.
+  const alreadyActive = await tauriPage.evaluate(`(() => {
+    const el = document.querySelector('[data-testid="worktree-item"][data-branch="${branchName}"]');
+    if (el?.getAttribute('data-active') === 'true') return true;
+    return el?.className.includes('text-[var(--sg-primary)]') ?? false;
+  })()`);
+
+  if (!alreadyActive) {
+    await item.click();
+    // Give reactive update a moment.
+    await delay(150);
+    // If tab bar disappeared we accidentally toggled off an already-active item — re-click.
+    if (!(await tauriPage.isVisible(tabSelector))) {
+      await item.click();
+    }
+  }
+
+  // Wait until the tab bar is visible (confirms the worktree is selected).
+  const deadline = Date.now() + DEFAULT_UI_TIMEOUT;
+  while (Date.now() < deadline) {
+    if (await tauriPage.isVisible(tabSelector)) {
+      return;
+    }
+    await delay(120);
+  }
+
+  throw new Error(`Tab bar did not appear after selecting worktree: ${branchName}`);
+}
+
+/** Delete a worktree by branch name via the hover button and confirm the dialog. */
+export async function deleteWorktreeViaUi(tauriPage: AdapterPage, branchName: string) {
+  const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+
+  await tauriPage.evaluate(`(() => {
+    const button = document.querySelector('[data-testid="worktree-item"][data-branch="${branchName}"] [data-testid="btn-delete-worktree"]');
+    if (!(button instanceof HTMLElement)) {
+      throw new Error('delete worktree button not found for ${branchName}');
+    }
+    button.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+  })()`);
+
+  await tauriPage.getByTestId('confirm-dialog').waitFor(DEFAULT_UI_TIMEOUT);
+  await tauriPage.getByTestId('confirm-dialog-confirm').click();
+
+  // Wait until the worktree item disappears.
+  const deadline = Date.now() + DEFAULT_UI_TIMEOUT;
+  while (Date.now() < deadline) {
+    const still = await tauriPage.isVisible(
+      `[data-testid="worktree-item"][data-branch="${branchName}"]`,
+    );
+    if (!still) {
+      await waitForToastMessage(tauriPage, 'success', `Deleted worktree: ${branchName}`);
+      return;
+    }
+    await delay(120);
+  }
+
+  throw new Error(`Worktree item did not disappear after delete: ${branchName}`);
+}
+
+/** Stage all unstaged files, fill the commit message, submit, and wait for a success toast.
+ *
+ * Waits for btn-stage-all to appear before clicking, so callers must ensure they have already
+ * switched to the Changes tab and the worktree has at least one unstaged file visible.
+ */
+export async function stageAndCommitViaUi(tauriPage: AdapterPage, message: string) {
+  const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+
+  await tauriPage.getByTestId('btn-stage-all').waitFor(DEFAULT_UI_TIMEOUT);
+  await tauriPage.getByTestId('btn-stage-all').click();
+
+  // Wait for staging to start reflecting in the UI.
+  // stage_files is an async Rust invoke, but the commit button enablement below is the real
+  // readiness signal, so we only need evidence that the staging transition has begun.
+  const stageDeadline = Date.now() + DEFAULT_UI_TIMEOUT;
+  while (Date.now() < stageDeadline) {
+    const unstagedVisible = await tauriPage.isVisible('[data-testid="unstaged-file"]');
+    const stagedVisible = await tauriPage.isVisible('[data-testid="staged-file"]');
+    if (!unstagedVisible || stagedVisible) break;
+    await delay(120);
+  }
+
+  await tauriPage.evaluate(`(() => {
+    const field = document.querySelector('[data-testid="commit-message"]');
+    if (!(field instanceof HTMLTextAreaElement)) {
+      throw new Error('commit-message textarea not found');
+    }
+    field.value = ${JSON.stringify(message)};
+    field.dispatchEvent(new Event('input', { bubbles: true }));
+  })()`);
+
+  // Wait for the commit button to actually be enabled.
+  // NOTE: getAttribute('disabled') returns "" (empty string) when disabled and null when not;
+  // both are falsy in JS so we must compare to null explicitly.
+  const commitButton = tauriPage.getByTestId('btn-commit');
+  const readyDeadline = Date.now() + DEFAULT_UI_TIMEOUT;
+  while (Date.now() < readyDeadline) {
+    if ((await commitButton.getAttribute('disabled')) === null) break;
+    await delay(120);
+  }
+  if ((await commitButton.getAttribute('disabled')) !== null) {
+    throw new Error('stageAndCommitViaUi: commit button never became enabled');
+  }
+
+  await commitButton.click();
+
+  const resultDeadline = Date.now() + DEFAULT_UI_TIMEOUT;
+  while (Date.now() < resultDeadline) {
+    const successes = await tauriPage.allTextContents(
+      '[data-testid="toast-item"][data-toast-type="success"] [data-testid="toast-message"]',
+    );
+    if (successes.some((t) => t.includes(message))) return;
+
+    const errors = await tauriPage.allTextContents(
+      '[data-testid="toast-item"][data-toast-type="error"] [data-testid="toast-message"]',
+    );
+    const err = errors.find(Boolean);
+    if (err) throw new Error(`Commit failed: ${err}`);
+
+    await delay(120);
+  }
+
+  throw new Error(`Commit did not produce success toast for message: ${message}`);
 }

@@ -96,6 +96,7 @@ Key reminders:
 - Prefer `getByTestId(...)` for all E2E element interactions and waits.
 - Use CSS selectors only when no stable test ID exists, and keep those selectors narrow and local.
 - If an interaction depends on visual state (hover-only controls, transient overlays), add or use a dedicated test ID before introducing brittle structural selectors.
+- **If a needed `data-testid` does not exist in the UI source, add it.** Never work around a missing test ID with fragile structural selectors — add the `data-testid` attribute to the component/template and use it in the test.
 
 ## Workspace Layout (User Projects)
 

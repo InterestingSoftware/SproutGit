@@ -1600,6 +1600,7 @@
                   data-testid="worktree-item"
                   data-branch={wt.branch}
                   data-path={wt.path}
+                  data-active={activeWorktreePath === wt.path ? 'true' : 'false'}
                   onclick={() => { activeWorktreePath = activeWorktreePath === wt.path ? null : wt.path; }}
                   oncontextmenu={(e) => handleWorktreeContextMenu(wt, e)}
                 >

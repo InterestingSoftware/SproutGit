@@ -116,6 +116,13 @@ export function querySqlite(dbPath: string, sql: string): string[][] {
   return output.split('\n').map((row) => row.split('\t'));
 }
 
+export function executeSqlite(dbPath: string, sql: string) {
+  execFileSync('sqlite3', [dbPath, sql], {
+    encoding: 'utf8',
+    stdio: 'pipe',
+  });
+}
+
 export function commitAll(repoPath: string, message: string, sequence: number) {
   runGit(repoPath, ['add', '--all']);
   runGit(repoPath, ['commit', '-m', message], gitEnv(sequence));

@@ -120,8 +120,8 @@ async function forceTheme(tauriPage: TauriPage | BrowserPageAdapter, theme: 'lig
       }
     })()`,
   );
-  // Give the canvas renderer one animation frame to complete the repaint.
-  await tauriPage.evaluate('new Promise(r => requestAnimationFrame(r))');
+  // Give the canvas renderer and webview compositor time to complete the repaint.
+  await new Promise((resolve) => setTimeout(resolve, 300));
 }
 
 // ── Path redaction ───────────────────────────────────────────────────────────
@@ -133,18 +133,28 @@ async function forceTheme(tauriPage: TauriPage | BrowserPageAdapter, theme: 'lig
  */
 async function redactPaths(tauriPage: TauriPage | BrowserPageAdapter) {
   await tauriPage.evaluate(`(() => {
-    const FAKE_BASE = '~/Projects/my-project';
+    const FAKE_ABS_BASE = '~/Projects/my-project';
+    const FAKE_HOME_BASE = '~/Projects';
     // Negative lookbehind: only match '/' NOT preceded by '~' or a word char.
     // This makes the replacement idempotent — re-running on already-replaced text
     // does nothing because every slash in the fake path is preceded by '~' or a letter.
     const ABS_PATH = /(?<![~\\w])\\/[^\\s"'<>]+(\\/[^\\s"'<>]+)+/g;
+    const HOME_PATH = /~\\/[^\\s"'<>]+(\\/[^\\s"'<>]+)+/g;
+
+    function fakeTail(match, base) {
+      const parts = match.split('/').filter(Boolean);
+      if (parts.at(-1) === 'root') {
+        const workspaceName = parts.at(-2) ?? 'project';
+        return base + '/' + workspaceName;
+      }
+      const tail = parts.slice(-2).join('/');
+      return base + '/' + tail;
+    }
 
     function replacePaths(text) {
-      return text.replace(ABS_PATH, (match) => {
-        const parts = match.split('/').filter(Boolean);
-        const tail = parts.slice(-2).join('/');
-        return FAKE_BASE + '/' + tail;
-      });
+      return text
+        .replace(ABS_PATH, (match) => fakeTail(match, FAKE_ABS_BASE))
+        .replace(HOME_PATH, (match) => fakeTail(match, FAKE_HOME_BASE));
     }
 
     function walk(node) {
