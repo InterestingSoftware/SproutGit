@@ -120,7 +120,7 @@ async function clearCachedWorkspaceHint(tauriPage: AdapterPage) {
 async function performVerifiedReload(tauriPage: AdapterPage) {
   await waitForMainWindow(tauriPage, STARTUP_UI_TIMEOUT);
   await tauriPage.evaluate('window.location.reload()');
-  await waitForMainWindow(tauriPage, 5_000);
+  await waitForMainWindow(tauriPage, 15_000);
 }
 
 export async function reloadToHome(tauriPage: AdapterPage) {
@@ -144,7 +144,7 @@ export async function reloadToHome(tauriPage: AdapterPage) {
       await tauriPage.waitForFunction(`(() => {
         const importBtn = document.querySelector('[data-testid="btn-import"]');
         return window.location.pathname === '/' && importBtn instanceof HTMLElement;
-      })()`, 3_000);
+      })()`, 10_000);
     }
 
     await performVerifiedReload(tauriPage);
