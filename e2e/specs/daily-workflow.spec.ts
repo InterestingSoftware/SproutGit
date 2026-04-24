@@ -6,7 +6,7 @@
  * cleans up merged work. Each step validates both the UI state and the
  * underlying git / SQLite reality.
  */
-import { dirname, join } from 'node:path';
+import { basename, dirname, join } from 'node:path';
 import { existsSync, readFileSync } from 'node:fs';
 import { test, expect } from '../fixtures';
 import {
@@ -87,6 +87,28 @@ async function waitForFile(filePath: string, timeoutMs = DEFAULT_UI_TIMEOUT) {
 
 function sqlString(value: string) {
   return `'${value.replaceAll("'", "''")}'`;
+}
+
+function dailyAfterCreateHook() {
+  if (process.platform === 'win32') {
+    return {
+      shell: 'pwsh',
+      script: [
+        "$outputDir = Join-Path $env:SPROUTGIT_WORKSPACE_PATH '.sproutgit/hook-output'",
+        "New-Item -ItemType Directory -Force -Path $outputDir | Out-Null",
+        "$outputFile = Join-Path $outputDir 'after-create.txt'",
+        'Set-Content -Path $outputFile -Value "$env:SPROUTGIT_TRIGGER|$env:SPROUTGIT_WORKTREE_BRANCH|$env:SPROUTGIT_WORKTREE_PATH"',
+      ].join('\n'),
+    };
+  }
+
+  return {
+    shell: process.platform === 'darwin' ? 'zsh' : 'bash',
+    script: [
+      'mkdir -p "$SPROUTGIT_WORKSPACE_PATH/.sproutgit/hook-output"',
+      'printf "%s\\n" "$SPROUTGIT_TRIGGER|$SPROUTGIT_WORKTREE_BRANCH|$SPROUTGIT_WORKTREE_PATH" > "$SPROUTGIT_WORKSPACE_PATH/.sproutgit/hook-output/after-create.txt"',
+    ].join('\n'),
+  };
 }
 
 test.describe('Daily developer workflow', () => {
@@ -390,15 +412,12 @@ test.describe('Daily developer workflow', () => {
     await importRepoViaUi(tauriPage, repoPath);
 
     const workspaceParent = dirname(dirname(repoPath));
-    const workspacePath = join(workspaceParent, `${repoPath.split('/').pop()}-workspace`);
+    const workspacePath = join(workspaceParent, `${basename(repoPath)}-workspace`);
     const stateDbPath = join(workspacePath, '.sproutgit', 'state.db');
     const outputPath = join(workspacePath, '.sproutgit', 'hook-output', 'after-create.txt');
     const hookId = 'hook-daily-after-create';
     const now = Math.floor(Date.now() / 1000);
-    const script = [
-      'mkdir -p "$SPROUTGIT_WORKSPACE_PATH/.sproutgit/hook-output"',
-      'printf "%s\\n" "$SPROUTGIT_TRIGGER|$SPROUTGIT_WORKTREE_BRANCH|$SPROUTGIT_WORKTREE_PATH" > "$SPROUTGIT_WORKSPACE_PATH/.sproutgit/hook-output/after-create.txt"',
-    ].join('\n');
+    const { shell, script } = dailyAfterCreateHook();
 
     executeSqlite(
       stateDbPath,
@@ -410,7 +429,7 @@ test.describe('Daily developer workflow', () => {
         `  ${sqlString('Daily after-create hook')},`,
         `  ${sqlString('workspace')},`,
         `  ${sqlString('after_worktree_create')},`,
-        `  ${sqlString('zsh')},`,
+        `  ${sqlString(shell)},`,
         `  ${sqlString(script)},`,
         '  1,',
         '  0,',
