@@ -21,8 +21,22 @@ env:
   BASE_VERSION: "0.1"
 
 jobs:
+  docs-lint:
+    name: "00 · Docs · Drift Lint"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 20
+
+      - name: Run documentation drift checks
+        run: node scripts/check-doc-drift.mjs
+
   check-frontend:
     name: "01 · Frontend · Check + Build"
+    needs: docs-lint
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
@@ -44,6 +58,7 @@ jobs:
 
   check-rust:
     name: "02 · Rust · Validate (${{ matrix.os }})"
+    needs: docs-lint
     runs-on: ${{ matrix.os }}
     permissions:
       contents: read
