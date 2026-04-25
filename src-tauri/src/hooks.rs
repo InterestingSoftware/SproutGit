@@ -712,7 +712,7 @@ async fn execute_hook(
     let root_path = workspace_path.join("root");
     let worktrees_path = workspace_path.join("worktrees");
 
-    let script_extension = if hook.shell == "pwsh" { "ps1" } else { "sh" };
+    let script_extension = hook_script_extension(&hook.shell);
     let script_path = std::env::temp_dir().join(format!(
         "sproutgit-hook-{}-{}.{}",
         hook.id,
@@ -945,6 +945,14 @@ async fn execute_hook(
             stdout_snippet,
             stderr_snippet,
         ),
+    }
+}
+
+fn hook_script_extension(shell: &str) -> &'static str {
+    if matches!(shell, "pwsh" | "powershell") {
+        "ps1"
+    } else {
+        "sh"
     }
 }
 
@@ -1642,7 +1650,8 @@ pub async fn run_workspace_hook(
 #[cfg(test)]
 mod tests {
     use super::{
-        ensure_dependency_triggers_compatible, normalize_hook_script, read_limited_output,
+        ensure_dependency_triggers_compatible, hook_script_extension, normalize_hook_script,
+        read_limited_output,
     };
     use std::collections::HashMap;
     use tokio::io::{duplex, AsyncWriteExt};
@@ -1683,6 +1692,14 @@ mod tests {
             let bytes = read_limited_output(&mut reader, 64).await;
             assert_eq!(bytes.len(), 64);
         });
+    }
+
+    #[test]
+    fn powershell_family_uses_ps1_extension() {
+        assert_eq!(hook_script_extension("pwsh"), "ps1");
+        assert_eq!(hook_script_extension("powershell"), "ps1");
+        assert_eq!(hook_script_extension("bash"), "sh");
+        assert_eq!(hook_script_extension("zsh"), "sh");
     }
 
     #[test]

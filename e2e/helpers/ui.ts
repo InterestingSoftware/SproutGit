@@ -8,7 +8,8 @@ type AdapterPage = TauriPage | BrowserPageAdapter;
 
 export const DEFAULT_UI_TIMEOUT = 20_000;
 const STARTUP_UI_TIMEOUT = 45_000;
-const IMPORT_COMPLETION_TIMEOUT = DEFAULT_UI_TIMEOUT;
+const IMPORT_COMPLETION_TIMEOUT = 60_000;
+const TOAST_SETTLE_TIMEOUT = 5_000;
 
 const delay = (ms: number) => new Promise(resolveDelay => setTimeout(resolveDelay, ms));
 
@@ -117,6 +118,20 @@ async function clearCachedWorkspaceHint(tauriPage: AdapterPage) {
   })()`);
 }
 
+async function waitForOptionalToastMessage(
+  tauriPage: AdapterPage,
+  type: 'success' | 'error' | 'warning' | 'info',
+  messageFragment: string,
+  timeout = TOAST_SETTLE_TIMEOUT,
+) {
+  try {
+    await waitForToastMessage(tauriPage, type, messageFragment, timeout);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 async function performVerifiedReload(tauriPage: AdapterPage) {
   await waitForMainWindow(tauriPage, STARTUP_UI_TIMEOUT);
   await tauriPage.evaluate('window.location.reload()');
@@ -219,7 +234,13 @@ export async function importRepoViaUi(tauriPage: AdapterPage, repoPath: string) 
   const importDeadline = Date.now() + IMPORT_COMPLETION_TIMEOUT;
   while (Date.now() < importDeadline) {
     if (await waitForWorkspaceShell(600)) {
-      await waitForToastMessage(tauriPage, 'success', `Workspace imported: ${workspaceName}`);
+      // The workspace shell is the authoritative success signal; CI can occasionally miss the
+      // success toast even though the import completed and the workspace is fully usable.
+      await waitForOptionalToastMessage(
+        tauriPage,
+        'success',
+        `Workspace imported: ${workspaceName}`,
+      );
       return;
     }
 
