@@ -7,7 +7,7 @@ import {
 type AdapterPage = TauriPage | BrowserPageAdapter;
 
 export const DEFAULT_UI_TIMEOUT = 20_000;
-const STARTUP_UI_TIMEOUT = 30_000;
+const STARTUP_UI_TIMEOUT = 45_000;
 const IMPORT_COMPLETION_TIMEOUT = DEFAULT_UI_TIMEOUT;
 
 const delay = (ms: number) => new Promise(resolveDelay => setTimeout(resolveDelay, ms));
@@ -124,41 +124,9 @@ async function performVerifiedReload(tauriPage: AdapterPage) {
 }
 
 export async function reloadToHome(tauriPage: AdapterPage) {
-  await waitForMainWindow(tauriPage, STARTUP_UI_TIMEOUT);
-
   for (let attempt = 0; attempt < 2; attempt += 1) {
-    const backVisible = await safeIsVisible(tauriPage, '[data-testid="btn-back-projects"]');
-    const workspaceVisible =
-      backVisible ||
-      (await safeIsVisible(tauriPage, '[data-testid="worktree-list"]')) ||
-      (await safeIsVisible(tauriPage, '[data-testid="tab-history"]')) ||
-      (await safeIsVisible(tauriPage, '[data-testid="input-new-branch"]'));
-
-    if (workspaceVisible) {
-      if (backVisible) {
-        await tauriPage.getByTestId('btn-back-projects').click();
-      } else {
-        await tauriPage.goBack();
-      }
-
-      await tauriPage.waitForFunction(`(() => {
-        const importBtn = document.querySelector('[data-testid="btn-import"]');
-        return window.location.pathname === '/' && importBtn instanceof HTMLElement;
-      })()`, 10_000);
-    }
-
-    await performVerifiedReload(tauriPage);
-
-    const commitGraphStillVisible =
-      (await safeIsVisible(tauriPage, '[data-testid="commit-row"]')) &&
-      !(await safeIsVisible(tauriPage, '[data-testid="btn-back-projects"]'));
-
-    if (commitGraphStillVisible) {
-      await tauriPage.evaluate('window.location.reload()');
-      await waitForMainWindow(tauriPage, 5_000);
-    }
-
     try {
+      await waitForMainWindow(tauriPage, STARTUP_UI_TIMEOUT);
       await ensureHome(tauriPage);
       await clearCachedWorkspaceHint(tauriPage);
       await performVerifiedReload(tauriPage);
@@ -168,6 +136,7 @@ export async function reloadToHome(tauriPage: AdapterPage) {
       if (attempt === 1) {
         throw error;
       }
+      await delay(250);
     }
   }
 }

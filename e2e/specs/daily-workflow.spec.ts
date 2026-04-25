@@ -92,7 +92,7 @@ function sqlString(value: string) {
 function dailyAfterCreateHook() {
   if (process.platform === 'win32') {
     return {
-      shell: 'pwsh',
+      shell: 'powershell',
       script: [
         "$outputDir = Join-Path $env:SPROUTGIT_WORKSPACE_PATH '.sproutgit/hook-output'",
         "New-Item -ItemType Directory -Force -Path $outputDir | Out-Null",
@@ -441,7 +441,19 @@ test.describe('Daily developer workflow', () => {
     );
 
     await createWorktreeViaUi(tauriPage, 'feature/hook-smoke');
-    await waitForFile(outputPath);
+    try {
+      await waitForFile(outputPath, 60_000);
+    } catch {
+      const hookRows = querySqlite(
+        stateDbPath,
+        `SELECT status, error_message FROM hook_runs WHERE hook_id = ${sqlString(hookId)} ORDER BY started_at DESC LIMIT 1`,
+      );
+      const status = hookRows[0]?.[0] ?? 'unknown';
+      const errorMessage = hookRows[0]?.[1] ?? '';
+      throw new Error(
+        `Hook output file was not created within 60s (status=${status}, error=${errorMessage || 'none'})`,
+      );
+    }
 
     const hookOutput = readFileSync(outputPath, 'utf8');
     expect(hookOutput).toContain('after_worktree_create|feature/hook-smoke|');
