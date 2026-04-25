@@ -8,8 +8,9 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use std::os::windows::process::CommandExt;
 
 /// Strip the `\\?\` extended-length path prefix that Windows `canonicalize()` adds.
-/// Git for Windows cannot handle these prefixed paths correctly.
-fn strip_win_prefix(p: PathBuf) -> PathBuf {
+/// Git for Windows and many Windows tools (including PowerShell cmdlets) cannot handle
+/// these prefixed paths correctly.
+pub fn strip_win_prefix(p: PathBuf) -> PathBuf {
     #[cfg(target_os = "windows")]
     return dunce::simplified(&p).to_path_buf();
     #[cfg(not(target_os = "windows"))]

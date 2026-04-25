@@ -12,8 +12,8 @@ use tokio::time::timeout;
 
 use crate::db::connect_workspace_db;
 use crate::git::helpers::{
-    command_exists, now_epoch_seconds, run_git, system_command, validate_no_control_chars,
-    shell_candidates_for_current_os, GitAction, SystemAction,
+    command_exists, now_epoch_seconds, run_git, strip_win_prefix, system_command,
+    validate_no_control_chars, shell_candidates_for_current_os, GitAction, SystemAction,
 };
 
 #[derive(Serialize, FromQueryResult)]
@@ -246,6 +246,7 @@ fn normalize_workspace_path(workspace_path: &str) -> Result<PathBuf, String> {
     }
 
     path.canonicalize()
+        .map(strip_win_prefix)
         .map_err(|_| "Failed to resolve workspace path".to_string())
 }
 
