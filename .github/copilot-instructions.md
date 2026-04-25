@@ -24,6 +24,8 @@ Open-source, cross-platform Git desktop app with a **worktree-first** workflow. 
 
 ## Project Structure
 
+This structure is a high-level orientation map. For file-level accuracy, verify against the current workspace tree before making assumptions.
+
 ```
 sproutgit/
 ├── src/                          # SvelteKit frontend
@@ -41,6 +43,8 @@ sproutgit/
 │       ├── +layout.svelte        # Minimal: imports app.css, renders <slot />
 │       ├── +layout.ts            # export const ssr = false
 │       ├── +page.svelte          # Screen 1: Project picker (clone, open, recent projects)
+│       ├── settings/
+│       │   └── +page.svelte      # Settings screen
 │       └── workspace/
 │           └── +page.svelte      # Screen 2: Workspace (worktree mgmt + commit graph)
 ├── src-tauri/
@@ -98,6 +102,24 @@ Key reminders:
 - If an interaction depends on visual state (hover-only controls, transient overlays), add or use a dedicated test ID before introducing brittle structural selectors.
 - **If a needed `data-testid` does not exist in the UI source, add it.** Never work around a missing test ID with fragile structural selectors — add the `data-testid` attribute to the component/template and use it in the test.
 
+## E2E Failure Triage Protocol (Required)
+
+When debugging a flaky or platform-specific E2E failure, follow this order exactly.
+
+1. Reproduce locally with the narrowest failing scope (single spec or test name).
+2. Classify the failure as one of: deterministic logic bug, timing/timeout issue, state reset leak, or platform-only behavior.
+3. Validate reset assumptions first (workspace cleanup, config DB reset, `sg_workspace_hint` clear, verified reload).
+4. If Windows-only, inspect path format and shell semantics before raising timeouts.
+5. Apply the smallest fix that addresses root cause; avoid masking deterministic failures with broad timeout increases.
+6. Re-run only the affected spec first, then re-run the required E2E gate.
+
+### Timeout Budget Policy (Required)
+
+- Keep Playwright per-test timeout and helper timeouts aligned; do not change one without auditing the other.
+- For CI reliability updates, document why each timeout changed and which operation consumed the budget.
+- Increase timeouts only when evidence shows slow-environment variance; if failure is deterministic, fix behavior instead.
+- When a timeout is increased, include before/after values in the commit message or PR notes.
+
 ## Workspace Layout (User Projects)
 
 SproutGit manages user repos in a prescribed directory layout:
@@ -114,6 +136,8 @@ SproutGit manages user repos in a prescribed directory layout:
 
 ## Rust Backend (`src-tauri/src/lib.rs`)
 
+`src-tauri/src/lib.rs` is the source of truth for registered Tauri commands via `tauri::generate_handler![]`.
+
 ### Structs (all `#[serde(rename_all = "camelCase")]`)
 
 - `GitInfo` — installed, version
@@ -127,17 +151,19 @@ SproutGit manages user repos in a prescribed directory layout:
 - `CommitGraphResult` — repo_path, commits
 - `CreateWorktreeResult` — worktree_path, branch, from_ref
 
-### Tauri Commands
+### Tauri Commands (Representative, Not Exhaustive)
 
-| Command | Purpose |
-|---------|---------|
-| `git_info` | Check Git installation and version |
-| `create_sproutgit_workspace` | Create managed workspace, optionally clone a repo URL |
-| `inspect_sproutgit_workspace` | Validate an existing SproutGit project directory |
-| `list_worktrees` | Enumerate Git worktrees with branch/HEAD info |
-| `list_refs` | Fetch branches & tags sorted by commit date |
-| `get_commit_graph` | Structured commit log with parents, refs (limit 20-400) |
-| `create_managed_worktree` | Create a new worktree under `worktrees/` dir |
+Representative command groups currently include:
+
+- Git operations and worktree lifecycle (`git_info`, `list_worktrees`, `create_managed_worktree`, `delete_managed_worktree`, `checkout_worktree`, `reset_worktree_branch`)
+- Diff and staging (`get_diff_files`, `get_diff_content`, `get_worktree_status`, `stage_files`, `unstage_files`, `create_commit`, `get_working_diff`)
+- Workspace and config (`create_sproutgit_workspace`, `import_git_repo_workspace`, `inspect_sproutgit_workspace`, recent workspaces, app settings)
+- Hooks (`list_workspace_hooks`, create/update/delete/toggle, `run_workspace_hook`)
+- Editor/Git tool integration (`open_in_editor`, editor detection, git config read/write)
+- Terminal and watcher (`spawn_terminal`, `terminal_input`, `start_watching_worktrees`)
+- Optional E2E-only helpers (`set_window_size` when `e2e-testing` feature is enabled)
+
+When command surfaces change, update this section in the same change.
 
 ### Helper Functions
 
@@ -157,12 +183,21 @@ SproutGit manages user repos in a prescribed directory layout:
 
 ## Frontend API (`src/lib/sproutgit.ts`)
 
-Typed wrappers around `invoke()` from `@tauri-apps/api/core`. Every Rust struct has a matching TypeScript type. Key exports:
+Typed wrappers around `invoke()` from `@tauri-apps/api/core`. Every Rust struct has a matching TypeScript type.
+
+`src/lib/sproutgit.ts` is the source of truth for frontend-callable API wrappers.
+
+Representative export groups include:
 
 - `getGitInfo()`, `createWorkspace()`, `inspectWorkspace()`
-- `listWorktrees()`, `listRefs()`, `getCommitGraph()`
-- `createManagedWorktree()`
-- `onCloneProgress(callback)` — Event listener helper using `@tauri-apps/api/event`
+- Workspace import and recents/settings
+- Worktree lifecycle (`createManagedWorktree`, delete, checkout, reset)
+- Diff and staging helpers
+- Hook CRUD + progress listeners (`onHookProgress`)
+- File watcher helpers
+- Terminal lifecycle helpers
+- GitHub auth/repo helpers
+- Event listeners (`onCloneProgress`, `onImportProgress`, `onWorktreeChanged`, terminal events)
 
 ## Theme System
 
@@ -381,7 +416,10 @@ When adding or changing **any** git or system interaction, follow all rules belo
 - **Option-boundary safety**: For commands that accept untrusted values, use argument boundaries (for example `--` when supported) to prevent option smuggling.
 - **System command registry**: Route all git/system process execution through registered helpers (`GitAction` / `SystemAction`) so behavior is auditable and testable.
 - **Cross-platform compatibility**: Assume macOS, Linux, and Windows on every change. Avoid OS-specific shell utilities unless a platform-specific fallback exists.
+- **Cross-platform subprocess checklist**: For any subprocess-env, hook, or shell-adjacent change, verify quoting, path semantics, and command behavior for bash/zsh and PowerShell (`pwsh` + Windows PowerShell compatibility where relevant).
 - **Path handling**: Use `Path`/`PathBuf` and platform-aware path/env separators. Do not hardcode `:` as PATH separator.
+- **Path canonicalization on Windows**: `std::fs::canonicalize()` returns `\\?\`-prefixed extended-length paths on Windows (e.g. `\\?\D:\...`). Always chain `strip_win_prefix()` from `crate::git::helpers` immediately after any `canonicalize()` call. This applies to paths stored in SQLite, set as subprocess env vars, or passed to shell scripts — not just paths serialised to the frontend. Git for Windows tolerates extended-length paths silently, but PowerShell cmdlets (e.g. `Join-Path`) reject them with cryptic errors.
+- **Single-source normalization rule**: Path normalization logic must live in shared helpers, not duplicated at call sites. When introducing a new canonicalization/normalization path, reuse existing helper functions or add one shared helper first.
 - **Path serialization — frontend-bound values**: Any `Path`/`PathBuf` value serialised in a Tauri command response (struct fields, `Ok(...)` return values) **must** be converted with `path_to_frontend()` from `crate::git::helpers`, not with `to_string_lossy()`. Git always outputs forward slashes on every OS; using the same convention prevents frontend path-comparison mismatches on Windows. Paths passed as arguments to git/system commands should stay as native OS paths via `to_string_lossy()` directly.
 - **Least privilege and clear errors**: Fail closed on invalid input and return clear, user-safe error messages.
 
@@ -418,6 +456,29 @@ cargo test --lib                            # Run unit tests
 - ✅ `cargo clippy` passes (0 warnings with `-D warnings`)
 - ✅ `cargo test --lib` passes (all tests)
 - ✅ Code is formatted (`cargo fmt` and `pnpm run format`)
+
+## Prompt Improvement Loop (Required)
+
+After resolving a CI failure or production bug, update these instructions in the same PR when a reusable lesson exists.
+
+- Add one durable guardrail: an invariant, checklist item, or triage step.
+- Prefer operational rules over narrative explanation.
+- If no user-facing behavior changed, still capture the prevention rule.
+
+## Documentation Drift Prevention (Required)
+
+When editing or relying on documentation in this repository:
+
+- Treat `README.md`, `.github/copilot-instructions.md`, `src-tauri/src/lib.rs`, `src/lib/sproutgit.ts`, and `package.json` as a consistency set.
+- If a command, script, route, or API wrapper changes in code, update the corresponding docs in the same change.
+- Prefer representative command/API summaries plus explicit source-of-truth links over exhaustive static lists that quickly drift.
+- Remove placeholders and stale claims (for example, outdated URLs or deleted files) immediately when discovered.
+
+Quick verification command before commit:
+
+```bash
+rg -n "project\.json|YOUR_USERNAME|once CI is set up" README.md .github/copilot-instructions.md
+```
 
 ## Composability & Platform Extensibility
 
@@ -693,3 +754,4 @@ The `Spinner.svelte` component supports:
 - SQLite + SeaORM (`sqlx-sqlite`) integer decode: avoid `u64` in `FromQueryResult` structs; use `i64` for `INTEGER` columns (timestamps included)
 - Svelte 5 `class:` directive with Tailwind arbitrary values (e.g., `class:bg-[var(--x)]/10={cond}`) works but looks odd
 - Window overflow: parent containers must be `flex flex-col overflow-hidden` for child `flex-1 overflow-auto` to scroll properly
+- **Windows `\\?\` paths in PowerShell**: If a path produced by `canonicalize()` is set as a subprocess env var and consumed by PowerShell, `Join-Path` will fail with "Cannot process argument because the value of argument 'drive' is null". The env var is non-null so a `if (-not $var)` guard won't catch it — the crash happens on the next line that uses the path. Always apply `strip_win_prefix` before passing any path into a hook or child process environment.

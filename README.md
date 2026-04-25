@@ -13,6 +13,7 @@
 <p align="center">
   <a href="#features">Features</a> •
   <a href="#workflow-policy">Workflow Policy</a> •
+  <a href="#documentation">Documentation</a> •
   <a href="#screenshots">Screenshots</a> •
   <a href="#installation">Installation</a> •
   <a href="#development">Development</a> •
@@ -81,6 +82,14 @@ No conflicts, no stash juggling, no waiting. Each agent works independently on i
 
 - Branch/worktree binding and lifecycle rules: [docs/branch-worktree-policy.md](docs/branch-worktree-policy.md)
 - Workspace hook model and trigger behavior: [docs/worktree-hooks.md](docs/worktree-hooks.md)
+
+## Documentation
+
+- Start at [docs/index.md](docs/index.md) for the maintained documentation entry point
+- Product scope and priorities: [docs/requirements.md](docs/requirements.md)
+- Architecture and backend command patterns: [docs/architecture.md](docs/architecture.md)
+- Security posture and hardening decisions: [docs/security-audit.md](docs/security-audit.md)
+- E2E process and adapter behavior: [docs/e2e-test-process.md](docs/e2e-test-process.md), [docs/tauri-playwright-adapter-cheatsheet.md](docs/tauri-playwright-adapter-cheatsheet.md)
 
 ## Workspace Hooks
 
@@ -157,7 +166,7 @@ SproutGit builds this orchestration layer on top of native Git primitives so wor
 
 ### Download
 
-Pre-built binaries will be available on the [Releases](../../releases) page once CI is set up.
+Pre-built binaries are published on the [Releases](../../releases) page when a release is cut.
 
 ### Build from source
 
@@ -172,7 +181,7 @@ Pre-built binaries will be available on the [Releases](../../releases) page once
 #### Steps
 
 ```bash
-git clone https://github.com/YOUR_USERNAME/sproutgit.git
+git clone https://github.com/InterestingSoftware/SproutGit.git
 cd sproutgit
 pnpm install
 pnpm tauri build
@@ -244,8 +253,11 @@ These commands only touch worktree-local `src-tauri/target` directories discover
 ## Testing & Coverage
 
 ```bash
-# Run all backend unit tests
+# Run backend Rust tests (all targets)
 pnpm run test:security
+
+# Run frontend unit tests
+pnpm run test:unit
 
 # Run tests with verbose output
 cd src-tauri && cargo test --all-targets -- --nocapture
@@ -314,15 +326,17 @@ sproutgit/
 │   │   └── components/           # Reusable UI components
 │   └── routes/
 │       ├── +page.svelte          # Project picker (clone, open, recent)
+│       ├── settings/             # Settings screen
 │       └── workspace/
 │           └── +page.svelte      # Main workspace (worktrees + graph + diff)
 ├── src-tauri/
 │   ├── src/lib.rs                # Rust backend: Tauri commands, Git ops, DB
 │   ├── tauri.conf.json           # App configuration
 │   └── Cargo.toml                # Rust dependencies
+├── e2e/                          # Playwright E2E tests and fixtures
 ├── docs/                         # Design docs and requirements
 ├── logos/                         # App icons (Apple Liquid Glass)
-└── tests/                        # Tauri driver smoke tests
+└── tests/                        # Frontend/unit test files
 ```
 
 ## Workspace Layout
@@ -336,9 +350,10 @@ SproutGit manages repos in a prescribed directory structure:
 │   ├── feature-foo/
 │   └── bugfix-bar/
 └── .sproutgit/
-    ├── project.json
     └── state.db           # Local state (SQLite)
 ```
+
+A SproutGit workspace is identified by `.sproutgit/state.db`.
 
 ## Tech Stack
 
