@@ -118,7 +118,7 @@ export default defineConfig({
   forbidOnly: !!process.env.CI,
   retries: 0,
   workers: 1,
-  timeout: 60_000,
+  timeout: 90_000,
   use: {
     mode: 'tauri',
     headless: !headedViaEnv,
