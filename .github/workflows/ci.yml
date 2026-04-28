@@ -607,11 +607,11 @@ jobs:
           body_path: pr_release_notes.txt
           generate_release_notes: false
           files: |
-            artifacts/SproutGit-linux/*.AppImage
-            artifacts/SproutGit-linux/*.AppImage.sig
-            artifacts/SproutGit-windows/*.msi
-            artifacts/SproutGit-windows/*.msi.sig
-            artifacts/SproutGit-macos-*/*.app.tar.gz
-            artifacts/SproutGit-macos-*/*.app.tar.gz.sig
-            artifacts/SproutGit-macos-*/*.dmg
+            artifacts/SproutGit-linux/**/*.AppImage
+            artifacts/SproutGit-linux/**/*.AppImage.sig
+            artifacts/SproutGit-windows/**/*.msi
+            artifacts/SproutGit-windows/**/*.msi.sig
+            artifacts/SproutGit-macos-*/**/*.app.tar.gz
+            artifacts/SproutGit-macos-*/**/*.app.tar.gz.sig
+            artifacts/SproutGit-macos-*/**/*.dmg
             latest.json
