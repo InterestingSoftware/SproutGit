@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount, tick } from 'svelte';
+  import { tick } from 'svelte';
   import TerminalPanel from './TerminalPanel.svelte';
   import ContextMenu, { type MenuItem } from './ContextMenu.svelte';
 
@@ -7,6 +7,15 @@
     id: string;
     shell: string;
     label: string;
+    initialCommand?: string;
+  };
+
+  type TerminalLaunchRequest = {
+    id: string;
+    cwd: string;
+    shell: string;
+    label: string;
+    command: string;
   };
 
   type Layout = 'tabs' | 'split' | 'grid';
@@ -15,9 +24,10 @@
     defaultShell: string;
     availableShells: string[];
     cwd: string;
+    launchRequest?: TerminalLaunchRequest | null;
   };
 
-  const { defaultShell, availableShells, cwd }: Props = $props();
+  const { defaultShell, availableShells, cwd, launchRequest = null }: Props = $props();
 
   // ── Session state ─────────────────────────────────────────────────────────
   let sessions = $state<Session[]>([]);
@@ -25,6 +35,19 @@
   let layout = $state<Layout>('tabs');
   let showAddMenu = $state(false);
   let counter = 0;
+  let lastLaunchRequestId = $state<string | null>(null);
+
+  // Auto-spawn the first session when the component mounts and a default shell is available.
+  // The plain (non-reactive) `_autoSpawned` flag ensures this runs only once even if
+  // `defaultShell` later changes, and prevents a reactive loop since `sessions` is never
+  // read inside this effect.
+  let _autoSpawned = false;
+  $effect(() => {
+    if (!_autoSpawned && defaultShell) {
+      _autoSpawned = true;
+      addSession(defaultShell);
+    }
+  });
 
   // Panel component refs — used to forward focus() and refit().
   // Plain object (not $state) because we don't need reactivity on the refs themselves.
@@ -59,14 +82,24 @@
     return `term-${Date.now()}-${++counter}`;
   }
 
-  function addSession(shell: string) {
+  function addSession(shell: string, labelOverride?: string, initialCommand?: string) {
     const count = sessions.filter(s => s.shell === shell).length;
-    const label = count === 0 ? shell : `${shell} (${count + 1})`;
+    const fallbackLabel = count === 0 ? shell : `${shell} (${count + 1})`;
+    const label = labelOverride?.trim() || fallbackLabel;
     const id = newId();
-    sessions = [...sessions, { id, shell, label }];
+    sessions = [...sessions, { id, shell, label, initialCommand }];
     activeId = id;
     showAddMenu = false;
   }
+
+  $effect(() => {
+    if (!launchRequest || launchRequest.id === lastLaunchRequestId || launchRequest.cwd !== cwd) {
+      return;
+    }
+
+    lastLaunchRequestId = launchRequest.id;
+    addSession(launchRequest.shell, launchRequest.label, launchRequest.command);
+  });
 
   function closeSession(id: string) {
     const idx = sessions.findIndex(s => s.id === id);
@@ -88,13 +121,6 @@
     if (toRemove.has(activeId ?? '')) activeId = id;
     sessions = sessions.filter(s => !toRemove.has(s.id));
   }
-
-  // Spawn the initial session on first mount.
-  onMount(() => {
-    if (defaultShell) {
-      addSession(defaultShell);
-    }
-  });
 
   // ── Context menu ──────────────────────────────────────────────────────────
   type CtxMenu = { sessionId: string; x: number; y: number };
@@ -567,8 +593,9 @@
     bind:this wires up the focus() method so clicking a tab focuses that terminal.
   -->
   {#if sessions.length === 0}
-    <div class="flex flex-1 items-center justify-center">
+    <div class="flex flex-1 flex-col items-center justify-center gap-1.5">
       <p class="text-sm text-[var(--sg-text-faint)]">No terminal sessions</p>
+      <p class="text-xs text-[var(--sg-text-faint)]">Click <span class="font-mono">+</span> to start one</p>
     </div>
   {:else}
     <div class="min-h-0 flex-1 overflow-hidden" style={wrapperStyle}>
@@ -586,7 +613,12 @@
           class:border={layout === 'grid'}
           class:border-[var(--sg-border-subtle)]={layout === 'grid'}
         >
-          <TerminalPanel bind:this={panelInstances[session.id]} shell={session.shell} {cwd} />
+          <TerminalPanel
+            bind:this={panelInstances[session.id]}
+            shell={session.shell}
+            {cwd}
+            initialCommand={session.initialCommand}
+          />
         </div>
       {/each}
     </div>

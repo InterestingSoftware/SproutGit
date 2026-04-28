@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount } from "svelte";
+  import { onMount } from 'svelte';
 
   type Props = {
     items: { label: string; value: string; detail?: string }[];
@@ -10,9 +10,9 @@
     onselect?: (value: string) => void;
   };
 
-  let { items, value = $bindable(), placeholder = "", id, testId, onselect }: Props = $props();
+  let { items, value = $bindable(), placeholder = '', id, testId, onselect }: Props = $props();
 
-  let query = $state("");
+  let query = $state('');
   let open = $state(false);
   let highlightIdx = $state(0);
   let inputEl = $state<HTMLInputElement | null>(null);
@@ -20,7 +20,7 @@
 
   // Sync query from selected value's label
   $effect(() => {
-    const match = items.find((i) => i.value === value);
+    const match = items.find(i => i.value === value);
     query = match ? match.label : value;
   });
 
@@ -28,10 +28,10 @@
     if (!query.trim()) return items;
     const q = query.toLowerCase();
     return items.filter(
-      (i) =>
+      i =>
         i.label.toLowerCase().includes(q) ||
         i.value.toLowerCase().includes(q) ||
-        (i.detail?.toLowerCase().includes(q) ?? false),
+        (i.detail?.toLowerCase().includes(q) ?? false)
     );
   });
 
@@ -43,7 +43,7 @@
   }
 
   function handleInput() {
-    const selected = items.find((item) => item.value === value);
+    const selected = items.find(item => item.value === value);
     if (!selected || query !== selected.label) {
       value = query;
     }
@@ -57,39 +57,39 @@
   }
 
   function handleKeydown(e: KeyboardEvent) {
-    if (e.key === "ArrowDown") {
+    if (e.key === 'ArrowDown') {
       e.preventDefault();
       highlightIdx = Math.min(highlightIdx + 1, filtered.length - 1);
       scrollHighlightIntoView();
-    } else if (e.key === "ArrowUp") {
+    } else if (e.key === 'ArrowUp') {
       e.preventDefault();
       highlightIdx = Math.max(highlightIdx - 1, 0);
       scrollHighlightIntoView();
-    } else if (e.key === "Enter") {
+    } else if (e.key === 'Enter') {
       e.preventDefault();
       if (open && filtered[highlightIdx]) {
         select(filtered[highlightIdx]);
       }
-    } else if (e.key === "Escape") {
+    } else if (e.key === 'Escape') {
       open = false;
     }
   }
 
   function scrollHighlightIntoView() {
     requestAnimationFrame(() => {
-      listEl?.children[highlightIdx]?.scrollIntoView({ block: "nearest" });
+      listEl?.children[highlightIdx]?.scrollIntoView({ block: 'nearest' });
     });
   }
 
   function handleClickOutside(e: MouseEvent) {
-    if (inputEl && !inputEl.closest(".sg-autocomplete")?.contains(e.target as Node)) {
+    if (inputEl && !inputEl.closest('.sg-autocomplete')?.contains(e.target as Node)) {
       open = false;
     }
   }
 
   onMount(() => {
-    document.addEventListener("mousedown", handleClickOutside);
-    return () => document.removeEventListener("mousedown", handleClickOutside);
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
   });
 </script>
 
@@ -124,7 +124,10 @@
     >
       {#each filtered as item, i}
         <button
-          class="flex w-full cursor-pointer items-center gap-2 px-2 py-1.5 text-left text-xs {i === highlightIdx ? 'bg-[var(--sg-surface-raised)] text-[var(--sg-text)]' : 'text-[var(--sg-text-dim)]'}"
+          class="flex w-full cursor-pointer items-center gap-2 px-2 py-1.5 text-left text-xs {i ===
+          highlightIdx
+            ? 'bg-[var(--sg-surface-raised)] text-[var(--sg-text)]'
+            : 'text-[var(--sg-text-dim)]'}"
           onmouseenter={() => (highlightIdx = i)}
           onclick={() => select(item)}
           role="option"

@@ -31,15 +31,15 @@ function slug(value: string) {
 export async function resizeWindowForScreenshot(
   tauriPage: TauriPage | BrowserPageAdapter,
   width = 960,
-  height = 620,
+  height = 620
 ) {
   try {
     await tauriPage.evaluate(
-      `window.__TAURI_INTERNALS__.invoke('set_window_size', { width: ${width}, height: ${height} })`,
+      `window.__TAURI_INTERNALS__.invoke('set_window_size', { width: ${width}, height: ${height} })`
     );
     // Brief pause so the OS has time to finish compositing the resized window
     // before we capture a screenshot.
-    await new Promise((r) => setTimeout(r, 300));
+    await new Promise(r => setTimeout(r, 300));
   } catch {
     // Non-fatal: proceed with the current window size
   }
@@ -66,34 +66,60 @@ const DARK_CSS_VARS =
 // Catppuccin Latte (light) and Catppuccin Mocha (dark) xterm canvas themes.
 // Must match the palette used in TerminalPanel.svelte.
 const LIGHT_XTERM_THEME = {
-  background: '#eff1f5', foreground: '#4c4f69',
-  cursor: '#179299', cursorAccent: '#eff1f5',
+  background: '#eff1f5',
+  foreground: '#4c4f69',
+  cursor: '#179299',
+  cursorAccent: '#eff1f5',
   selectionBackground: 'rgba(23,146,153,0.25)',
-  black: '#5c5f77', red: '#d20f39', green: '#40a02b', yellow: '#df8e1d',
-  blue: '#1e66f5', magenta: '#8839ef', cyan: '#179299', white: '#acb0be',
-  brightBlack: '#6c6f85', brightRed: '#d20f39', brightGreen: '#40a02b',
-  brightYellow: '#df8e1d', brightBlue: '#1e66f5', brightMagenta: '#8839ef',
-  brightCyan: '#179299', brightWhite: '#bcc0cc',
+  black: '#5c5f77',
+  red: '#d20f39',
+  green: '#40a02b',
+  yellow: '#df8e1d',
+  blue: '#1e66f5',
+  magenta: '#8839ef',
+  cyan: '#179299',
+  white: '#acb0be',
+  brightBlack: '#6c6f85',
+  brightRed: '#d20f39',
+  brightGreen: '#40a02b',
+  brightYellow: '#df8e1d',
+  brightBlue: '#1e66f5',
+  brightMagenta: '#8839ef',
+  brightCyan: '#179299',
+  brightWhite: '#bcc0cc',
 };
 
 const DARK_XTERM_THEME = {
-  background: '#1e1e2e', foreground: '#cdd6f4',
-  cursor: '#74c7a4', cursorAccent: '#1e1e2e',
+  background: '#1e1e2e',
+  foreground: '#cdd6f4',
+  cursor: '#74c7a4',
+  cursorAccent: '#1e1e2e',
   selectionBackground: 'rgba(116,199,164,0.25)',
-  black: '#45475a', red: '#f38ba8', green: '#a6e3a1', yellow: '#f9e2af',
-  blue: '#89b4fa', magenta: '#cba6f7', cyan: '#94e2d5', white: '#bac2de',
-  brightBlack: '#585b70', brightRed: '#f38ba8', brightGreen: '#a6e3a1',
-  brightYellow: '#f9e2af', brightBlue: '#89b4fa', brightMagenta: '#cba6f7',
-  brightCyan: '#94e2d5', brightWhite: '#a6adc8',
+  black: '#45475a',
+  red: '#f38ba8',
+  green: '#a6e3a1',
+  yellow: '#f9e2af',
+  blue: '#89b4fa',
+  magenta: '#cba6f7',
+  cyan: '#94e2d5',
+  white: '#bac2de',
+  brightBlack: '#585b70',
+  brightRed: '#f38ba8',
+  brightGreen: '#a6e3a1',
+  brightYellow: '#f9e2af',
+  brightBlue: '#89b4fa',
+  brightMagenta: '#cba6f7',
+  brightCyan: '#94e2d5',
+  brightWhite: '#a6adc8',
 };
 
 async function forceTheme(tauriPage: TauriPage | BrowserPageAdapter, theme: 'light' | 'dark') {
   const termBg = theme === 'dark' ? DARK_XTERM_THEME.background : LIGHT_XTERM_THEME.background;
   const cssVars = theme === 'dark' ? DARK_CSS_VARS : LIGHT_CSS_VARS;
-  // Include a rule that overrides the terminal wrapper background so the dark
-  // hardcoded bg-[#1e1e2e] class is replaced for light-mode screenshots.
+  // Include a rule that forces the terminal wrapper background to match the
+  // selected screenshot theme so the wrapper stays in sync with the xterm canvas.
   const css = JSON.stringify(
-    `:root{${cssVars}} [data-sg-terminal]{background-color:${termBg}!important}`,
+    `:root{${cssVars}} [data-sg-terminal]{background-color:${termBg}!important}`
   );
   await tauriPage.evaluate(
     `(() => {
@@ -104,7 +130,7 @@ async function forceTheme(tauriPage: TauriPage | BrowserPageAdapter, theme: 'lig
         document.head.appendChild(el);
       }
       el.textContent = ${css};
-    })()`,
+    })()`
   );
   // Update any live xterm terminal instances so the canvas reflects the theme.
   // Setting options.theme alone queues a repaint; refresh() forces it synchronously.
@@ -118,10 +144,10 @@ async function forceTheme(tauriPage: TauriPage | BrowserPageAdapter, theme: 'lig
           el.__xterm.refresh(0, el.__xterm.rows - 1);
         }
       }
-    })()`,
+    })()`
   );
   // Give the canvas renderer and webview compositor time to complete the repaint.
-  await new Promise((resolve) => setTimeout(resolve, 300));
+  await new Promise(resolve => setTimeout(resolve, 300));
 }
 
 // ── Path redaction ───────────────────────────────────────────────────────────
@@ -182,10 +208,10 @@ async function waitForUiSettle(tauriPage: TauriPage | BrowserPageAdapter, timeou
       const toasts   = document.querySelectorAll('[data-testid="toast-item"]');
       return spinners.length === 0 && toasts.length === 0;
     })()`,
-    timeout,
+    timeout
   );
   // Allow short entrance animations (sg-fade-in ~0.3s, sg-slide-up ~0.25s) to finish.
-  await new Promise((resolve) => setTimeout(resolve, 350));
+  await new Promise(resolve => setTimeout(resolve, 350));
 }
 
 // ── Public API ────────────────────────────────────────────────────────────────
@@ -193,7 +219,7 @@ async function waitForUiSettle(tauriPage: TauriPage | BrowserPageAdapter, timeou
 export async function captureNamedScreenshot(
   tauriPage: TauriPage | BrowserPageAdapter,
   testInfo: TestInfo,
-  name: string,
+  name: string
 ) {
   await waitForUiSettle(tauriPage);
   await redactPaths(tauriPage);
@@ -226,14 +252,14 @@ export async function captureNamedScreenshot(
 export async function captureScreenshotVariants(
   tauriPage: TauriPage | BrowserPageAdapter,
   testInfo: TestInfo,
-  name: string,
+  name: string
 ) {
   await forceTheme(tauriPage, 'light');
-  await new Promise((resolve) => setTimeout(resolve, 150));
+  await new Promise(resolve => setTimeout(resolve, 150));
   await captureNamedScreenshot(tauriPage, testInfo, `${name}-light`);
 
   await forceTheme(tauriPage, 'dark');
-  await new Promise((resolve) => setTimeout(resolve, 150));
+  await new Promise(resolve => setTimeout(resolve, 150));
   await captureNamedScreenshot(tauriPage, testInfo, `${name}-dark`);
 
   // Restore light as default for subsequent interactions.

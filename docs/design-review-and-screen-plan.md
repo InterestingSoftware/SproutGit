@@ -38,16 +38,16 @@ Inside [4] Main Workspace:
 
 ## Screen inventory
 
-| #  | Screen                     | Route / mount point              | Type             |
-|----|----------------------------|----------------------------------|------------------|
-| 1  | Project Picker             | `/`                              | Full page        |
-| 2  | App Shell                  | `/workspace` layout              | Persistent frame |
-| 3  | First Worktree Setup       | `/workspace` (conditional)       | Guided panel     |
-| 4  | Main Workspace             | `/workspace`                     | Four-pane layout |
-| 5  | History & Graph            | `/workspace` tab                 | Tab pane         |
-| 6  | Create Worktree            | overlay on `/workspace`          | Modal            |
-| 7  | Prune Worktree             | overlay on `/workspace`          | Confirm dialog   |
-| 8  | Global Context Switcher    | overlay, any `/workspace` screen | Command palette  |
+| #   | Screen                  | Route / mount point              | Type             |
+| --- | ----------------------- | -------------------------------- | ---------------- |
+| 1   | Project Picker          | `/`                              | Full page        |
+| 2   | App Shell               | `/workspace` layout              | Persistent frame |
+| 3   | First Worktree Setup    | `/workspace` (conditional)       | Guided panel     |
+| 4   | Main Workspace          | `/workspace`                     | Four-pane layout |
+| 5   | History & Graph         | `/workspace` tab                 | Tab pane         |
+| 6   | Create Worktree         | overlay on `/workspace`          | Modal            |
+| 7   | Prune Worktree          | overlay on `/workspace`          | Confirm dialog   |
+| 8   | Global Context Switcher | overlay, any `/workspace` screen | Command palette  |
 
 ---
 
@@ -87,18 +87,18 @@ Inside [4] Main Workspace:
 
 ### Data requirements
 
-| API call              | When                     |
-|-----------------------|--------------------------|
-| `getGitInfo()`        | On mount                 |
-| `createWorkspace()`   | On "Create project"      |
-| `inspectWorkspace()`  | On "Open" or "Open by path" |
+| API call             | When                        |
+| -------------------- | --------------------------- |
+| `getGitInfo()`       | On mount                    |
+| `createWorkspace()`  | On "Create project"         |
+| `inspectWorkspace()` | On "Open" or "Open by path" |
 
 ### Transitions
 
-| Action                  | Target                              |
-|-------------------------|-------------------------------------|
-| Successful create/open  | → `/workspace?workspace=<path>`     |
-| Error                   | Stay on picker, show error inline   |
+| Action                 | Target                            |
+| ---------------------- | --------------------------------- |
+| Successful create/open | → `/workspace?workspace=<path>`   |
+| Error                  | Stay on picker, show error inline |
 
 ---
 
@@ -123,14 +123,14 @@ Inside [4] Main Workspace:
 
 ### Context header contents
 
-| Element                    | Source                              | Behavior on click             |
-|----------------------------|-------------------------------------|-------------------------------|
-| Project name               | dirname of `workspacePath`          | Opens [1] Project Picker      |
-| Active worktree chip       | `selectedWorktree.path` basename    | Opens worktree dropdown       |
-| Active branch chip         | `selectedWorktree.branch`           | Opens branch list dropdown    |
-| Detached HEAD indicator    | `selectedWorktree.detached`         | Warning badge, no action      |
-| `⌘K` button               | —                                   | Opens [8] Global Switcher     |
-| Settings gear              | —                                   | Future: workspace settings    |
+| Element                 | Source                           | Behavior on click          |
+| ----------------------- | -------------------------------- | -------------------------- |
+| Project name            | dirname of `workspacePath`       | Opens [1] Project Picker   |
+| Active worktree chip    | `selectedWorktree.path` basename | Opens worktree dropdown    |
+| Active branch chip      | `selectedWorktree.branch`        | Opens branch list dropdown |
+| Detached HEAD indicator | `selectedWorktree.detached`      | Warning badge, no action   |
+| `⌘K` button             | —                                | Opens [8] Global Switcher  |
+| Settings gear           | —                                | Future: workspace settings |
 
 ### Implementation note
 
@@ -138,10 +138,10 @@ This becomes a **SvelteKit layout** at `src/routes/workspace/+layout.svelte`. It
 
 ### Data requirements
 
-| API call              | When                           |
-|-----------------------|--------------------------------|
-| `inspectWorkspace()`  | On layout mount                |
-| `listWorktrees()`     | On layout mount + after mutations |
+| API call             | When                              |
+| -------------------- | --------------------------------- |
+| `inspectWorkspace()` | On layout mount                   |
+| `listWorktrees()`    | On layout mount + after mutations |
 
 ---
 
@@ -194,18 +194,18 @@ This becomes a **SvelteKit layout** at `src/routes/workspace/+layout.svelte`. It
 
 ### Data requirements
 
-| API call                   | When                 |
-|----------------------------|----------------------|
-| `listRefs()`               | On mount             |
-| `getCommitGraph(limit=30)` | On mount             |
-| `createManagedWorktree()`  | On "Create" submit   |
+| API call                   | When               |
+| -------------------------- | ------------------ |
+| `listRefs()`               | On mount           |
+| `getCommitGraph(limit=30)` | On mount           |
+| `createManagedWorktree()`  | On "Create" submit |
 
 ### Transitions
 
-| Action                  | Target                          |
-|-------------------------|---------------------------------|
-| Worktree created        | → [4] Main Workspace            |
-| Error                   | Stay, show error inline         |
+| Action           | Target                  |
+| ---------------- | ----------------------- |
+| Worktree created | → [4] Main Workspace    |
+| Error            | Stay, show error inline |
 
 ---
 
@@ -246,41 +246,42 @@ This becomes a **SvelteKit layout** at `src/routes/workspace/+layout.svelte`. It
 
 ### Left sidebar: Worktree + branch rail
 
-| Element                 | Behavior                                               |
-|-------------------------|--------------------------------------------------------|
-| Managed worktrees list  | Click to switch active worktree; active has bullet indicator |
-| External worktrees      | Shown below managed, visually dimmed                   |
-| Branch list             | Read-only list of local branches, dimmed if no worktree |
-| "+ New worktree" button | Opens [6] Create Worktree modal                       |
-| Context menu on worktree| Prune option → opens [7] Prune dialog                 |
+| Element                  | Behavior                                                     |
+| ------------------------ | ------------------------------------------------------------ |
+| Managed worktrees list   | Click to switch active worktree; active has bullet indicator |
+| External worktrees       | Shown below managed, visually dimmed                         |
+| Branch list              | Read-only list of local branches, dimmed if no worktree      |
+| "+ New worktree" button  | Opens [6] Create Worktree modal                              |
+| Context menu on worktree | Prune option → opens [7] Prune dialog                        |
 
 ### Center pane: Status / History tabs
 
 **Status tab (default):**
 
-| Element              | Behavior                                                    |
-|----------------------|-------------------------------------------------------------|
-| Unstaged files list  | Grouped file list with status badges (M/A/D/R)             |
-| Staged files list    | Same grouping, below unstaged                               |
-| Stage button         | Stages selected files (or all if none selected)             |
-| Unstage button       | Unstages selected files                                     |
-| File click           | Selects file → loads diff in right pane                     |
+| Element             | Behavior                                        |
+| ------------------- | ----------------------------------------------- |
+| Unstaged files list | Grouped file list with status badges (M/A/D/R)  |
+| Staged files list   | Same grouping, below unstaged                   |
+| Stage button        | Stages selected files (or all if none selected) |
+| Unstage button      | Unstages selected files                         |
+| File click          | Selects file → loads diff in right pane         |
 
 **History tab:**
+
 - Switches center pane to [5] History & Graph view
 - Same left sidebar and right pane remain
 
 ### Right pane: Diff inspector + Commit composer
 
-| Element              | Behavior                                                    |
-|----------------------|-------------------------------------------------------------|
-| File path header     | Shows path of currently selected file                       |
-| Diff view            | Unified diff with syntax highlighting, hunk headers         |
-| Large file fallback  | "File too large to display" message with byte count         |
-| Binary file fallback | "Binary file" badge, no diff rendered                       |
-| Commit message input | Textarea, required before commit                            |
-| Commit button        | Commits staged changes to active worktree's branch          |
-| Branch label on btn  | "Commit to feat/a" — always shows target branch             |
+| Element              | Behavior                                            |
+| -------------------- | --------------------------------------------------- |
+| File path header     | Shows path of currently selected file               |
+| Diff view            | Unified diff with syntax highlighting, hunk headers |
+| Large file fallback  | "File too large to display" message with byte count |
+| Binary file fallback | "Binary file" badge, no diff rendered               |
+| Commit message input | Textarea, required before commit                    |
+| Commit button        | Commits staged changes to active worktree's branch  |
+| Branch label on btn  | "Commit to feat/a" — always shows target branch     |
 
 ### Status bar (bottom strip)
 
@@ -288,20 +289,20 @@ Shows at a glance: unstaged count, staged count, active branch, HEAD short hash.
 
 ### Data requirements
 
-| API call              | When                                      |
-|-----------------------|-------------------------------------------|
-| `listWorktrees()`     | On mount, after worktree create/prune     |
-| `getStatus()`         | On mount, after stage/unstage/commit      |
-| `getDiff()`           | On file selection                         |
-| `stageFiles()`        | On "Stage" action                         |
-| `unstageFiles()`      | On "Unstage" action                       |
-| `commit()`            | On "Commit" action                        |
-| `listRefs()`          | On mount, for branch sidebar              |
+| API call          | When                                  |
+| ----------------- | ------------------------------------- |
+| `listWorktrees()` | On mount, after worktree create/prune |
+| `getStatus()`     | On mount, after stage/unstage/commit  |
+| `getDiff()`       | On file selection                     |
+| `stageFiles()`    | On "Stage" action                     |
+| `unstageFiles()`  | On "Unstage" action                   |
+| `commit()`        | On "Commit" action                    |
+| `listRefs()`      | On mount, for branch sidebar          |
 
 ### Transitions
 
 | Action                       | Target                          |
-|------------------------------|---------------------------------|
+| ---------------------------- | ------------------------------- |
 | Click worktree in sidebar    | Reload status for that worktree |
 | Click "+ New worktree"       | → [6] Create Worktree modal     |
 | Right-click worktree → Prune | → [7] Prune dialog              |
@@ -337,21 +338,21 @@ Shows at a glance: unstaged count, staged count, active branch, HEAD short hash.
 
 ### Behavior
 
-| Element              | Behavior                                                |
-|----------------------|---------------------------------------------------------|
-| Graph lanes column   | SVG-rendered branch topology (colored per branch)       |
-| Commit row           | Hash, subject, author, relative date, ref decorations   |
-| Click commit         | Loads commit diff summary in right pane (file list + diff) |
-| Ref badges           | Branch names (green), tags (yellow), HEAD (red)         |
-| Load more            | Fetches next page of history                            |
-| Scroll sync          | Graph lanes and commit list scroll in lockstep          |
+| Element            | Behavior                                                   |
+| ------------------ | ---------------------------------------------------------- |
+| Graph lanes column | SVG-rendered branch topology (colored per branch)          |
+| Commit row         | Hash, subject, author, relative date, ref decorations      |
+| Click commit       | Loads commit diff summary in right pane (file list + diff) |
+| Ref badges         | Branch names (green), tags (yellow), HEAD (red)            |
+| Load more          | Fetches next page of history                               |
+| Scroll sync        | Graph lanes and commit list scroll in lockstep             |
 
 ### Data requirements
 
-| API call                        | When                    |
-|---------------------------------|-------------------------|
-| `getCommitGraph(limit=120)`     | On tab open             |
-| `getCommitDetails(hash)`        | On commit row click     |
+| API call                    | When                |
+| --------------------------- | ------------------- |
+| `getCommitGraph(limit=120)` | On tab open         |
+| `getCommitDetails(hash)`    | On commit row click |
 
 ### Implementation note — graph rendering
 
@@ -394,10 +395,10 @@ Phase 2 (post-MVP): Structured commit data with precomputed lane positions, rend
 
 ### Data requirements
 
-| API call                   | When               |
-|----------------------------|---------------------|
-| `listRefs()`               | On modal open       |
-| `createManagedWorktree()`  | On submit           |
+| API call                  | When          |
+| ------------------------- | ------------- |
+| `listRefs()`              | On modal open |
+| `createManagedWorktree()` | On submit     |
 
 ---
 
@@ -437,9 +438,9 @@ Phase 2 (post-MVP): Structured commit data with precomputed lane positions, rend
 
 ### Data requirements
 
-| API call                 | When               |
-|--------------------------|---------------------|
-| `pruneWorktree()`        | On confirm          |
+| API call                 | When                                              |
+| ------------------------ | ------------------------------------------------- |
+| `pruneWorktree()`        | On confirm                                        |
 | `getStatus()` (optional) | On dialog open, to warn about uncommitted changes |
 
 ---
@@ -476,22 +477,22 @@ Phase 2 (post-MVP): Structured commit data with precomputed lane positions, rend
 
 ### Behavior
 
-| Element              | Behavior                                                |
-|----------------------|---------------------------------------------------------|
-| Search input         | Fuzzy filter across all sections                        |
-| Worktree row         | Enter → switch active worktree                          |
-| Branch row           | Enter → offer to create worktree from this branch       |
-| Action row           | Enter → execute (open modal, navigate, etc.)            |
-| Arrow keys           | Navigate rows                                           |
-| Escape               | Close palette                                           |
-| Active worktree      | Marked with bullet, sorted first                        |
+| Element         | Behavior                                          |
+| --------------- | ------------------------------------------------- |
+| Search input    | Fuzzy filter across all sections                  |
+| Worktree row    | Enter → switch active worktree                    |
+| Branch row      | Enter → offer to create worktree from this branch |
+| Action row      | Enter → execute (open modal, navigate, etc.)      |
+| Arrow keys      | Navigate rows                                     |
+| Escape          | Close palette                                     |
+| Active worktree | Marked with bullet, sorted first                  |
 
 ### Data requirements
 
-| API call              | When               |
-|-----------------------|---------------------|
-| `listWorktrees()`     | On open             |
-| `listRefs()`          | On open             |
+| API call          | When    |
+| ----------------- | ------- |
+| `listWorktrees()` | On open |
+| `listRefs()`      | On open |
 
 ---
 
@@ -516,24 +517,24 @@ This is loaded once by the `/workspace` layout and exposed to all child componen
 
 ### Backend commands needed for full MVP
 
-| Command                  | Status       | Used by screens        |
-|--------------------------|--------------|------------------------|
-| `git_info`               | ✅ Exists    | [1]                    |
-| `create_sproutgit_workspace` | ✅ Exists | [1]                   |
-| `inspect_sproutgit_workspace` | ✅ Exists | [1] [2]              |
-| `list_worktrees`         | ✅ Exists    | [2] [3] [4] [8]       |
-| `list_refs`              | ✅ Exists    | [3] [4] [5] [6] [8]   |
-| `get_commit_graph`       | ✅ Exists    | [3] [5]               |
-| `create_managed_worktree`| ✅ Exists    | [3] [6]               |
-| `get_status`             | ❌ Needed    | [4] [7]               |
-| `stage_files`            | ❌ Needed    | [4]                    |
-| `unstage_files`          | ❌ Needed    | [4]                    |
-| `commit`                 | ❌ Needed    | [4]                    |
-| `get_diff`               | ❌ Needed    | [4] [5]               |
-| `prune_worktree`         | ❌ Needed    | [7]                    |
-| `get_commit_details`     | ❌ Needed    | [5]                    |
-| `fetch`                  | ❌ P1        | [4] (toolbar)          |
-| `push`                   | ❌ P1        | [4] (toolbar)          |
+| Command                       | Status    | Used by screens     |
+| ----------------------------- | --------- | ------------------- |
+| `git_info`                    | ✅ Exists | [1]                 |
+| `create_sproutgit_workspace`  | ✅ Exists | [1]                 |
+| `inspect_sproutgit_workspace` | ✅ Exists | [1] [2]             |
+| `list_worktrees`              | ✅ Exists | [2] [3] [4] [8]     |
+| `list_refs`                   | ✅ Exists | [3] [4] [5] [6] [8] |
+| `get_commit_graph`            | ✅ Exists | [3] [5]             |
+| `create_managed_worktree`     | ✅ Exists | [3] [6]             |
+| `get_status`                  | ❌ Needed | [4] [7]             |
+| `stage_files`                 | ❌ Needed | [4]                 |
+| `unstage_files`               | ❌ Needed | [4]                 |
+| `commit`                      | ❌ Needed | [4]                 |
+| `get_diff`                    | ❌ Needed | [4] [5]             |
+| `prune_worktree`              | ❌ Needed | [7]                 |
+| `get_commit_details`          | ❌ Needed | [5]                 |
+| `fetch`                       | ❌ P1     | [4] (toolbar)       |
+| `push`                        | ❌ P1     | [4] (toolbar)       |
 
 ---
 
@@ -556,34 +557,34 @@ Modals and overlays ([6] [7] [8]) are Svelte components mounted inside the works
 
 ## Implementation order
 
-| Phase | What                                              | Screens affected |
-|-------|---------------------------------------------------|------------------|
-| 1     | Workspace layout with context header              | [2]              |
-| 2     | Conditional first-worktree vs main-workspace view | [3] [4]          |
-| 3     | Backend: `get_status`, `stage`, `unstage`, `commit` | [4]            |
-| 4     | Status pane + staging workflow                    | [4]              |
-| 5     | Backend: `get_diff`                               | [4] [5]          |
-| 6     | Diff inspector pane                               | [4]              |
-| 7     | Commit composer                                   | [4]              |
-| 8     | History tab with graph                            | [5]              |
-| 9     | Create worktree modal                             | [6]              |
-| 10    | Backend: `prune_worktree`                         | [7]              |
-| 11    | Prune worktree dialog                             | [7]              |
-| 12    | Global context switcher                           | [8]              |
-| 13    | P1: fetch/push toolbar actions                    | [4]              |
+| Phase | What                                                | Screens affected |
+| ----- | --------------------------------------------------- | ---------------- |
+| 1     | Workspace layout with context header                | [2]              |
+| 2     | Conditional first-worktree vs main-workspace view   | [3] [4]          |
+| 3     | Backend: `get_status`, `stage`, `unstage`, `commit` | [4]              |
+| 4     | Status pane + staging workflow                      | [4]              |
+| 5     | Backend: `get_diff`                                 | [4] [5]          |
+| 6     | Diff inspector pane                                 | [4]              |
+| 7     | Commit composer                                     | [4]              |
+| 8     | History tab with graph                              | [5]              |
+| 9     | Create worktree modal                               | [6]              |
+| 10    | Backend: `prune_worktree`                           | [7]              |
+| 11    | Prune worktree dialog                               | [7]              |
+| 12    | Global context switcher                             | [8]              |
+| 13    | P1: fetch/push toolbar actions                      | [4]              |
 
 ---
 
 ## Library plan
 
-| Need                    | Choice                  | Why                                    |
-|-------------------------|-------------------------|----------------------------------------|
-| Syntax highlighting     | Shiki (fine-grained)    | Tree-sitter quality, lazy-loadable     |
-| Diff rendering          | Custom from parsed hunks| Keep control, avoid heavy deps early   |
-| Graph lanes (phase 1)   | ASCII from git log      | Already implemented, ship fast         |
-| Graph lanes (phase 2)   | SVG lanes from parsed data | Better UX, do after MVP core works  |
-| Virtual scrolling       | Svelte virtual list     | File lists and history can be long     |
-| Git operations          | CLI via Tauri commands  | Already established pattern            |
+| Need                  | Choice                     | Why                                  |
+| --------------------- | -------------------------- | ------------------------------------ |
+| Syntax highlighting   | Shiki (fine-grained)       | Tree-sitter quality, lazy-loadable   |
+| Diff rendering        | Custom from parsed hunks   | Keep control, avoid heavy deps early |
+| Graph lanes (phase 1) | ASCII from git log         | Already implemented, ship fast       |
+| Graph lanes (phase 2) | SVG lanes from parsed data | Better UX, do after MVP core works   |
+| Virtual scrolling     | Svelte virtual list        | File lists and history can be long   |
+| Git operations        | CLI via Tauri commands     | Already established pattern          |
 
 ---
 

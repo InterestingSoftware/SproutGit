@@ -1,6 +1,6 @@
-import { defineConfig } from "vite";
-import { sveltekit } from "@sveltejs/kit/vite";
-import tailwindcss from "@tailwindcss/vite";
+import { defineConfig } from 'vite';
+import { sveltekit } from '@sveltejs/kit/vite';
+import tailwindcss from '@tailwindcss/vite';
 
 const host = process.env.TAURI_DEV_HOST;
 
@@ -18,8 +18,8 @@ function parsePortEnv(name, fallback) {
   return parsed;
 }
 
-const port = parsePortEnv("SPROUTGIT_E2E_DEV_PORT", 1420);
-const hmrPort = parsePortEnv("SPROUTGIT_E2E_HMR_PORT", 1421);
+const port = parsePortEnv('SPROUTGIT_E2E_DEV_PORT', 1420);
+const hmrPort = parsePortEnv('SPROUTGIT_E2E_HMR_PORT', 1421);
 
 // https://vite.dev/config/
 export default defineConfig(async () => ({
@@ -36,14 +36,14 @@ export default defineConfig(async () => ({
     host: host || false,
     hmr: host
       ? {
-          protocol: "ws",
+          protocol: 'ws',
           host,
           port: hmrPort,
         }
       : undefined,
     watch: {
       // 3. tell Vite to ignore watching `src-tauri`
-      ignored: ["**/src-tauri/**"],
+      ignored: ['**/src-tauri/**'],
     },
   },
 }));

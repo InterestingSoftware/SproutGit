@@ -1,8 +1,5 @@
 import { basename, dirname } from 'node:path';
-import {
-  BrowserPageAdapter,
-  type TauriPage,
-} from '@srsholmes/tauri-playwright';
+import { BrowserPageAdapter, type TauriPage } from '@srsholmes/tauri-playwright';
 
 type AdapterPage = TauriPage | BrowserPageAdapter;
 
@@ -17,15 +14,15 @@ export async function waitForToastMessage(
   tauriPage: AdapterPage,
   type: 'success' | 'error' | 'warning' | 'info',
   messageFragment: string,
-  timeout = DEFAULT_UI_TIMEOUT,
+  timeout = DEFAULT_UI_TIMEOUT
 ) {
   const deadline = Date.now() + timeout;
 
   while (Date.now() < deadline) {
     const messages = await tauriPage.allTextContents(
-      `[data-testid="toast-item"][data-toast-type="${type}"] [data-testid="toast-message"]`,
+      `[data-testid="toast-item"][data-toast-type="${type}"] [data-testid="toast-message"]`
     );
-    if (messages.some((message) => message.includes(messageFragment))) {
+    if (messages.some(message => message.includes(messageFragment))) {
       return;
     }
     await delay(120);
@@ -122,7 +119,7 @@ async function waitForOptionalToastMessage(
   tauriPage: AdapterPage,
   type: 'success' | 'error' | 'warning' | 'info',
   messageFragment: string,
-  timeout = TOAST_SETTLE_TIMEOUT,
+  timeout = TOAST_SETTLE_TIMEOUT
 ) {
   try {
     await waitForToastMessage(tauriPage, type, messageFragment, timeout);
@@ -188,7 +185,12 @@ export async function importRepoViaUi(tauriPage: AdapterPage, repoPath: string) 
       const worktreeListVisible = await safeIsVisible(tauriPage, '[data-testid="worktree-list"]');
       const newBranchVisible = await safeIsVisible(tauriPage, '[data-testid="input-new-branch"]');
 
-      if (headerText.includes(workspaceName) && backButtonVisible && worktreeListVisible && newBranchVisible) {
+      if (
+        headerText.includes(workspaceName) &&
+        backButtonVisible &&
+        worktreeListVisible &&
+        newBranchVisible
+      ) {
         return true;
       }
       await delay(120);
@@ -239,15 +241,14 @@ export async function importRepoViaUi(tauriPage: AdapterPage, repoPath: string) 
       await waitForOptionalToastMessage(
         tauriPage,
         'success',
-        `Workspace imported: ${workspaceName}`,
+        `Workspace imported: ${workspaceName}`
       );
       return;
     }
 
     let importErrorText = '';
     try {
-      importErrorText =
-        (await tauriPage.textContent('[data-testid="import-error"]'))?.trim() ?? '';
+      importErrorText = (await tauriPage.textContent('[data-testid="import-error"]'))?.trim() ?? '';
     } catch {
       // Ignore bridge read failure.
     }
@@ -260,7 +261,7 @@ export async function importRepoViaUi(tauriPage: AdapterPage, repoPath: string) 
   }
 
   throw new Error(
-    `Import did not complete within ${IMPORT_COMPLETION_TIMEOUT / 1000}s (workspace shell did not appear)`,
+    `Import did not complete within ${IMPORT_COMPLETION_TIMEOUT / 1000}s (workspace shell did not appear)`
   );
 }
 
@@ -299,7 +300,7 @@ export async function createWorktreeViaUi(tauriPage: AdapterPage, branchName: st
 
     try {
       const toastMessages = await tauriPage.allTextContents(
-        '[data-testid="toast-item"][data-toast-type="error"] [data-testid="toast-message"]',
+        '[data-testid="toast-item"][data-toast-type="error"] [data-testid="toast-message"]'
       );
       const latestToast = toastMessages.at(-1)?.trim();
       if (latestToast) {
@@ -392,7 +393,7 @@ export async function deleteWorktreeViaUi(tauriPage: AdapterPage, branchName: st
   const deadline = Date.now() + DEFAULT_UI_TIMEOUT;
   while (Date.now() < deadline) {
     const still = await tauriPage.isVisible(
-      `[data-testid="worktree-item"][data-branch="${branchName}"]`,
+      `[data-testid="worktree-item"][data-branch="${branchName}"]`
     );
     if (!still) {
       await waitForToastMessage(tauriPage, 'success', `Deleted worktree: ${branchName}`);
@@ -453,12 +454,12 @@ export async function stageAndCommitViaUi(tauriPage: AdapterPage, message: strin
   const resultDeadline = Date.now() + DEFAULT_UI_TIMEOUT;
   while (Date.now() < resultDeadline) {
     const successes = await tauriPage.allTextContents(
-      '[data-testid="toast-item"][data-toast-type="success"] [data-testid="toast-message"]',
+      '[data-testid="toast-item"][data-toast-type="success"] [data-testid="toast-message"]'
     );
-    if (successes.some((t) => t.includes(message))) return;
+    if (successes.some(t => t.includes(message))) return;
 
     const errors = await tauriPage.allTextContents(
-      '[data-testid="toast-item"][data-toast-type="error"] [data-testid="toast-message"]',
+      '[data-testid="toast-item"][data-toast-type="error"] [data-testid="toast-message"]'
     );
     const err = errors.find(Boolean);
     if (err) throw new Error(`Commit failed: ${err}`);

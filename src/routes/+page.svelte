@@ -127,7 +127,7 @@
         worktreesExists: true,
         metadataExists: true,
         stateDbExists: true,
-      }),
+      })
     );
   }
 
@@ -138,9 +138,9 @@
     try {
       const parsed = JSON.parse(raw) as Partial<KnownProject> | null;
       if (
-        !parsed
-        || typeof parsed.workspacePath !== 'string'
-        || typeof parsed.rootPath !== 'string'
+        !parsed ||
+        typeof parsed.workspacePath !== 'string' ||
+        typeof parsed.rootPath !== 'string'
       ) {
         return null;
       }
@@ -346,11 +346,11 @@
       }, timeoutMs);
 
       promise
-        .then((value) => {
+        .then(value => {
           clearTimeout(timer);
           resolve(value);
         })
-        .catch((error) => {
+        .catch(error => {
           clearTimeout(timer);
           reject(error);
         });
@@ -363,7 +363,9 @@
       git = info;
     } catch (err) {
       // Allow E2E harnesses to continue when startup checks are flaky under load.
-      git = isE2ERuntime() ? { installed: true, version: null } : { installed: false, version: null };
+      git = isE2ERuntime()
+        ? { installed: true, version: null }
+        : { installed: false, version: null };
       toast.warning(`Git startup check failed: ${String(err)}`);
     } finally {
       gitChecked = true;
@@ -967,7 +969,9 @@
             {/if}
 
             {#if error}
-              <p data-testid="import-error" class="select-text text-xs text-[var(--sg-danger)]">{error}</p>
+              <p data-testid="import-error" class="select-text text-xs text-[var(--sg-danger)]">
+                {error}
+              </p>
             {/if}
 
             <div class="flex justify-end gap-2 border-t border-[var(--sg-border-subtle)] pt-3">

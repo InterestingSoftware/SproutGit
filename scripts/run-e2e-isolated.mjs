@@ -10,7 +10,9 @@ const skipPrebuild = process.env.SPROUTGIT_E2E_SKIP_PREBUILD === '1';
 const suiteSeed = process.env.PW_PORT_SEED ?? String(Date.now());
 
 if (tauriHeaded) {
-  console.warn('[e2e-isolated] --headed detected; enabling Tauri headed mode without forwarding --headed to Playwright CLI.');
+  console.warn(
+    '[e2e-isolated] --headed detected; enabling Tauri headed mode without forwarding --headed to Playwright CLI.'
+  );
 }
 
 function escapeRegex(value) {
@@ -43,7 +45,7 @@ function listTests() {
   const output = execFileSync(
     'pnpm',
     ['exec', 'playwright', 'test', '-c', CONFIG_PATH, '--list', ...passthroughArgs],
-    { cwd: ROOT, encoding: 'utf8', stdio: 'pipe' },
+    { cwd: ROOT, encoding: 'utf8', stdio: 'pipe' }
   );
 
   const lines = output.split('\n');

@@ -1,9 +1,11 @@
 # SproutGit MVP Requirements
 
 ## Product Goal
+
 Build a fast, open-source, cross-platform Git desktop app that treats worktrees as the default way to work.
 
 ## Core UX Principle
+
 At all times, the app must make these three contexts obvious and ordered:
 
 1. Active Repository
@@ -13,6 +15,7 @@ At all times, the app must make these three contexts obvious and ordered:
 This is a cascade where branch belongs to worktree, and worktree belongs to repository.
 
 ## SproutGit Workspace Layout (Prescribed)
+
 SproutGit enforces a project workspace structure above Git root/worktrees:
 
 - Project workspace root: <project_workspace>

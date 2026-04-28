@@ -9,7 +9,7 @@ vi.mock('@tauri-apps/api/path', () => ({
 const { tildify } = await import('$lib/paths.svelte');
 
 // Wait for the homeDir() promise to resolve and _home to be set
-await new Promise((resolve) => setTimeout(resolve, 0));
+await new Promise(resolve => setTimeout(resolve, 0));
 
 // ─────────────────────────────────────────────────────────────────────────────
 

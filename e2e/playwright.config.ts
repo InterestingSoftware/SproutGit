@@ -56,7 +56,8 @@ const hasInheritedRuntime =
   typeof inheritedSocketPath === 'string' &&
   inheritedSocketPath.length > 0;
 
-const PORT_SEED = Number.parseInt(process.env.PW_PORT_SEED ?? String(process.pid), 10) || process.pid;
+const PORT_SEED =
+  Number.parseInt(process.env.PW_PORT_SEED ?? String(process.pid), 10) || process.pid;
 const DEV_PORT_BASE = 14000 + (PORT_SEED % 2000) * 2;
 const PLUGIN_PORT_BASE = 22000 + (PORT_SEED % 2000);
 

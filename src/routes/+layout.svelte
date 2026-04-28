@@ -1,13 +1,13 @@
 <script lang="ts">
-  import "../app.css";
-  import ToastContainer from "$lib/components/ToastContainer.svelte";
-  import { updateState } from "$lib/update.svelte";
-  import { onMount } from "svelte";
-  import { onNavigate } from "$app/navigation";
+  import '../app.css';
+  import ToastContainer from '$lib/components/ToastContainer.svelte';
+  import { updateState } from '$lib/update.svelte';
+  import { onMount } from 'svelte';
+  import { onNavigate } from '$app/navigation';
 
-  onNavigate((navigation) => {
+  onNavigate(navigation => {
     if (!document.startViewTransition) return;
-    return new Promise((resolve) => {
+    return new Promise(resolve => {
       document.startViewTransition(async () => {
         resolve();
         await navigation.complete;
@@ -30,7 +30,7 @@
     if (import.meta.env.DEV) return;
 
     try {
-      const { check } = await import("@tauri-apps/plugin-updater");
+      const { check } = await import('@tauri-apps/plugin-updater');
       const update = await check();
       updateState.set(update);
     } catch {

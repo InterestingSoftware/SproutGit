@@ -90,6 +90,10 @@ export type WorkspaceHookTrigger =
 
 export type WorkspaceHookScope = 'worktree' | 'workspace';
 
+export type HookExecutionTarget = 'workspace' | 'trigger_worktree' | 'initiating_worktree';
+
+export type HookExecutionMode = 'headless' | 'terminal_tab';
+
 export type WorkspaceHookShell = 'bash' | 'zsh' | 'pwsh' | 'powershell';
 
 export type WorkspaceHook = {
@@ -97,10 +101,13 @@ export type WorkspaceHook = {
   name: string;
   scope: WorkspaceHookScope;
   trigger: WorkspaceHookTrigger;
+  executionTarget: HookExecutionTarget;
+  executionMode: HookExecutionMode;
   shell: WorkspaceHookShell;
   script: string;
   enabled: boolean;
   critical: boolean;
+  keepOpenOnCompletion: boolean;
   timeoutSeconds: number;
   createdAt: number;
   updatedAt: number;
@@ -111,10 +118,13 @@ export type HookUpsertInput = {
   name: string;
   scope: WorkspaceHookScope;
   trigger: WorkspaceHookTrigger;
+  executionTarget: HookExecutionTarget;
+  executionMode: HookExecutionMode;
   shell: WorkspaceHookShell;
   script: string;
   enabled: boolean;
   critical: boolean;
+  keepOpenOnCompletion: boolean;
   timeoutSeconds: number;
   dependencyIds: string[];
 };
@@ -149,11 +159,21 @@ export type HookProgressEvent = {
   trigger: string;
   hookId: string;
   hookName: string;
+  keepOpenOnCompletion?: boolean;
   phase: 'start' | 'end' | 'skipped';
   status: string;
   stdoutSnippet?: string | null;
   stderrSnippet?: string | null;
   errorMessage?: string | null;
+};
+
+export type HookTerminalLaunchEvent = {
+  trigger: string;
+  hookId: string;
+  hookName: string;
+  shell: WorkspaceHookShell;
+  cwd: string;
+  command: string;
 };
 
 export type DeviceCodeResponse = {
@@ -272,31 +292,34 @@ export const getCommitGraph = (repoPath: string, limit?: number | null, skip?: n
     skip: skip ?? null,
   });
 
-export const countCommits = (repoPath: string) =>
-  invoke<number>('count_commits', { repoPath });
+export const countCommits = (repoPath: string) => invoke<number>('count_commits', { repoPath });
 
 export const createManagedWorktree = (
   rootRepoPath: string,
   managedWorktreesPath: string,
   fromRef: string,
-  newBranch: string
+  newBranch: string,
+  initiatingWorktreePath?: string | null
 ) =>
   invoke<CreateWorktreeResult>('create_managed_worktree', {
     rootRepoPath,
     managedWorktreesPath,
     fromRef,
     newBranch,
+    initiatingWorktreePath: initiatingWorktreePath?.trim() ? initiatingWorktreePath : null,
   });
 
 export const deleteManagedWorktree = (
   rootRepoPath: string,
   worktreePath: string,
-  deleteBranch = true
+  deleteBranch = true,
+  initiatingWorktreePath?: string | null
 ) =>
   invoke<string>('delete_managed_worktree', {
     rootRepoPath,
     worktreePath,
     deleteBranch,
+    initiatingWorktreePath: initiatingWorktreePath?.trim() ? initiatingWorktreePath : null,
   });
 
 export const checkoutWorktree = (worktreePath: string, targetRef: string, autoStash = true) =>
@@ -346,8 +369,18 @@ export const toggleWorkspaceHook = (workspacePath: string, hookId: string, enabl
 export const getAvailableHookShells = () =>
   invoke<WorkspaceHookShell[]>('get_available_hook_shells');
 
-export const runWorkspaceHook = (workspacePath: string, hookId: string, worktreePath: string) =>
-  invoke<void>('run_workspace_hook', { workspacePath, hookId, worktreePath });
+export const runWorkspaceHook = (
+  workspacePath: string,
+  hookId: string,
+  worktreePath: string,
+  initiatingWorktreePath?: string | null
+) =>
+  invoke<void>('run_workspace_hook', {
+    workspacePath,
+    hookId,
+    worktreePath,
+    initiatingWorktreePath: initiatingWorktreePath?.trim() ? initiatingWorktreePath : null,
+  });
 
 export const openInEditor = (worktreePath: string) =>
   invoke<string>('open_in_editor', { worktreePath });
@@ -382,6 +415,11 @@ export const onHookProgress = (
   callback: (payload: HookProgressEvent) => void
 ): Promise<UnlistenFn> =>
   listen<HookProgressEvent>('hook-progress', event => callback(event.payload));
+
+export const onHookTerminalLaunch = (
+  callback: (payload: HookTerminalLaunchEvent) => void
+): Promise<UnlistenFn> =>
+  listen<HookTerminalLaunchEvent>('hook-terminal-launch', event => callback(event.payload));
 
 export const githubDeviceFlowStart = () => invoke<DeviceCodeResponse>('github_device_flow_start');
 

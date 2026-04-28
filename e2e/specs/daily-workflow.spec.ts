@@ -79,7 +79,7 @@ async function waitForFile(filePath: string, timeoutMs = DEFAULT_UI_TIMEOUT) {
     if (existsSync(filePath)) {
       return;
     }
-    await new Promise((resolve) => setTimeout(resolve, 120));
+    await new Promise(resolve => setTimeout(resolve, 120));
   }
 
   throw new Error(`Timed out waiting for file: ${filePath}`);
@@ -112,7 +112,7 @@ function dailyAfterCreateHook() {
         "  throw 'Unable to resolve workspace path from hook environment'",
         '}',
         "$outputDir = Join-Path $workspacePath '.sproutgit/hook-output'",
-        "New-Item -ItemType Directory -Force -Path $outputDir | Out-Null",
+        'New-Item -ItemType Directory -Force -Path $outputDir | Out-Null',
         "$outputFile = Join-Path $outputDir 'after-create.txt'",
         'Set-Content -Path $outputFile -Encoding UTF8 -Value "$env:SPROUTGIT_TRIGGER|$env:SPROUTGIT_WORKTREE_BRANCH|$env:SPROUTGIT_WORKTREE_PATH"',
         'if (-not (Test-Path -Path $outputFile)) {',
@@ -154,10 +154,10 @@ test.describe('Daily developer workflow', () => {
 
     // UI: both worktrees appear in the sidebar list
     const authItem = tauriPage.locator(
-      '[data-testid="worktree-item"][data-branch="feature/user-auth"]',
+      '[data-testid="worktree-item"][data-branch="feature/user-auth"]'
     );
     const apiItem = tauriPage.locator(
-      '[data-testid="worktree-item"][data-branch="feature/api-refactor"]',
+      '[data-testid="worktree-item"][data-branch="feature/api-refactor"]'
     );
     await expect(authItem).toBeVisible();
     await expect(apiItem).toBeVisible();
@@ -184,7 +184,7 @@ test.describe('Daily developer workflow', () => {
     const stateDbPath = join(dirname(dirname(authPath)), '.sproutgit', 'state.db');
     const metaRows = querySqlite(
       stateDbPath,
-      `SELECT value FROM meta WHERE key = 'workspace_path'`,
+      `SELECT value FROM meta WHERE key = 'workspace_path'`
     );
     expect(metaRows.length).toBe(1);
     expect(metaRows[0]?.[0]).toContain('daily-setup-workspace');
@@ -193,10 +193,10 @@ test.describe('Daily developer workflow', () => {
     if (CONFIG_DB_PATH) {
       const recentRows = querySqlite(
         CONFIG_DB_PATH,
-        `SELECT workspace_path FROM recent_workspaces`,
+        `SELECT workspace_path FROM recent_workspaces`
       );
-      const paths = recentRows.map((r) => r[0] ?? '');
-      expect(paths.some((p) => p.includes('daily-setup-workspace'))).toBe(true);
+      const paths = recentRows.map(r => r[0] ?? '');
+      expect(paths.some(p => p.includes('daily-setup-workspace'))).toBe(true);
     }
   });
 
@@ -218,10 +218,10 @@ test.describe('Daily developer workflow', () => {
     await createWorktreeViaUi(tauriPage, 'feature/ui-polish');
 
     const dataItem = tauriPage.locator(
-      '[data-testid="worktree-item"][data-branch="feature/data-layer"]',
+      '[data-testid="worktree-item"][data-branch="feature/data-layer"]'
     );
     const uiItem = tauriPage.locator(
-      '[data-testid="worktree-item"][data-branch="feature/ui-polish"]',
+      '[data-testid="worktree-item"][data-branch="feature/ui-polish"]'
     );
 
     const dataPath =
@@ -287,12 +287,14 @@ test.describe('Daily developer workflow', () => {
     // Commit metadata: author matches the configured git identity and timestamps are recent.
     const dataMeta = parseHeadMeta(dataPath);
     const uiMeta = parseHeadMeta(uiPath);
-    const configuredAuthorName = process.env.GIT_AUTHOR_NAME
-      ?? (runGit(dataPath, ['config', '--get', 'user.name'])
-        || runGit(gitRoot, ['config', '--global', '--get', 'user.name']));
-    const configuredAuthorEmail = process.env.GIT_AUTHOR_EMAIL
-      ?? (runGit(dataPath, ['config', '--get', 'user.email'])
-        || runGit(gitRoot, ['config', '--global', '--get', 'user.email']));
+    const configuredAuthorName =
+      process.env.GIT_AUTHOR_NAME ??
+      (runGit(dataPath, ['config', '--get', 'user.name']) ||
+        runGit(gitRoot, ['config', '--global', '--get', 'user.name']));
+    const configuredAuthorEmail =
+      process.env.GIT_AUTHOR_EMAIL ??
+      (runGit(dataPath, ['config', '--get', 'user.email']) ||
+        runGit(gitRoot, ['config', '--global', '--get', 'user.email']));
     const inheritedAuthorTs = parseGitDateEnv(process.env.GIT_AUTHOR_DATE);
     expect(dataMeta.authorName).toBe(configuredAuthorName);
     expect(dataMeta.authorEmail).toBe(configuredAuthorEmail);
@@ -318,14 +320,14 @@ test.describe('Daily developer workflow', () => {
     await tauriPage.waitForFunction(
       `Array.from(document.querySelectorAll('[data-testid="commit-row"]'))
         .some((r) => r.textContent?.includes('feat: add ui theme module'))`,
-      DEFAULT_UI_TIMEOUT,
+      DEFAULT_UI_TIMEOUT
     );
 
     // SQLite (state.db): workspace meta remains intact after both commits
     const stateDbPath = join(dirname(dirname(dataPath)), '.sproutgit', 'state.db');
     const metaRows = querySqlite(
       stateDbPath,
-      `SELECT value FROM meta WHERE key = 'workspace_path'`,
+      `SELECT value FROM meta WHERE key = 'workspace_path'`
     );
     expect(metaRows.length).toBe(1);
     expect(metaRows[0]?.[0]).toContain('daily-commits-workspace');
@@ -353,10 +355,10 @@ test.describe('Daily developer workflow', () => {
     await createWorktreeViaUi(tauriPage, 'feature/new-dashboard');
 
     const bugfixItem = tauriPage.locator(
-      '[data-testid="worktree-item"][data-branch="bugfix/null-pointer"]',
+      '[data-testid="worktree-item"][data-branch="bugfix/null-pointer"]'
     );
     const featureItem = tauriPage.locator(
-      '[data-testid="worktree-item"][data-branch="feature/new-dashboard"]',
+      '[data-testid="worktree-item"][data-branch="feature/new-dashboard"]'
     );
 
     const bugfixPath =
@@ -417,7 +419,7 @@ test.describe('Daily developer workflow', () => {
     const stateDbPath = join(dirname(dirname(bugfixPath)), '.sproutgit', 'state.db');
     const metaRows = querySqlite(
       stateDbPath,
-      `SELECT value FROM meta WHERE key = 'workspace_path'`,
+      `SELECT value FROM meta WHERE key = 'workspace_path'`
     );
     expect(metaRows.length).toBe(1);
     expect(metaRows[0]?.[0]).toContain('daily-cleanup-workspace');
@@ -457,7 +459,7 @@ test.describe('Daily developer workflow', () => {
         `  ${now},`,
         `  ${now}`,
         ');',
-      ].join('\n'),
+      ].join('\n')
     );
 
     await createWorktreeViaUi(tauriPage, 'feature/hook-smoke');
@@ -466,12 +468,12 @@ test.describe('Daily developer workflow', () => {
     } catch {
       const hookRows = querySqlite(
         stateDbPath,
-        `SELECT status, error_message FROM hook_runs WHERE hook_id = ${sqlString(hookId)} ORDER BY started_at DESC LIMIT 1`,
+        `SELECT status, error_message FROM hook_runs WHERE hook_id = ${sqlString(hookId)} ORDER BY started_at DESC LIMIT 1`
       );
       const status = hookRows[0]?.[0] ?? 'unknown';
       const errorMessage = hookRows[0]?.[1] ?? '';
       throw new Error(
-        `Hook output file was not created within 60s (status=${status}, error=${errorMessage || 'none'})`,
+        `Hook output file was not created within 60s (status=${status}, error=${errorMessage || 'none'})`
       );
     }
 
@@ -480,7 +482,7 @@ test.describe('Daily developer workflow', () => {
 
     const hookRows = querySqlite(
       stateDbPath,
-      `SELECT trigger, status, worktree_path, error_message FROM hook_runs WHERE hook_id = ${sqlString(hookId)} ORDER BY started_at DESC LIMIT 1`,
+      `SELECT trigger, status, worktree_path, error_message FROM hook_runs WHERE hook_id = ${sqlString(hookId)} ORDER BY started_at DESC LIMIT 1`
     );
     expect(hookRows.length).toBe(1);
     expect(hookRows[0]?.[0]).toBe('after_worktree_create');

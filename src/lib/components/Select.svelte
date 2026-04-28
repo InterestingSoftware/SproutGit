@@ -12,13 +12,7 @@
     onChange?: (value: string) => void;
   };
 
-  const {
-    value,
-    options,
-    disabled = false,
-    className = '',
-    onChange,
-  }: Props = $props();
+  const { value, options, disabled = false, className = '', onChange }: Props = $props();
 
   function handleChange(event: Event) {
     const next = (event.currentTarget as HTMLSelectElement).value;
@@ -28,8 +22,8 @@
 
 <div class={`relative ${className}`}>
   <select
-    value={value}
-    disabled={disabled}
+    {value}
+    {disabled}
     class="w-full appearance-none rounded border border-[var(--sg-input-border)] bg-[var(--sg-input-bg)] px-2.5 py-1.5 pr-8 text-xs text-[var(--sg-text)] outline-none focus:border-[var(--sg-input-focus)] disabled:opacity-60"
     onchange={handleChange}
   >
@@ -43,11 +37,6 @@
     stroke="currentColor"
     viewBox="0 0 24 24"
   >
-    <path
-      d="m6 9 6 6 6-6"
-      stroke-width="2"
-      stroke-linecap="round"
-      stroke-linejoin="round"
-    />
+    <path d="m6 9 6 6 6-6" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
   </svg>
 </div>

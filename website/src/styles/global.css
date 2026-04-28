@@ -1,7 +1,7 @@
-@import "@fontsource/space-grotesk/400.css";
-@import "@fontsource/space-grotesk/500.css";
-@import "@fontsource/space-grotesk/700.css";
-@import "tailwindcss";
+@import '@fontsource/space-grotesk/400.css';
+@import '@fontsource/space-grotesk/500.css';
+@import '@fontsource/space-grotesk/700.css';
+@import 'tailwindcss';
 
 /* ── Brand tokens ── */
 :root {
@@ -17,7 +17,7 @@
   --sg-primary-hover: #15724d;
   --sg-accent: #2563eb;
   --sg-mint: #74c7a4;
-  --sg-font: "Space Grotesk", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --sg-font: 'Space Grotesk', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
 
   /* Lane colors — mirrors CommitGraph.svelte */
   --lane-0: #74c7a4;
@@ -50,7 +50,11 @@
 }
 
 /* ── Base ── */
-*, *::before, *::after { box-sizing: border-box; }
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
 
 html {
   font-family: var(--sg-font);
@@ -62,7 +66,10 @@ html {
   -webkit-font-smoothing: antialiased;
 }
 
-body { margin: 0; overflow-x: hidden; }
+body {
+  margin: 0;
+  overflow-x: hidden;
+}
 
 /* ── Scroll-driven entrance animations ── */
 [data-animate] {
@@ -73,8 +80,9 @@ body { margin: 0; overflow-x: hidden; }
 html.js [data-animate] {
   opacity: 0;
   transform: translateY(28px);
-  transition: opacity 0.65s cubic-bezier(0.16, 1, 0.3, 1),
-              transform 0.65s cubic-bezier(0.16, 1, 0.3, 1);
+  transition:
+    opacity 0.65s cubic-bezier(0.16, 1, 0.3, 1),
+    transform 0.65s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 html.js [data-animate].is-visible {
@@ -83,44 +91,100 @@ html.js [data-animate].is-visible {
 }
 
 /* Staggered children */
-[data-stagger] > [data-animate]:nth-child(1) { transition-delay: 0ms; }
-[data-stagger] > [data-animate]:nth-child(2) { transition-delay: 90ms; }
-[data-stagger] > [data-animate]:nth-child(3) { transition-delay: 180ms; }
-[data-stagger] > [data-animate]:nth-child(4) { transition-delay: 270ms; }
-[data-stagger] > [data-animate]:nth-child(5) { transition-delay: 360ms; }
-[data-stagger] > [data-animate]:nth-child(6) { transition-delay: 450ms; }
+[data-stagger] > [data-animate]:nth-child(1) {
+  transition-delay: 0ms;
+}
+[data-stagger] > [data-animate]:nth-child(2) {
+  transition-delay: 90ms;
+}
+[data-stagger] > [data-animate]:nth-child(3) {
+  transition-delay: 180ms;
+}
+[data-stagger] > [data-animate]:nth-child(4) {
+  transition-delay: 270ms;
+}
+[data-stagger] > [data-animate]:nth-child(5) {
+  transition-delay: 360ms;
+}
+[data-stagger] > [data-animate]:nth-child(6) {
+  transition-delay: 450ms;
+}
 
 /* ── Keyframes ── */
 @keyframes float-a {
-  0%, 100% { transform: translate(0, 0) scale(1); }
-  40%       { transform: translate(24px, -18px) scale(1.04); }
-  70%       { transform: translate(-12px, 12px) scale(0.97); }
+  0%,
+  100% {
+    transform: translate(0, 0) scale(1);
+  }
+  40% {
+    transform: translate(24px, -18px) scale(1.04);
+  }
+  70% {
+    transform: translate(-12px, 12px) scale(0.97);
+  }
 }
 @keyframes float-b {
-  0%, 100% { transform: translate(0, 0) scale(1); }
-  35%       { transform: translate(-20px, 16px) scale(1.03); }
-  65%       { transform: translate(16px, -10px) scale(0.98); }
+  0%,
+  100% {
+    transform: translate(0, 0) scale(1);
+  }
+  35% {
+    transform: translate(-20px, 16px) scale(1.03);
+  }
+  65% {
+    transform: translate(16px, -10px) scale(0.98);
+  }
 }
 @keyframes draw-path {
-  from { stroke-dashoffset: 900; }
-  to   { stroke-dashoffset: 0; }
+  from {
+    stroke-dashoffset: 900;
+  }
+  to {
+    stroke-dashoffset: 0;
+  }
 }
 @keyframes node-pop {
-  0%   { transform: scale(0); opacity: 0; }
-  70%  { transform: scale(1.2); opacity: 1; }
-  100% { transform: scale(1); opacity: 1; }
+  0% {
+    transform: scale(0);
+    opacity: 0;
+  }
+  70% {
+    transform: scale(1.2);
+    opacity: 1;
+  }
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
 }
 @keyframes pulse-glow {
-  0%, 100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--sg-primary) 30%, transparent); }
-  50%       { box-shadow: 0 0 0 8px color-mix(in srgb, var(--sg-primary) 0%, transparent); }
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--sg-primary) 30%, transparent);
+  }
+  50% {
+    box-shadow: 0 0 0 8px color-mix(in srgb, var(--sg-primary) 0%, transparent);
+  }
 }
 @keyframes nav-drop {
-  from { opacity: 0; transform: translateY(-8px); }
-  to   { opacity: 1; transform: none; }
+  from {
+    opacity: 0;
+    transform: translateY(-8px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
 }
 @keyframes badge-in {
-  from { opacity: 0; transform: translateX(-8px); }
-  to   { opacity: 1; transform: none; }
+  from {
+    opacity: 0;
+    transform: translateX(-8px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
 }
 
 /* ── Blobs ── */
@@ -131,8 +195,12 @@ html.js [data-animate].is-visible {
   pointer-events: none;
   will-change: transform;
 }
-.blob-a { animation: float-a 18s ease-in-out infinite; }
-.blob-b { animation: float-b 22s ease-in-out infinite; }
+.blob-a {
+  animation: float-a 18s ease-in-out infinite;
+}
+.blob-b {
+  animation: float-b 22s ease-in-out infinite;
+}
 
 /* ── SVG graph paths ── */
 .graph-path {
@@ -151,21 +219,44 @@ html.js [data-animate].is-visible {
 }
 
 /* Stagger graph node animations */
-.graph-node:nth-of-type(1)  { animation-delay: 0.3s; }
-.graph-node:nth-of-type(2)  { animation-delay: 0.5s; }
-.graph-node:nth-of-type(3)  { animation-delay: 0.7s; }
-.graph-node:nth-of-type(4)  { animation-delay: 0.9s; }
-.graph-node:nth-of-type(5)  { animation-delay: 1.0s; }
-.graph-node:nth-of-type(6)  { animation-delay: 1.1s; }
-.graph-node:nth-of-type(7)  { animation-delay: 1.15s; }
-.graph-node:nth-of-type(8)  { animation-delay: 1.2s; }
-.graph-node:nth-of-type(9)  { animation-delay: 1.25s; }
-.graph-node:nth-of-type(10) { animation-delay: 1.3s; }
+.graph-node:nth-of-type(1) {
+  animation-delay: 0.3s;
+}
+.graph-node:nth-of-type(2) {
+  animation-delay: 0.5s;
+}
+.graph-node:nth-of-type(3) {
+  animation-delay: 0.7s;
+}
+.graph-node:nth-of-type(4) {
+  animation-delay: 0.9s;
+}
+.graph-node:nth-of-type(5) {
+  animation-delay: 1s;
+}
+.graph-node:nth-of-type(6) {
+  animation-delay: 1.1s;
+}
+.graph-node:nth-of-type(7) {
+  animation-delay: 1.15s;
+}
+.graph-node:nth-of-type(8) {
+  animation-delay: 1.2s;
+}
+.graph-node:nth-of-type(9) {
+  animation-delay: 1.25s;
+}
+.graph-node:nth-of-type(10) {
+  animation-delay: 1.3s;
+}
 
 /* ── Nav scroll state ── */
 #site-nav {
   animation: nav-drop 0.4s ease-out both;
-  transition: background 0.3s ease, backdrop-filter 0.3s ease, box-shadow 0.3s ease;
+  transition:
+    background 0.3s ease,
+    backdrop-filter 0.3s ease,
+    box-shadow 0.3s ease;
 }
 #site-nav.scrolled {
   background: color-mix(in srgb, var(--sg-bg) 80%, transparent);
@@ -186,7 +277,10 @@ html.js [data-animate].is-visible {
   font-weight: 600;
   font-size: 0.9rem;
   text-decoration: none;
-  transition: background 0.2s ease, transform 0.15s ease, box-shadow 0.2s ease;
+  transition:
+    background 0.2s ease,
+    transform 0.15s ease,
+    box-shadow 0.2s ease;
 }
 .btn-primary:hover {
   background: var(--sg-primary-hover);
@@ -205,7 +299,10 @@ html.js [data-animate].is-visible {
   font-weight: 500;
   font-size: 0.9rem;
   text-decoration: none;
-  transition: border-color 0.2s ease, color 0.2s ease, background 0.2s ease;
+  transition:
+    border-color 0.2s ease,
+    color 0.2s ease,
+    background 0.2s ease;
 }
 .btn-ghost:hover {
   border-color: var(--sg-primary);
@@ -219,7 +316,10 @@ html.js [data-animate].is-visible {
   border: 1px solid var(--sg-border-subtle);
   border-radius: 12px;
   padding: 1.5rem;
-  transition: border-color 0.25s ease, transform 0.25s ease, box-shadow 0.25s ease;
+  transition:
+    border-color 0.25s ease,
+    transform 0.25s ease,
+    box-shadow 0.25s ease;
 }
 .feature-card:hover {
   border-color: color-mix(in srgb, var(--sg-primary) 50%, transparent);
@@ -403,21 +503,48 @@ html.js [data-animate].is-visible {
 
 /* ── Why section directory tree ── */
 .dir-tree {
-  font-family: "JetBrains Mono", "Fira Code", "Cascadia Code", ui-monospace, monospace;
+  font-family: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', ui-monospace, monospace;
   font-size: 0.8rem;
   line-height: 2;
   color: var(--sg-text-dim);
 }
-.dir-tree .hl { color: var(--sg-primary); font-weight: 600; }
-.dir-tree .dim { color: var(--sg-text-faint); }
+.dir-tree .hl {
+  color: var(--sg-primary);
+  font-weight: 600;
+}
+.dir-tree .dim {
+  color: var(--sg-text-faint);
+}
 
 /* ── Reduced motion ── */
 @media (prefers-reduced-motion: reduce) {
-  html { scroll-behavior: auto; }
-  html.js [data-animate] { opacity: 1; transform: none; transition: none; }
-  .blob { animation: none !important; }
-  .graph-path { animation: none; stroke-dashoffset: 0; }
-  .graph-node { animation: none; opacity: 1; }
-  #site-nav { animation: none; transform: none; transition: none; }
-  .btn-primary:hover, .btn-ghost:hover, .feature-card:hover { transform: none; }
+  html {
+    scroll-behavior: auto;
+  }
+  html.js [data-animate] {
+    opacity: 1;
+    transform: none;
+    transition: none;
+  }
+  .blob {
+    animation: none !important;
+  }
+  .graph-path {
+    animation: none;
+    stroke-dashoffset: 0;
+  }
+  .graph-node {
+    animation: none;
+    opacity: 1;
+  }
+  #site-nav {
+    animation: none;
+    transform: none;
+    transition: none;
+  }
+  .btn-primary:hover,
+  .btn-ghost:hover,
+  .feature-card:hover {
+    transform: none;
+  }
 }

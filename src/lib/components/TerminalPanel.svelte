@@ -19,9 +19,11 @@
     shell: string;
     /** Directory to open the shell in. */
     cwd: string;
+    /** Optional command block to send once the terminal is ready. */
+    initialCommand?: string;
   };
 
-  const { shell, cwd }: Props = $props();
+  const { shell, cwd, initialCommand = '' }: Props = $props();
   const isWindows = typeof navigator !== 'undefined' && /windows/i.test(navigator.userAgent);
 
   // ── DOM & xterm refs ──────────────────────────────────────────────────────
@@ -34,6 +36,7 @@
   let ptyId = $state<string | null>(null);
   let closed = $state(false);
   let error = $state<string | null>(null);
+  let sentInitialCommand = $state(false);
 
   // ── Event cleanup ─────────────────────────────────────────────────────────
   let unlistenOutput: UnlistenFn | null = null;
@@ -226,6 +229,15 @@
     void initTerminal();
   });
 
+  $effect(() => {
+    if (!ptyId || sentInitialCommand || !initialCommand.trim()) {
+      return;
+    }
+
+    sentInitialCommand = true;
+    void terminalInput(ptyId, `${initialCommand}\r`);
+  });
+
   onDestroy(() => {
     void teardown();
   });
@@ -259,7 +271,10 @@
 
 <!-- xterm.css is imported at the top of the script block via Vite -->
 
-<div class="relative flex min-h-0 flex-1 flex-col overflow-hidden bg-[var(--sg-bg)]" data-sg-terminal>
+<div
+  class="relative flex min-h-0 flex-1 flex-col overflow-hidden bg-[var(--sg-bg)]"
+  data-sg-terminal
+>
   {#if error}
     <div class="flex flex-1 items-center justify-center p-6">
       <div class="max-w-sm text-center">

@@ -1,15 +1,17 @@
 <script lang="ts">
-  import { onMount } from "svelte";
+  import { onMount } from 'svelte';
 
-  export type MenuItem = {
-    label: string;
-    action: () => void;
-    icon?: string;
-    danger?: boolean;
-    separator?: false;
-  } | {
-    separator: true;
-  };
+  export type MenuItem =
+    | {
+        label: string;
+        action: () => void;
+        icon?: string;
+        danger?: boolean;
+        separator?: false;
+      }
+    | {
+        separator: true;
+      };
 
   type Props = {
     items: MenuItem[];
@@ -36,7 +38,7 @@
   });
 
   function handleAction(item: MenuItem) {
-    if (!("separator" in item && item.separator)) {
+    if (!('separator' in item && item.separator)) {
       item.action();
     }
     onclose();
@@ -49,16 +51,16 @@
       }
     }
     function handleKey(e: KeyboardEvent) {
-      if (e.key === "Escape") onclose();
+      if (e.key === 'Escape') onclose();
     }
     // Delay to avoid immediately closing from the same click
     requestAnimationFrame(() => {
-      document.addEventListener("mousedown", handleClick);
-      document.addEventListener("keydown", handleKey);
+      document.addEventListener('mousedown', handleClick);
+      document.addEventListener('keydown', handleKey);
     });
     return () => {
-      document.removeEventListener("mousedown", handleClick);
-      document.removeEventListener("keydown", handleKey);
+      document.removeEventListener('mousedown', handleClick);
+      document.removeEventListener('keydown', handleKey);
     };
   });
 </script>
@@ -69,14 +71,16 @@
   data-testid="context-menu"
   class="fixed z-50 min-w-[160px] rounded-lg border border-[var(--sg-border)] bg-[var(--sg-surface)] py-1 shadow-xl"
   style="left: {adjustedPos.x}px; top: {adjustedPos.y}px; animation: sg-slide-up 0.1s ease-out"
-  oncontextmenu={(e) => e.preventDefault()}
+  oncontextmenu={e => e.preventDefault()}
 >
   {#each items as item}
-    {#if "separator" in item && item.separator}
+    {#if 'separator' in item && item.separator}
       <div class="my-1 border-t border-[var(--sg-border-subtle)]"></div>
     {:else}
       <button
-        class="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs hover:bg-[var(--sg-surface-raised)] {item.danger ? 'text-[var(--sg-danger)]' : 'text-[var(--sg-text)]'}"
+        class="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs hover:bg-[var(--sg-surface-raised)] {item.danger
+          ? 'text-[var(--sg-danger)]'
+          : 'text-[var(--sg-text)]'}"
         onclick={() => handleAction(item)}
       >
         {#if item.icon}

@@ -1,11 +1,11 @@
 <script lang="ts">
-  import { onDestroy, onMount } from "svelte";
-  import loader from "@monaco-editor/loader";
+  import { onDestroy, onMount } from 'svelte';
+  import loader from '@monaco-editor/loader';
 
   type Props = {
     value: string;
     language?: string;
-    theme?: "auto" | "light" | "dark";
+    theme?: 'auto' | 'light' | 'dark';
     height?: string;
     readOnly?: boolean;
     onChange?: (next: string) => void;
@@ -13,30 +13,28 @@
 
   const {
     value,
-    language = "shell",
-    theme = "auto",
-    height = "280px",
+    language = 'shell',
+    theme = 'auto',
+    height = '280px',
     readOnly = false,
     onChange = () => {},
   }: Props = $props();
 
   let container = $state<HTMLDivElement | null>(null);
-  let monacoApi: typeof import("monaco-editor") | null = null;
-  let editor: import("monaco-editor").editor.IStandaloneCodeEditor | null = null;
+  let monacoApi: typeof import('monaco-editor') | null = null;
+  let editor: import('monaco-editor').editor.IStandaloneCodeEditor | null = null;
   let suppress = false;
   let darkModeMedia: MediaQueryList | null = null;
 
-  function resolvedThemeName(): "vs" | "vs-dark" {
-    if (theme === "light") return "vs";
-    if (theme === "dark") return "vs-dark";
+  function resolvedThemeName(): 'vs' | 'vs-dark' {
+    if (theme === 'light') return 'vs';
+    if (theme === 'dark') return 'vs-dark';
 
-    if (typeof window !== "undefined") {
-      return window.matchMedia("(prefers-color-scheme: dark)").matches
-        ? "vs-dark"
-        : "vs";
+    if (typeof window !== 'undefined') {
+      return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'vs-dark' : 'vs';
     }
 
-    return "vs-dark";
+    return 'vs-dark';
   }
 
   function applyTheme() {
@@ -58,11 +56,11 @@
       fontFamily: 'Fira Code',
       fontLigatures: true,
       fontSize: 13,
-      lineNumbers: "on",
+      lineNumbers: 'on',
       scrollBeyondLastLine: false,
       automaticLayout: true,
       readOnly,
-      wordWrap: "on",
+      wordWrap: 'on',
       tabSize: 2,
       insertSpaces: true,
       padding: { top: 8, bottom: 8 },
@@ -74,13 +72,13 @@
       onChange(instance.getValue());
     });
 
-    if (typeof window !== "undefined") {
-      darkModeMedia = window.matchMedia("(prefers-color-scheme: dark)");
+    if (typeof window !== 'undefined') {
+      darkModeMedia = window.matchMedia('(prefers-color-scheme: dark)');
       const onThemeChange = () => applyTheme();
-      darkModeMedia.addEventListener("change", onThemeChange);
+      darkModeMedia.addEventListener('change', onThemeChange);
 
       onDestroy(() => {
-        darkModeMedia?.removeEventListener("change", onThemeChange);
+        darkModeMedia?.removeEventListener('change', onThemeChange);
       });
     }
   });

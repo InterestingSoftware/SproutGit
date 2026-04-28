@@ -11,9 +11,11 @@ function parseArgs(argv) {
 }
 
 function usage() {
-  console.log(`Usage: node scripts/cleanup-rust-targets.mjs [--delete] [--json]\n\n` +
-    `Scans all Git worktrees for this repository and reports per-worktree src-tauri/target directories.\n` +
-    `By default it only reports. Pass --delete to remove the discovered target directories.`);
+  console.log(
+    `Usage: node scripts/cleanup-rust-targets.mjs [--delete] [--json]\n\n` +
+      `Scans all Git worktrees for this repository and reports per-worktree src-tauri/target directories.\n` +
+      `By default it only reports. Pass --delete to remove the discovered target directories.`
+  );
 }
 
 function getWorktrees() {
@@ -111,7 +113,7 @@ function main() {
   }
 
   const entries = scanWorktreeTargets(getWorktrees());
-  const existing = entries.filter((entry) => entry.exists);
+  const existing = entries.filter(entry => entry.exists);
   const totalBytes = existing.reduce((sum, entry) => sum + entry.bytes, 0);
 
   if (args.json) {
@@ -129,7 +131,11 @@ function main() {
     return;
   }
 
-  console.log(args.delete ? 'Deleting worktree-local Rust target directories:' : 'Worktree-local Rust target directories:');
+  console.log(
+    args.delete
+      ? 'Deleting worktree-local Rust target directories:'
+      : 'Worktree-local Rust target directories:'
+  );
 
   if (entries.length === 0) {
     console.log('  No Git worktrees found.');
@@ -150,7 +156,9 @@ function main() {
   }
 
   const removed = removeTargets(existing);
-  console.log(`Removed ${removed.removedCount} target director${removed.removedCount === 1 ? 'y' : 'ies'} (${formatBytes(removed.removedBytes)}).`);
+  console.log(
+    `Removed ${removed.removedCount} target director${removed.removedCount === 1 ? 'y' : 'ies'} (${formatBytes(removed.removedBytes)}).`
+  );
 }
 
 main();

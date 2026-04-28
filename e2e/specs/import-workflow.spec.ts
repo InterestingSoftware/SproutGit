@@ -20,13 +20,13 @@ test.describe('Import workflow', () => {
     let recentProjects: string[] = [];
     while (Date.now() < waitDeadline) {
       recentProjects = await tauriPage.allTextContents('[data-testid="recent-project"]');
-      if (recentProjects.some((value) => value.includes('import-test'))) {
+      if (recentProjects.some(value => value.includes('import-test'))) {
         break;
       }
       await new Promise(resolve => setTimeout(resolve, 120));
     }
 
-    if (!recentProjects.some((value) => value.includes('import-test'))) {
+    if (!recentProjects.some(value => value.includes('import-test'))) {
       throw new Error(`Recent projects did not contain import-test: ${recentProjects.join(' | ')}`);
     }
 
@@ -36,7 +36,7 @@ test.describe('Import workflow', () => {
     const stateDbPath = join(workspacePath, '.sproutgit', 'state.db');
     const metaRows = querySqlite(
       stateDbPath,
-      `SELECT value FROM meta WHERE key = 'workspace_path'`,
+      `SELECT value FROM meta WHERE key = 'workspace_path'`
     );
     expect(metaRows.length).toBe(1);
     expect(metaRows[0]?.[0]).toContain('import-test-workspace');

@@ -1,15 +1,15 @@
 <script lang="ts">
-  import { onDestroy } from "svelte";
-  import { goto } from "$app/navigation";
-  import { page } from "$app/stores";
-  import Autocomplete from "$lib/components/Autocomplete.svelte";
-  import CommitGraph from "$lib/components/CommitGraph.svelte";
-  import ConfirmDialog from "$lib/components/ConfirmDialog.svelte";
-  import ContextMenu, { type MenuItem } from "$lib/components/ContextMenu.svelte";
-  import DiffViewer from "$lib/components/DiffViewer.svelte";
-  import Spinner from "$lib/components/Spinner.svelte";
-  import TerminalContainer from "$lib/components/TerminalContainer.svelte";
-  import WorkspaceHooksModal from "$lib/components/WorkspaceHooksModal.svelte";
+  import { onDestroy } from 'svelte';
+  import { goto } from '$app/navigation';
+  import { page } from '$app/stores';
+  import Autocomplete from '$lib/components/Autocomplete.svelte';
+  import CommitGraph from '$lib/components/CommitGraph.svelte';
+  import ConfirmDialog from '$lib/components/ConfirmDialog.svelte';
+  import ContextMenu, { type MenuItem } from '$lib/components/ContextMenu.svelte';
+  import DiffViewer from '$lib/components/DiffViewer.svelte';
+  import Spinner from '$lib/components/Spinner.svelte';
+  import TerminalContainer from '$lib/components/TerminalContainer.svelte';
+  import WorkspaceHooksModal from '$lib/components/WorkspaceHooksModal.svelte';
   import {
     checkoutWorktree,
     createManagedWorktree,
@@ -24,6 +24,7 @@
     listWorktrees,
     openInEditor,
     onHookProgress,
+    onHookTerminalLaunch,
     resetWorktreeBranch,
     runWorkspaceHook,
     getWorktreeStatus,
@@ -43,25 +44,19 @@
     type DiffFileEntry,
     type RefInfo,
     type HookProgressEvent,
+    type HookTerminalLaunchEvent,
     type WorkspaceHook,
     type WorkspaceHookTrigger,
     type WorkspaceStatus,
     type WorktreeInfo,
-  } from "$lib/sproutgit";
-  import { toast } from "$lib/toast.svelte";
-  import { tildify } from "$lib/paths.svelte";
-  import { validateBranchName, validateSourceRef } from "$lib/validation";
-  import { openPath } from "@tauri-apps/plugin-opener";
-  import {
-    FolderOpen,
-    Play,
-    Trash2,
-    SquareTerminal,
-    ShieldAlert,
-    Settings,
-  } from "lucide-svelte";
-  import WindowControls from "$lib/components/WindowControls.svelte";
-  import UpdateBadge from "$lib/components/UpdateBadge.svelte";
+  } from '$lib/sproutgit';
+  import { toast } from '$lib/toast.svelte';
+  import { tildify } from '$lib/paths.svelte';
+  import { validateBranchName, validateSourceRef } from '$lib/validation';
+  import { openPath } from '@tauri-apps/plugin-opener';
+  import { FolderOpen, Play, Trash2, SquareTerminal, ShieldAlert, Settings } from 'lucide-svelte';
+  import WindowControls from '$lib/components/WindowControls.svelte';
+  import UpdateBadge from '$lib/components/UpdateBadge.svelte';
 
   const GRAPH_PAGE_SIZE = 2000;
 
@@ -69,8 +64,8 @@
   let worktrees = $state<WorktreeInfo[]>([]);
   let graph = $state<CommitGraphResult | null>(null);
   let refs = $state<RefInfo[]>([]);
-  let selectedRef = $state("");
-  let newBranch = $state("");
+  let selectedRef = $state('');
+  let newBranch = $state('');
   let activeWorktreePath = $state<string | null>(null);
   let graphSkip = $state(0);
   let graphHasMore = $state(false);
@@ -81,7 +76,7 @@
   let loading = $state(true);
   let creating = $state(false);
   let deleting = $state<string | null>(null);
-  let error = $state("");
+  let error = $state('');
 
   // Confirm dialog state
   type ConfirmState = {
@@ -92,13 +87,13 @@
     onconfirm: () => void;
   } | null;
   let confirmDialog = $state<ConfirmState>(null);
-  let actionRef = $state("");
+  let actionRef = $state('');
   let formTouched = $state({ branch: false, ref: false });
 
   // Diff viewer state
   let selectedCommits = $state<CommitEntry[]>([]);
   let diffFiles = $state<DiffFileEntry[]>([]);
-  let diffContent = $state("");
+  let diffContent = $state('');
   let diffSelectedFile = $state<string | null>(null);
   let diffLoading = $state(false);
 
@@ -109,17 +104,21 @@
   let operationError = $state<string | null>(null);
   let activeHookName = $state<string | null>(null);
   let operationLogs = $state<string[]>([]);
+  let operationCompleted = $state(false);
 
-  type OperationHookStatus = "pending" | "running" | "success" | "skipped" | "timed_out" | "error";
+  type OperationHookStatus = 'pending' | 'running' | 'success' | 'skipped' | 'timed_out' | 'error';
   type OperationHookState = {
     id: string;
     name: string;
     trigger: string;
     status: OperationHookStatus;
+    keepOpenOnCompletion: boolean;
     logs: string[];
   };
 
   let operationHooks = $state<OperationHookState[]>([]);
+
+  const shouldKeepOperationOpen = $derived(operationHooks.some(hook => hook.keepOpenOnCompletion));
 
   const hookStatusSummary = $derived.by(() => {
     const summary = {
@@ -140,18 +139,18 @@
 
   function statusLabel(status: OperationHookStatus): string {
     switch (status) {
-      case "pending":
-        return "Pending";
-      case "running":
-        return "Running";
-      case "success":
-        return "Complete";
-      case "skipped":
-        return "Skipped";
-      case "timed_out":
-        return "Timed out";
-      case "error":
-        return "Error";
+      case 'pending':
+        return 'Pending';
+      case 'running':
+        return 'Running';
+      case 'success':
+        return 'Complete';
+      case 'skipped':
+        return 'Skipped';
+      case 'timed_out':
+        return 'Timed out';
+      case 'error':
+        return 'Error';
       default:
         return status;
     }
@@ -159,52 +158,52 @@
 
   function statusBadgeClass(status: OperationHookStatus): string {
     switch (status) {
-      case "pending":
-        return "border-[var(--sg-border)] bg-[var(--sg-surface-raised)] text-[var(--sg-text-faint)]";
-      case "running":
-        return "border-[var(--sg-accent)]/40 bg-[var(--sg-accent)]/15 text-[var(--sg-accent)]";
-      case "success":
-        return "border-[var(--sg-primary)]/40 bg-[var(--sg-primary)]/15 text-[var(--sg-primary)]";
-      case "skipped":
-        return "border-[var(--sg-warning)]/40 bg-[var(--sg-warning)]/15 text-[var(--sg-warning)]";
-      case "timed_out":
-        return "border-[var(--sg-danger)]/40 bg-[var(--sg-danger)]/15 text-[var(--sg-danger)]";
-      case "error":
-        return "border-[var(--sg-danger)]/40 bg-[var(--sg-danger)]/15 text-[var(--sg-danger)]";
+      case 'pending':
+        return 'border-[var(--sg-border)] bg-[var(--sg-surface-raised)] text-[var(--sg-text-faint)]';
+      case 'running':
+        return 'border-[var(--sg-accent)]/40 bg-[var(--sg-accent)]/15 text-[var(--sg-accent)]';
+      case 'success':
+        return 'border-[var(--sg-primary)]/40 bg-[var(--sg-primary)]/15 text-[var(--sg-primary)]';
+      case 'skipped':
+        return 'border-[var(--sg-warning)]/40 bg-[var(--sg-warning)]/15 text-[var(--sg-warning)]';
+      case 'timed_out':
+        return 'border-[var(--sg-danger)]/40 bg-[var(--sg-danger)]/15 text-[var(--sg-danger)]';
+      case 'error':
+        return 'border-[var(--sg-danger)]/40 bg-[var(--sg-danger)]/15 text-[var(--sg-danger)]';
       default:
-        return "border-[var(--sg-border)] bg-[var(--sg-surface-raised)] text-[var(--sg-text-faint)]";
+        return 'border-[var(--sg-border)] bg-[var(--sg-surface-raised)] text-[var(--sg-text-faint)]';
     }
   }
 
   function mapEventStatus(event: HookProgressEvent): OperationHookStatus {
-    if (event.phase === "start") return "running";
-    if (event.phase === "skipped") return "skipped";
-    if (event.status === "success") return "success";
-    if (event.status === "timed_out") return "timed_out";
-    return "error";
+    if (event.phase === 'start') return 'running';
+    if (event.phase === 'skipped') return 'skipped';
+    if (event.status === 'success') return 'success';
+    if (event.status === 'timed_out') return 'timed_out';
+    return 'error';
   }
 
-  function updateHookState(hookId: string, updater: (current: OperationHookState) => OperationHookState) {
-    const idx = operationHooks.findIndex((hook) => hook.id === hookId);
+  function updateHookState(
+    hookId: string,
+    updater: (current: OperationHookState) => OperationHookState
+  ) {
+    const idx = operationHooks.findIndex(hook => hook.id === hookId);
     if (idx < 0) return;
     const current = operationHooks[idx];
     const next = updater(current);
-    operationHooks = [
-      ...operationHooks.slice(0, idx),
-      next,
-      ...operationHooks.slice(idx + 1),
-    ];
+    operationHooks = [...operationHooks.slice(0, idx), next, ...operationHooks.slice(idx + 1)];
   }
 
   function ensureHookState(event: HookProgressEvent): OperationHookState {
-    const existing = operationHooks.find((hook) => hook.id === event.hookId);
+    const existing = operationHooks.find(hook => hook.id === event.hookId);
     if (existing) return existing;
 
     const created: OperationHookState = {
       id: event.hookId,
       name: event.hookName,
       trigger: event.trigger,
-      status: "pending",
+      status: 'pending',
+      keepOpenOnCompletion: event.keepOpenOnCompletion ?? false,
       logs: [],
     };
 
@@ -216,12 +215,15 @@
     operationLogs = [...operationLogs, line];
   }
 
-  function toOperationHookState(hook: Pick<WorkspaceHook, "id" | "name" | "trigger">): OperationHookState {
+  function toOperationHookState(
+    hook: Pick<WorkspaceHook, 'id' | 'name' | 'trigger' | 'keepOpenOnCompletion'>
+  ): OperationHookState {
     return {
       id: hook.id,
       name: hook.name,
       trigger: hook.trigger,
-      status: "pending",
+      status: 'pending',
+      keepOpenOnCompletion: hook.keepOpenOnCompletion,
       logs: [],
     };
   }
@@ -234,7 +236,7 @@
   }
 
   function slugifyForPath(name: string): string {
-    let output = "";
+    let output = '';
     let previousDash = false;
 
     for (const ch of name) {
@@ -243,20 +245,20 @@
         output += ch.toLowerCase();
         previousDash = false;
       } else if (!previousDash) {
-        output += "-";
+        output += '-';
         previousDash = true;
       }
     }
 
-    return output.replace(/^-+|-+$/g, "");
+    return output.replace(/^-+|-+$/g, '');
   }
 
   function isWorkspaceStatus(value: WorkspaceStatus | null | undefined): value is WorkspaceStatus {
     return Boolean(
-      value
-      && typeof value.workspacePath === "string"
-      && typeof value.rootPath === "string"
-      && typeof value.isSproutgitProject === "boolean"
+      value &&
+      typeof value.workspacePath === 'string' &&
+      typeof value.rootPath === 'string' &&
+      typeof value.isSproutgitProject === 'boolean'
     );
   }
 
@@ -273,44 +275,38 @@
         lastError = err;
       }
 
-      await new Promise((resolveDelay) => setTimeout(resolveDelay, 150 * (attempt + 1)));
+      await new Promise(resolveDelay => setTimeout(resolveDelay, 150 * (attempt + 1)));
     }
 
     if (lastError) {
       throw new Error(`Workspace inspection failed after retries: ${String(lastError)}`);
     }
 
-    throw new Error("Workspace inspection returned an invalid result after retries.");
+    throw new Error('Workspace inspection returned an invalid result after retries.');
   }
 
-  function isWorktreeListResult(value: { repoPath?: string; worktrees?: WorktreeInfo[] } | null | undefined): value is { repoPath: string; worktrees: WorktreeInfo[] } {
-    return Boolean(
-      value
-      && typeof value.repoPath === "string"
-      && Array.isArray(value.worktrees)
-    );
+  function isWorktreeListResult(
+    value: { repoPath?: string; worktrees?: WorktreeInfo[] } | null | undefined
+  ): value is { repoPath: string; worktrees: WorktreeInfo[] } {
+    return Boolean(value && typeof value.repoPath === 'string' && Array.isArray(value.worktrees));
   }
 
-  function isRefsResult(value: { repoPath?: string; refs?: RefInfo[] } | null | undefined): value is { repoPath: string; refs: RefInfo[] } {
-    return Boolean(
-      value
-      && typeof value.repoPath === "string"
-      && Array.isArray(value.refs)
-    );
+  function isRefsResult(
+    value: { repoPath?: string; refs?: RefInfo[] } | null | undefined
+  ): value is { repoPath: string; refs: RefInfo[] } {
+    return Boolean(value && typeof value.repoPath === 'string' && Array.isArray(value.refs));
   }
 
-  function isCommitGraphResult(value: CommitGraphResult | null | undefined): value is CommitGraphResult {
-    return Boolean(
-      value
-      && typeof value.repoPath === "string"
-      && Array.isArray(value.commits)
-    );
+  function isCommitGraphResult(
+    value: CommitGraphResult | null | undefined
+  ): value is CommitGraphResult {
+    return Boolean(value && typeof value.repoPath === 'string' && Array.isArray(value.commits));
   }
 
   async function readWithRetry<T>(
     reader: () => Promise<T>,
     isValid: (value: T | null | undefined) => boolean,
-    label: string,
+    label: string
   ): Promise<T> {
     let lastError: unknown = null;
 
@@ -324,7 +320,7 @@
         lastError = err;
       }
 
-      await new Promise((resolveDelay) => setTimeout(resolveDelay, 150));
+      await new Promise(resolveDelay => setTimeout(resolveDelay, 150));
     }
 
     if (lastError) {
@@ -335,7 +331,7 @@
   }
 
   function readWorkspaceHint(workspacePath: string): WorkspaceStatus | null {
-    const raw = sessionStorage.getItem("sg_workspace_hint");
+    const raw = sessionStorage.getItem('sg_workspace_hint');
     if (!raw) return null;
 
     try {
@@ -348,7 +344,7 @@
   }
 
   function collectHookClosure(allHooks: WorkspaceHook[], rootHookId: string): WorkspaceHook[] {
-    const hooksById = new Map(allHooks.map((hook) => [hook.id, hook]));
+    const hooksById = new Map(allHooks.map(hook => [hook.id, hook]));
     const collectedIds = new Set<string>();
 
     function visit(hookId: string) {
@@ -365,8 +361,8 @@
 
     return sortHooksByTriggerAndName(
       Array.from(collectedIds)
-        .map((hookId) => hooksById.get(hookId))
-        .filter((hook): hook is WorkspaceHook => Boolean(hook)),
+        .map(hookId => hooksById.get(hookId))
+        .filter((hook): hook is WorkspaceHook => Boolean(hook))
     );
   }
 
@@ -374,10 +370,13 @@
     title: string,
     detail: string,
     triggers: WorkspaceHookTrigger[] = [],
-    preloadedHooks: Array<Pick<WorkspaceHook, "id" | "name" | "trigger">> = [],
+    preloadedHooks: Array<
+      Pick<WorkspaceHook, 'id' | 'name' | 'trigger' | 'keepOpenOnCompletion'>
+    > = []
   ) {
     operationStatus = { title, detail };
     operationError = null;
+    operationCompleted = false;
     activeHookName = null;
     operationLogs = [];
     operationHooks = [];
@@ -392,20 +391,26 @@
 
     try {
       const hookLists = await Promise.all(
-        triggers.map(async (trigger) => {
+        triggers.map(async trigger => {
           const hooks = await listWorkspaceHooks(workspacePath, trigger);
-          return Array.isArray(hooks) ? hooks : [];
-        }),
+          return Array.isArray(hooks) ? hooks.filter(hook => hook.enabled) : [];
+        })
       );
 
       const seen = new Set<string>();
-      const hooks: Array<Pick<WorkspaceHook, "id" | "name" | "trigger">> = [];
+      const hooks: Array<Pick<WorkspaceHook, 'id' | 'name' | 'trigger' | 'keepOpenOnCompletion'>> =
+        [];
 
       for (const triggerHooks of hookLists) {
         for (const hook of triggerHooks) {
           if (seen.has(hook.id)) continue;
           seen.add(hook.id);
-          hooks.push({ id: hook.id, name: hook.name, trigger: hook.trigger });
+          hooks.push({
+            id: hook.id,
+            name: hook.name,
+            trigger: hook.trigger,
+            keepOpenOnCompletion: hook.keepOpenOnCompletion,
+          });
         }
       }
 
@@ -421,9 +426,26 @@
   }
 
   function endOperation(force = false) {
-    if (operationError && !force) return;
+    if (force) {
+      operationStatus = null;
+      operationError = null;
+      operationCompleted = false;
+      activeHookName = null;
+      operationHooks = [];
+      return;
+    }
+
+    if (operationError) return;
+
+    if (shouldKeepOperationOpen) {
+      operationCompleted = true;
+      activeHookName = null;
+      return;
+    }
+
     operationStatus = null;
     operationError = null;
+    operationCompleted = false;
     activeHookName = null;
     operationHooks = [];
   }
@@ -434,29 +456,31 @@
     ensureHookState(event);
     const nextStatus = mapEventStatus(event);
 
-    if (event.phase === "start") {
+    if (event.phase === 'start') {
       activeHookName = event.hookName;
       appendOperationLog(`▶ ${event.hookName} (${event.trigger})`);
-      updateHookState(event.hookId, (current) => ({
+      updateHookState(event.hookId, current => ({
         ...current,
         name: event.hookName,
         trigger: event.trigger,
+        keepOpenOnCompletion: event.keepOpenOnCompletion ?? current.keepOpenOnCompletion,
         status: nextStatus,
-        logs: [...current.logs, "Started"],
+        logs: [...current.logs, 'Started'],
       }));
       return;
     }
 
-    if (event.phase === "skipped") {
+    if (event.phase === 'skipped') {
       appendOperationLog(`⏭ ${event.hookName} skipped`);
-      updateHookState(event.hookId, (current) => ({
+      updateHookState(event.hookId, current => ({
         ...current,
         name: event.hookName,
         trigger: event.trigger,
+        keepOpenOnCompletion: event.keepOpenOnCompletion ?? current.keepOpenOnCompletion,
         status: nextStatus,
         logs: event.errorMessage
           ? [...current.logs, `Skipped: ${event.errorMessage}`]
-          : [...current.logs, "Skipped"],
+          : [...current.logs, 'Skipped'],
       }));
       if (event.errorMessage?.trim()) {
         appendOperationLog(`  error: ${event.errorMessage}`);
@@ -465,7 +489,7 @@
     }
 
     appendOperationLog(
-      `${event.status === "success" ? "✓" : "✗"} ${event.hookName} (${event.status})`,
+      `${event.status === 'success' ? '✓' : '✗'} ${event.hookName} (${event.status})`
     );
 
     if (event.stdoutSnippet?.trim()) {
@@ -492,10 +516,11 @@
       hookLogs.push(`error: ${event.errorMessage}`);
     }
 
-    updateHookState(event.hookId, (current) => ({
+    updateHookState(event.hookId, current => ({
       ...current,
       name: event.hookName,
       trigger: event.trigger,
+      keepOpenOnCompletion: event.keepOpenOnCompletion ?? current.keepOpenOnCompletion,
       status: nextStatus,
       logs: [...current.logs, ...hookLogs],
     }));
@@ -509,35 +534,34 @@
   const refError = $derived(validateSourceRef(selectedRef));
   const formValid = $derived(!branchError && !refError);
 
-  const rootWorktree = $derived(
-    worktrees.find((item) => item.path === workspace?.rootPath) ?? null,
-  );
+  const rootWorktree = $derived(worktrees.find(item => item.path === workspace?.rootPath) ?? null);
 
-  const nonRootWorktrees = $derived(
-    worktrees.filter((item) => item.path !== workspace?.rootPath),
-  );
+  const nonRootWorktrees = $derived(worktrees.filter(item => item.path !== workspace?.rootPath));
 
   const selectedWorktree = $derived(
-    worktrees.find((item) => item.path === activeWorktreePath) ?? null,
+    worktrees.find(
+      item =>
+        item.path.toLowerCase() === activeWorktreePath?.toLowerCase()
+    ) ?? null
   );
 
-  const refItems = $derived(
-    refs.map((r) => ({ label: r.name, value: r.name, detail: r.kind })),
-  );
+  const refItems = $derived(refs.map(r => ({ label: r.name, value: r.name, detail: r.kind })));
 
   function initializeGraphState(nextGraph: CommitGraphResult) {
     graphGeneration += 1;
     graph = nextGraph;
     graphSkip = nextGraph.commits.length;
     graphHasMore = nextGraph.commits.length === GRAPH_PAGE_SIZE;
-    graphSeenHashes = new Set(nextGraph.commits.map((commit) => commit.hash));
+    graphSeenHashes = new Set(nextGraph.commits.map(commit => commit.hash));
   }
 
   // ── Staging/Unstaging State ──
   let worktreeStatus = $state<StatusFileEntry[]>([]);
-  const stagedFiles = $derived(worktreeStatus.filter((f) => f.indexStatus !== " " && f.indexStatus !== "?"));
-  const unstagedFiles = $derived(worktreeStatus.filter((f) => f.workTreeStatus !== " "));
-  let commitMessage = $state("");
+  const stagedFiles = $derived(
+    worktreeStatus.filter(f => f.indexStatus !== ' ' && f.indexStatus !== '?')
+  );
+  const unstagedFiles = $derived(worktreeStatus.filter(f => f.workTreeStatus !== ' '));
+  let commitMessage = $state('');
   let statusLoading = $state(false);
   let stagingAction = $state<string | null>(null);
   let committing = $state(false);
@@ -545,20 +569,28 @@
   // ── Active tab ──────────────────────────────────────────────────────────────
   // Three tabs: 'history' | 'changes' | 'terminal'
   // Initialised from sessionStorage, with migration from the old boolean key.
-  type WorkspaceTab = "history" | "changes" | "terminal";
+  type WorkspaceTab = 'history' | 'changes' | 'terminal';
   let activeTab = $state<WorkspaceTab>(
     (() => {
-      if (typeof sessionStorage === "undefined") return "history";
-      const saved = sessionStorage.getItem("sg_active_tab");
-      if (saved === "history" || saved === "changes" || saved === "terminal") return saved;
+      if (typeof sessionStorage === 'undefined') return 'history';
+      const saved = sessionStorage.getItem('sg_active_tab');
+      if (saved === 'history' || saved === 'changes' || saved === 'terminal') return saved;
       // Migrate from the old boolean sg_show_history key
-      return sessionStorage.getItem("sg_show_history") === "false" ? "changes" : "history";
-    })(),
+      return sessionStorage.getItem('sg_show_history') === 'false' ? 'changes' : 'history';
+    })()
   );
 
   // ── Terminal state ──────────────────────────────────────────────────────────
   let availableShells = $state<string[]>([]);
-  let defaultShell = $state("");
+  let defaultShell = $state('');
+  type HookTerminalLaunchRequest = {
+    id: string;
+    cwd: string;
+    shell: string;
+    label: string;
+    command: string;
+  };
+  let hookTerminalLaunchRequest = $state<HookTerminalLaunchRequest | null>(null);
   // Paths whose terminal panel has been initialized at least once.
   // Once added, the TerminalPanel stays mounted (display:none when inactive)
   // so the PTY session survives tab switches and worktree switches.
@@ -567,7 +599,7 @@
   // Lazily initialize terminal for the active worktree the first time the tab is shown.
   $effect(() => {
     if (
-      activeTab === "terminal" &&
+      activeTab === 'terminal' &&
       defaultShell &&
       activeWorktreePath &&
       activeWorktreePath !== workspace?.rootPath &&
@@ -615,20 +647,20 @@
   const hasMultiSelection = $derived(selectedFilePaths.size > 1);
   // Ordered composite keys for range/drag selection spanning both sections.
   const allFileKeys = $derived([
-    ...unstagedFiles.map((f) => `unstaged:${f.path}`),
-    ...stagedFiles.map((f) => `staged:${f.path}`),
+    ...unstagedFiles.map(f => `unstaged:${f.path}`),
+    ...stagedFiles.map(f => `staged:${f.path}`),
   ]);
 
   async function loadAllWorktreeChangeCounts(paths: string[]) {
     const results = await Promise.all(
-      paths.map(async (p) => {
+      paths.map(async p => {
         try {
           const r = await getWorktreeStatus(p);
           return [p, r.files.length] as [string, number];
         } catch {
           return [p, 0] as [string, number];
         }
-      }),
+      })
     );
     worktreeChangeCounts = Object.fromEntries(results);
   }
@@ -636,13 +668,13 @@
   // ── Staging Diff State ──
   let stagingDiffFile = $state<string | null>(null);
   let stagingDiffStaged = $state(false);
-  let stagingDiffContent = $state("");
+  let stagingDiffContent = $state('');
   let stagingDiffLoading = $state(false);
 
   // Original (pre-rename) path for the currently-previewed file, if it is a rename.
   const stagingDiffOrigPath = $derived.by(() => {
     if (!stagingDiffFile) return null;
-    const entry = worktreeStatus.find((f) => f.path === stagingDiffFile);
+    const entry = worktreeStatus.find(f => f.path === stagingDiffFile);
     return entry?.origPath ?? null;
   });
 
@@ -656,7 +688,7 @@
       stagingDiffContent = result.diff;
     } catch (err) {
       toast.error(`Failed to load diff: ${err}`);
-      stagingDiffContent = "";
+      stagingDiffContent = '';
     } finally {
       stagingDiffLoading = false;
     }
@@ -676,13 +708,11 @@
       if (selectedFilePaths.size > 0) {
         const validKeys = new Set<string>([
           ...result.files
-            .filter((f) => f.indexStatus !== " " && f.indexStatus !== "?")
-            .map((f) => `staged:${f.path}`),
-          ...result.files
-            .filter((f) => f.workTreeStatus !== " ")
-            .map((f) => `unstaged:${f.path}`),
+            .filter(f => f.indexStatus !== ' ' && f.indexStatus !== '?')
+            .map(f => `staged:${f.path}`),
+          ...result.files.filter(f => f.workTreeStatus !== ' ').map(f => `unstaged:${f.path}`),
         ]);
-        selectedFilePaths = new Set([...selectedFilePaths].filter((k) => validKeys.has(k)));
+        selectedFilePaths = new Set([...selectedFilePaths].filter(k => validKeys.has(k)));
       }
     } catch (err) {
       toast.error(`Failed to load status: ${err}`);
@@ -727,16 +757,16 @@
 
   async function handleCreateCommit() {
     if (!selectedWorktree || !commitMessage.trim()) {
-      toast.error("Commit message is required");
+      toast.error('Commit message is required');
       return;
     }
     committing = true;
     try {
       const result = await createCommit(selectedWorktree.path, commitMessage);
       toast.success(`Committed: ${result.subject}`);
-      commitMessage = "";
+      commitMessage = '';
       stagingDiffFile = null;
-      stagingDiffContent = "";
+      stagingDiffContent = '';
       refreshWorkspaceData();
     } catch (err) {
       toast.error(String(err));
@@ -766,7 +796,7 @@
     didDragExpand = true;
     // No diff to show while multiple files are being drag-selected.
     stagingDiffFile = null;
-    stagingDiffContent = "";
+    stagingDiffContent = '';
   }
 
   function handleFileClick(e: MouseEvent, key: string) {
@@ -805,12 +835,12 @@
     // Show diff for a single selection; clear it for zero or multiple.
     if (selectedFilePaths.size === 1) {
       const onlyKey = [...selectedFilePaths][0];
-      const isStaged = onlyKey.startsWith("staged:");
+      const isStaged = onlyKey.startsWith('staged:');
       const onlyPath = onlyKey.slice(isStaged ? 7 : 9); // "staged:".length=7, "unstaged:".length=9
       void loadStagingDiff(onlyPath, isStaged);
     } else {
       stagingDiffFile = null;
-      stagingDiffContent = "";
+      stagingDiffContent = '';
     }
   }
 
@@ -820,8 +850,8 @@
       isDragSelecting = false;
       dragStartKey = null;
     }
-    window.addEventListener("mouseup", endDrag);
-    return () => window.removeEventListener("mouseup", endDrag);
+    window.addEventListener('mouseup', endDrag);
+    return () => window.removeEventListener('mouseup', endDrag);
   });
 
   $effect(() => {
@@ -840,7 +870,7 @@
   async function handleWorktreeChanged(changedPathRaw: string) {
     // Normalize path separators: the Rust watcher emits OS-native paths
     // (backslashes on Windows) while listWorktrees returns git-output forward slashes.
-    const changedPath = changedPathRaw.replace(/\\/g, "/");
+    const changedPath = changedPathRaw.replace(/\\/g, '/');
     // Update the change count and file list for the specific worktree that changed.
     // Never resets activeWorktreePath or activeTab, and never touches the graph
     // (to avoid a visible full re-render while the user is on the Changes tab).
@@ -850,7 +880,7 @@
       if (changedPath === selectedWorktree?.path) {
         worktreeStatus = result.files;
         // Refresh active diff to reflect the new working tree / index state.
-        if (stagingDiffFile && activeTab === "changes") {
+        if (stagingDiffFile && activeTab === 'changes') {
           void loadStagingDiff(stagingDiffFile, stagingDiffStaged);
         }
       }
@@ -861,13 +891,13 @@
 
   async function setupWatcher() {
     if (!workspace) return;
-    const allPaths = worktrees.map((wt) => wt.path);
+    const allPaths = worktrees.map(wt => wt.path);
     try {
       await startWatchingWorktrees(allPaths, workspace.rootPath);
       if (unlistenWorktreeChanged) unlistenWorktreeChanged();
       unlistenWorktreeChanged = await onWorktreeChanged(handleWorktreeChanged);
     } catch (e) {
-      console.warn("Failed to start file watcher:", e);
+      console.warn('Failed to start file watcher:', e);
     }
   }
 
@@ -879,79 +909,95 @@
   // ── Session state persistence (survives HMR reloads in dev mode) ──
 
   $effect(() => {
-    if (activeWorktreePath) sessionStorage.setItem("sg_active_wt", activeWorktreePath);
+    if (activeWorktreePath) sessionStorage.setItem('sg_active_wt', activeWorktreePath);
   });
   $effect(() => {
-    sessionStorage.setItem("sg_active_tab", activeTab);
+    sessionStorage.setItem('sg_active_tab', activeTab);
   });
 
   async function loadWorkspace() {
     loading = true;
-    error = "";
+    error = '';
 
     try {
-      const workspacePath = $page.url.searchParams.get("workspace")?.trim();
+      const workspacePath = $page.url.searchParams.get('workspace')?.trim();
       if (!workspacePath) {
-        throw new Error("Missing workspace path. Open a project from the home screen.");
+        throw new Error('Missing workspace path. Open a project from the home screen.');
       }
 
       const hintedStatus = readWorkspaceHint(workspacePath);
-      const status = await inspectWorkspaceWithRetry(workspacePath).catch((err) => {
+      const status = await inspectWorkspaceWithRetry(workspacePath).catch(err => {
         if (hintedStatus) {
           return hintedStatus;
         }
         throw err;
       });
       if (!status.isSproutgitProject) {
-        throw new Error("Path is not a SproutGit project.");
+        throw new Error('Path is not a SproutGit project.');
       }
 
-      workspace = status;
+      // Normalize all paths to lowercase for consistent comparison
+      workspace = {
+        ...status,
+        rootPath: status.rootPath.toLowerCase(),
+        workspacePath: status.workspacePath.toLowerCase(),
+        worktreesPath: status.worktreesPath.toLowerCase(),
+        metadataPath: status.metadataPath.toLowerCase(),
+        stateDbPath: status.stateDbPath.toLowerCase(),
+      };
 
       const [worktreeData, refsData, graphData] = await Promise.all([
-        readWithRetry(() => listWorktrees(status.rootPath), isWorktreeListResult, "Worktree list"),
-        readWithRetry(() => listRefs(status.rootPath), isRefsResult, "Ref list"),
+        readWithRetry(() => listWorktrees(status.rootPath), isWorktreeListResult, 'Worktree list'),
+        readWithRetry(() => listRefs(status.rootPath), isRefsResult, 'Ref list'),
         readWithRetry(
           () => getCommitGraph(status.rootPath, GRAPH_PAGE_SIZE, 0),
           isCommitGraphResult,
-          "Commit graph",
+          'Commit graph'
         ),
       ]);
 
-      worktrees = worktreeData.worktrees;
+      worktrees = worktreeData.worktrees.map(wt => ({
+        ...wt,
+        path: wt.path.toLowerCase(),
+      }));
       refs = refsData.refs;
       initializeGraphState(graphData);
-      selectedRef = refsData.refs[0]?.name ?? "HEAD";
+      selectedRef = refsData.refs[0]?.name ?? 'HEAD';
 
       if (graphHasMore) {
         // Fetch total commit count in the background only when the first page is partial.
         totalCommitCount = null;
-        countCommits(status.rootPath).then((n) => { totalCommitCount = n; }).catch(() => {});
+        countCommits(status.rootPath)
+          .then(n => {
+            totalCommitCount = n;
+          })
+          .catch(() => {});
       } else {
         totalCommitCount = graphData.commits.length;
       }
 
       // Restore the previously active worktree if still valid (survives HMR).
-      const savedWt = sessionStorage.getItem("sg_active_wt");
-      if (savedWt && worktreeData.worktrees.some((wt) => wt.path === savedWt)) {
+      const savedWt = sessionStorage.getItem('sg_active_wt')?.toLowerCase();
+      const normalizedWorktrees = worktreeData.worktrees.map(wt => wt.path.toLowerCase());
+      if (savedWt && normalizedWorktrees.some(wt => wt === savedWt)) {
         activeWorktreePath = savedWt;
       } else {
-        activeWorktreePath = worktreeData.worktrees[0]?.path ?? null;
+        activeWorktreePath = normalizedWorktrees[0] ?? null;
       }
       // (activeTab is already initialised from sessionStorage at declaration time.)
 
       // Load available shells and the user's default shell preference
       const [shells, savedShell] = await Promise.all([
         listAvailableShells().catch(() => [] as string[]),
-        getAppSetting("default_shell").catch(() => null),
+        getAppSetting('default_shell').catch(() => null),
       ]);
       availableShells = shells;
-      defaultShell = savedShell ?? shells[0] ?? "";
+      defaultShell = savedShell ?? shells[0] ?? '';
 
       // Load change counts for all non-root worktrees
       const nonRoot = worktreeData.worktrees
-        .filter((wt) => wt.path !== status.rootPath)
-        .map((wt) => wt.path);
+        .filter(wt => wt.path.toLowerCase() !== status.rootPath.toLowerCase())
+        .map(wt => wt.path.toLowerCase());
       void loadAllWorktreeChangeCounts(nonRoot);
       void setupWatcher();
     } catch (err) {
@@ -969,18 +1015,18 @@
     if (!formValid) return;
 
     creating = true;
-    error = "";
+    error = '';
 
     try {
       await beginOperation(
-        "Creating worktree",
-        "Running hooks and creating the managed worktree...",
-        ["before_worktree_create", "after_worktree_create"],
+        'Creating worktree',
+        'Running hooks and creating the managed worktree...',
+        ['before_worktree_create', 'after_worktree_create']
       );
 
       const currentWorkspace = workspace;
       if (!currentWorkspace) {
-        throw new Error("Workspace context is unavailable");
+        throw new Error('Workspace context is unavailable');
       }
 
       const requestedBranch = newBranch;
@@ -990,40 +1036,44 @@
         currentWorkspace.worktreesPath,
         selectedRef,
         requestedBranch,
+        activeWorktreePath
       );
 
       const createdBranch =
-        result && typeof result.branch === "string" && result.branch.trim()
+        result && typeof result.branch === 'string' && result.branch.trim()
           ? result.branch
           : requestedBranch;
       const createdWorktreePath =
-        result && typeof result.worktreePath === "string" && result.worktreePath.trim()
+        result && typeof result.worktreePath === 'string' && result.worktreePath.trim()
           ? result.worktreePath
           : `${currentWorkspace.worktreesPath}/${slugifyForPath(createdBranch)}`;
 
       toast.success(`Worktree created: ${createdBranch}`);
 
+      const normalizedCreatedPath = createdWorktreePath.replace(/\\/g, '/').toLowerCase();
       try {
         await refreshWorkspaceData();
+        // Switch to the newly created worktree, falling back to first non-root.
         activeWorktreePath =
-          worktrees.find((wt) => wt.path !== currentWorkspace.rootPath)?.path ??
+          worktrees.find(wt => wt.path.toLowerCase() === normalizedCreatedPath)?.path ??
+          worktrees.find(wt => wt.path !== currentWorkspace.rootPath)?.path ??
           worktrees[0]?.path ??
           null;
       } catch {
         const fallbackWorktree: WorktreeInfo = {
-          path: createdWorktreePath,
+          path: normalizedCreatedPath,
           branch: createdBranch,
           head: null,
           detached: false,
         };
         worktrees = [
-          ...worktrees.filter((wt) => wt.path !== fallbackWorktree.path),
+          ...worktrees.filter(wt => wt.path !== fallbackWorktree.path),
           fallbackWorktree,
         ];
         activeWorktreePath = fallbackWorktree.path;
       }
 
-      newBranch = "";
+      newBranch = '';
       formTouched = { branch: false, ref: false };
     } catch (err) {
       failOperation(String(err));
@@ -1038,16 +1088,42 @@
   loadWorkspace();
 
   const unlistenHookProgress = onHookProgress(handleHookProgress);
+  const unlistenHookTerminalLaunch = onHookTerminalLaunch(handleHookTerminalLaunch);
   onDestroy(() => {
-    void unlistenHookProgress.then((unlisten) => unlisten());
+    void unlistenHookProgress.then(unlisten => unlisten());
+    void unlistenHookTerminalLaunch.then(unlisten => unlisten());
   });
+
+  function handleHookTerminalLaunch(event: HookTerminalLaunchEvent) {
+    const cwd = event.cwd.replace(/\\/g, '/').toLowerCase();
+    // Set the active worktree FIRST so the lazy-init $effect (which may fire between
+    // individual assignments in an async callback context) always sees the correct
+    // worktree path and does not add the previously-active worktree to terminalInitializedPaths.
+    activeWorktreePath = cwd;
+    activeTab = 'terminal';
+    // Ensure the TerminalContainer for this worktree is in the DOM.
+    if (!terminalInitializedPaths.has(cwd)) {
+      terminalInitializedPaths = new Set([...terminalInitializedPaths, cwd]);
+    }
+    // Set the launch request for the TerminalContainer to pick up the command
+    hookTerminalLaunchRequest = {
+      id: `${event.hookId}-${Date.now()}`,
+      cwd,
+      shell: event.shell,
+      label: event.hookName,
+      command: event.command,
+    };
+    appendOperationLog(
+      `Opened ${event.hookName} in the ${cwd.split('/').pop() ?? 'worktree'} terminal.`
+    );
+  }
 
   function handleCreateWorktreeFromGraph(fromRef: string) {
     selectedRef = fromRef;
-    newBranch = "";
+    newBranch = '';
     // Focus the new branch input after state update
     requestAnimationFrame(() => {
-      document.getElementById("new-branch")?.focus();
+      document.getElementById('new-branch')?.focus();
     });
   }
 
@@ -1069,7 +1145,7 @@
   }
 
   function formatHookTrigger(trigger: WorkspaceHookTrigger): string {
-    return trigger === "manual" ? "manual" : trigger.replaceAll("_", " ");
+    return trigger === 'manual' ? 'manual' : trigger.replaceAll('_', ' ');
   }
 
   async function openRunHookMenu(wt: WorktreeInfo, anchor: HTMLElement) {
@@ -1077,26 +1153,26 @@
 
     try {
       const availableHooks = (await listWorkspaceHooks(workspace.workspacePath)).filter(
-        (hook) => hook.enabled,
+        hook => hook.enabled
       );
 
       if (availableHooks.length === 0) {
-        toast.info("No enabled hooks are available to run");
+        toast.info('No enabled hooks are available to run');
         return;
       }
 
       const manualHooks = sortHooksByTriggerAndName(
-        availableHooks.filter((hook) => hook.trigger === "manual"),
+        availableHooks.filter(hook => hook.trigger === 'manual')
       );
       const lifecycleHooks = sortHooksByTriggerAndName(
-        availableHooks.filter((hook) => hook.trigger !== "manual"),
+        availableHooks.filter(hook => hook.trigger !== 'manual')
       );
       const items: MenuItem[] = [];
 
       for (const hook of manualHooks) {
         items.push({
           label: hook.name,
-          icon: "▶",
+          icon: '▶',
           action: () => void handleRunHook(wt, hook, availableHooks),
         });
       }
@@ -1108,7 +1184,7 @@
       for (const hook of lifecycleHooks) {
         items.push({
           label: `${hook.name} (${formatHookTrigger(hook.trigger)})`,
-          icon: "▶",
+          icon: '▶',
           action: () => void handleRunHook(wt, hook, availableHooks),
         });
       }
@@ -1127,22 +1203,27 @@
   async function handleRunHook(
     wt: WorktreeInfo,
     hook: WorkspaceHook,
-    availableHooks: WorkspaceHook[],
+    availableHooks: WorkspaceHook[]
   ) {
     if (!workspace) return;
 
     worktreeContextMenu = null;
     const closureHooks = collectHookClosure(availableHooks, hook.id);
-    const label = wt.branch ?? wt.path.split("/").pop() ?? "worktree";
+    const label = wt.branch ?? wt.path.split('/').pop() ?? 'worktree';
 
     try {
       await beginOperation(
-        "Running hook",
+        'Running hook',
         `Executing ${hook.name} for ${label}...`,
         [],
-        closureHooks,
+        closureHooks
       );
-      await runWorkspaceHook(workspace.workspacePath, hook.id, wt.path);
+      await runWorkspaceHook(
+        workspace.workspacePath,
+        hook.id,
+        wt.path,
+        activeWorktreePath ?? wt.path
+      );
       toast.success(`Ran hook: ${hook.name}`);
     } catch (err) {
       failOperation(String(err));
@@ -1154,31 +1235,31 @@
 
   async function handleDeleteWorktree(wt: WorktreeInfo) {
     if (!workspace) return;
-    const label = wt.branch ?? wt.path.split("/").pop() ?? "worktree";
+    const label = wt.branch ?? wt.path.split('/').pop() ?? 'worktree';
     confirmDialog = {
-      title: "Delete worktree",
+      title: 'Delete worktree',
       message: `Delete worktree "${label}"? This will remove the directory and prune the worktree.`,
-      confirmLabel: "Delete",
+      confirmLabel: 'Delete',
       danger: true,
       onconfirm: async () => {
         confirmDialog = null;
         deleting = wt.path;
         try {
           await beginOperation(
-            "Removing worktree",
-            "Running hooks and removing worktree files...",
-            ["before_worktree_remove", "after_worktree_remove"],
+            'Removing worktree',
+            'Running hooks and removing worktree files...',
+            ['before_worktree_remove', 'after_worktree_remove']
           );
-          await deleteManagedWorktree(workspace!.rootPath, wt.path, true);
+          await deleteManagedWorktree(workspace!.rootPath, wt.path, true, activeWorktreePath);
           toast.success(`Deleted worktree: ${label}`);
           try {
             await refreshWorkspaceData();
           } catch {
-            worktrees = worktrees.filter((worktree) => worktree.path !== wt.path);
+            worktrees = worktrees.filter(worktree => worktree.path !== wt.path);
           }
           if (activeWorktreePath === wt.path) {
             activeWorktreePath =
-              worktrees.find((w) => w.path !== workspace!.rootPath)?.path ??
+              worktrees.find(w => w.path !== workspace!.rootPath)?.path ??
               worktrees[0]?.path ??
               null;
           }
@@ -1197,28 +1278,35 @@
     if (!workspace) return;
     const workspaceRootPath = workspace.rootPath;
     const [refreshedWt, refreshedGraph, refreshedRefs] = await Promise.all([
-      readWithRetry(() => listWorktrees(workspaceRootPath), isWorktreeListResult, "Worktree list"),
+      readWithRetry(() => listWorktrees(workspaceRootPath), isWorktreeListResult, 'Worktree list'),
       readWithRetry(
         () => getCommitGraph(workspaceRootPath, GRAPH_PAGE_SIZE, 0),
         isCommitGraphResult,
-        "Commit graph",
+        'Commit graph'
       ),
-      readWithRetry(() => listRefs(workspaceRootPath), isRefsResult, "Ref list"),
+      readWithRetry(() => listRefs(workspaceRootPath), isRefsResult, 'Ref list'),
     ]);
-    worktrees = refreshedWt.worktrees;
+    worktrees = refreshedWt.worktrees.map(wt => ({
+      ...wt,
+      path: wt.path.toLowerCase(),
+    }));
     initializeGraphState(refreshedGraph);
     refs = refreshedRefs.refs;
     if (graphHasMore) {
       // Refresh total commit count in the background only when the graph is partial.
       totalCommitCount = null;
-      countCommits(workspaceRootPath).then((n) => { totalCommitCount = n; }).catch(() => {});
+      countCommits(workspaceRootPath)
+        .then(n => {
+          totalCommitCount = n;
+        })
+        .catch(() => {});
     } else {
       totalCommitCount = refreshedGraph.commits.length;
     }
     // Refresh change counts for all non-root worktrees
     const nonRoot = refreshedWt.worktrees
-      .filter((wt) => wt.path !== workspaceRootPath)
-      .map((wt) => wt.path);
+      .filter(wt => wt.path !== workspaceRootPath)
+      .map(wt => wt.path);
     void loadAllWorktreeChangeCounts(nonRoot);
     // Restart watcher so any newly created/deleted worktrees are included.
     void setupWatcher();
@@ -1237,7 +1325,7 @@
       if (!graph) {
         initializeGraphState(nextPage);
       } else {
-        const newCommits = nextPage.commits.filter((commit) => !graphSeenHashes.has(commit.hash));
+        const newCommits = nextPage.commits.filter(commit => !graphSeenHashes.has(commit.hash));
         for (const commit of newCommits) {
           graphSeenHashes.add(commit.hash);
         }
@@ -1257,23 +1345,24 @@
 
   async function handleCheckoutWorktree(wt: WorktreeInfo, targetRef: string) {
     if (!workspace) return;
-    const label = wt.branch ?? "worktree";
+    const label = wt.branch ?? 'worktree';
     confirmDialog = {
-      title: "Checkout branch",
+      title: 'Checkout branch',
       message: `Switch worktree "${label}" to ${targetRef}? Uncommitted changes will be auto-stashed.`,
-      confirmLabel: "Checkout",
+      confirmLabel: 'Checkout',
       danger: false,
       onconfirm: async () => {
         confirmDialog = null;
         try {
-          await beginOperation(
-            "Switching worktree",
-            "Running hooks and switching branch...",
-            ["before_worktree_switch", "after_worktree_switch"],
-          );
+          await beginOperation('Switching worktree', 'Running hooks and switching branch...', [
+            'before_worktree_switch',
+            'after_worktree_switch',
+          ]);
           const result = await checkoutWorktree(wt.path, targetRef, true);
           if (result.stashed) {
-            toast.warning(`Checked out ${result.newBranch} — changes were stashed (may need manual resolve)`);
+            toast.warning(
+              `Checked out ${result.newBranch} — changes were stashed (may need manual resolve)`
+            );
           } else {
             toast.success(`Checked out ${result.newBranch}`);
           }
@@ -1288,23 +1377,28 @@
     };
   }
 
-  async function handleResetWorktree(wt: WorktreeInfo, targetRef: string, mode: "soft" | "mixed" | "hard") {
+  async function handleResetWorktree(
+    wt: WorktreeInfo,
+    targetRef: string,
+    mode: 'soft' | 'mixed' | 'hard'
+  ) {
     if (!workspace) return;
-    const label = wt.branch ?? "worktree";
-    const modeDesc = mode === "hard"
-      ? "This will discard all uncommitted changes."
-      : mode === "mixed"
-        ? "This will unstage changes but keep working directory modifications."
-        : "This will only move the branch pointer.";
+    const label = wt.branch ?? 'worktree';
+    const modeDesc =
+      mode === 'hard'
+        ? 'This will discard all uncommitted changes.'
+        : mode === 'mixed'
+          ? 'This will unstage changes but keep working directory modifications.'
+          : 'This will only move the branch pointer.';
     confirmDialog = {
       title: `Reset branch (${mode})`,
       message: `Reset "${label}" to ${targetRef}? ${modeDesc}`,
       confirmLabel: `Reset ${mode}`,
-      danger: mode === "hard",
+      danger: mode === 'hard',
       onconfirm: async () => {
         confirmDialog = null;
         try {
-          await beginOperation("Resetting branch", `Applying ${mode} reset to ${targetRef}...`);
+          await beginOperation('Resetting branch', `Applying ${mode} reset to ${targetRef}...`);
           await resetWorktreeBranch(wt.path, targetRef, mode);
           toast.success(`Reset ${label} to ${targetRef} (${mode})`);
           await refreshWorkspaceData();
@@ -1324,7 +1418,7 @@
     handleCheckoutWorktree(selectedWorktree, targetRef);
   }
 
-  function handleGraphReset(targetRef: string, mode: "soft" | "mixed" | "hard") {
+  function handleGraphReset(targetRef: string, mode: 'soft' | 'mixed' | 'hard') {
     if (!selectedWorktree || activeWorktreePath === workspace?.rootPath) return;
     handleResetWorktree(selectedWorktree, targetRef, mode);
   }
@@ -1333,7 +1427,7 @@
   async function handleCommitSelect(commits: CommitEntry[]) {
     selectedCommits = commits;
     diffFiles = [];
-    diffContent = "";
+    diffContent = '';
     diffSelectedFile = null;
 
     if (commits.length === 0 || !workspace) return;
@@ -1348,8 +1442,8 @@
         // Multiple commits: diff from oldest to newest
         const sorted = [...commits].sort((a, b) => {
           // Use graph order (index in commits array)
-          const aIdx = graph?.commits.findIndex((c) => c.hash === a.hash) ?? 0;
-          const bIdx = graph?.commits.findIndex((c) => c.hash === b.hash) ?? 0;
+          const aIdx = graph?.commits.findIndex(c => c.hash === a.hash) ?? 0;
+          const bIdx = graph?.commits.findIndex(c => c.hash === b.hash) ?? 0;
           return bIdx - aIdx; // Higher index = older in graph
         });
         const oldest = sorted[0];
@@ -1370,12 +1464,17 @@
     diffLoading = true;
     try {
       if (selectedCommits.length === 1) {
-        const result = await getDiffContent(workspace.rootPath, selectedCommits[0].hash, null, filePath);
+        const result = await getDiffContent(
+          workspace.rootPath,
+          selectedCommits[0].hash,
+          null,
+          filePath
+        );
         diffContent = result.diff;
       } else {
         const sorted = [...selectedCommits].sort((a, b) => {
-          const aIdx = graph?.commits.findIndex((c) => c.hash === a.hash) ?? 0;
-          const bIdx = graph?.commits.findIndex((c) => c.hash === b.hash) ?? 0;
+          const aIdx = graph?.commits.findIndex(c => c.hash === a.hash) ?? 0;
+          const bIdx = graph?.commits.findIndex(c => c.hash === b.hash) ?? 0;
           return bIdx - aIdx;
         });
         const oldest = sorted[0];
@@ -1385,7 +1484,7 @@
       }
     } catch (err) {
       toast.error(`Failed to load diff: ${err}`);
-      diffContent = "";
+      diffContent = '';
     } finally {
       diffLoading = false;
     }
@@ -1394,12 +1493,12 @@
   function closeDiffViewer() {
     selectedCommits = [];
     diffFiles = [];
-    diffContent = "";
+    diffContent = '';
     diffSelectedFile = null;
   }
 
   const diffCommitLabel = $derived.by(() => {
-    if (selectedCommits.length === 0) return "";
+    if (selectedCommits.length === 0) return '';
     if (selectedCommits.length === 1) return selectedCommits[0].shortHash;
     return `${selectedCommits.length} commits`;
   });
@@ -1407,20 +1506,20 @@
   // ── Worktree list context menu ──
   function handleWorktreeContextMenu(wt: WorktreeInfo, e: MouseEvent) {
     e.preventDefault();
-    const label = wt.branch ?? wt.path.split("/").pop() ?? "worktree";
+    const label = wt.branch ?? wt.path.split('/').pop() ?? 'worktree';
     const items: MenuItem[] = [
-      { label: "Open folder", icon: "📂", action: () => handleRevealWorktree(wt.path) },
+      { label: 'Open folder', icon: '📂', action: () => handleRevealWorktree(wt.path) },
       { separator: true },
     ];
     if (wt.branch && !wt.detached) {
       items.push({
-        label: "Checkout…",
-        icon: "⎋",
+        label: 'Checkout…',
+        icon: '⎋',
         action: () => {
           activeWorktreePath = wt.path;
-          actionRef = "";
+          actionRef = '';
           // Focus the action ref input
-          requestAnimationFrame(() => document.getElementById("action-ref")?.focus());
+          requestAnimationFrame(() => document.getElementById('action-ref')?.focus());
         },
       });
     }
@@ -1435,45 +1534,63 @@
 </script>
 
 {#snippet fileStatusIcon(status: string)}
-  {#if status === "A" || status === "?"}
+  {#if status === 'A' || status === '?'}
     <!-- Added / Untracked: green + -->
     <svg class="h-3 w-3 shrink-0 text-green-400" viewBox="0 0 16 16" fill="currentColor">
-      <path d="M8 2a.75.75 0 0 1 .75.75v4.5h4.5a.75.75 0 0 1 0 1.5h-4.5v4.5a.75.75 0 0 1-1.5 0v-4.5h-4.5a.75.75 0 0 1 0-1.5h4.5v-4.5A.75.75 0 0 1 8 2Z"/>
+      <path
+        d="M8 2a.75.75 0 0 1 .75.75v4.5h4.5a.75.75 0 0 1 0 1.5h-4.5v4.5a.75.75 0 0 1-1.5 0v-4.5h-4.5a.75.75 0 0 1 0-1.5h4.5v-4.5A.75.75 0 0 1 8 2Z"
+      />
     </svg>
-  {:else if status === "D"}
+  {:else if status === 'D'}
     <!-- Deleted: red − -->
     <svg class="h-3 w-3 shrink-0 text-red-400" viewBox="0 0 16 16" fill="currentColor">
-      <path d="M2 8.75a.75.75 0 0 1 .75-.75h10.5a.75.75 0 0 1 0 1.5H2.75A.75.75 0 0 1 2 8.75Z"/>
+      <path d="M2 8.75a.75.75 0 0 1 .75-.75h10.5a.75.75 0 0 1 0 1.5H2.75A.75.75 0 0 1 2 8.75Z" />
     </svg>
-  {:else if status === "R"}
+  {:else if status === 'R'}
     <!-- Renamed: accent → -->
     <svg class="h-3 w-3 shrink-0 text-[var(--sg-accent)]" viewBox="0 0 16 16" fill="currentColor">
-      <path d="M9.78 4.22a.75.75 0 0 1 1.06 0l3 3a.75.75 0 0 1 0 1.06l-3 3a.75.75 0 0 1-1.06-1.06l1.72-1.72H2.75a.75.75 0 0 1 0-1.5h8.75L9.78 5.28a.75.75 0 0 1 0-1.06Z"/>
+      <path
+        d="M9.78 4.22a.75.75 0 0 1 1.06 0l3 3a.75.75 0 0 1 0 1.06l-3 3a.75.75 0 0 1-1.06-1.06l1.72-1.72H2.75a.75.75 0 0 1 0-1.5h8.75L9.78 5.28a.75.75 0 0 1 0-1.06Z"
+      />
     </svg>
-  {:else if status === "U"}
+  {:else if status === 'U'}
     <!-- Conflict: red ! -->
     <svg class="h-3 w-3 shrink-0 text-red-400" viewBox="0 0 16 16" fill="currentColor">
-      <path d="M8 1a7 7 0 1 1 0 14A7 7 0 0 1 8 1Zm0 3.5a.75.75 0 0 0-.75.75v3.5a.75.75 0 0 0 1.5 0v-3.5A.75.75 0 0 0 8 4.5Zm0 6.5a1 1 0 1 0 0-2 1 1 0 0 0 0 2Z"/>
+      <path
+        d="M8 1a7 7 0 1 1 0 14A7 7 0 0 1 8 1Zm0 3.5a.75.75 0 0 0-.75.75v3.5a.75.75 0 0 0 1.5 0v-3.5A.75.75 0 0 0 8 4.5Zm0 6.5a1 1 0 1 0 0-2 1 1 0 0 0 0 2Z"
+      />
     </svg>
   {:else}
     <!-- Modified (M, C, or other): amber dot -->
     <svg class="h-3 w-3 shrink-0 text-amber-400" viewBox="0 0 16 16" fill="currentColor">
-      <path d="M11.013 1.427a1.75 1.75 0 0 1 2.474 0l1.086 1.086a1.75 1.75 0 0 1 0 2.474l-8.61 8.61c-.21.21-.47.364-.756.445l-3.251.93a.75.75 0 0 1-.927-.928l.929-3.25c.081-.286.235-.547.445-.756l8.61-8.61Z"/>
+      <path
+        d="M11.013 1.427a1.75 1.75 0 0 1 2.474 0l1.086 1.086a1.75 1.75 0 0 1 0 2.474l-8.61 8.61c-.21.21-.47.364-.756.445l-3.251.93a.75.75 0 0 1-.927-.928l.929-3.25c.081-.286.235-.547.445-.756l8.61-8.61Z"
+      />
     </svg>
   {/if}
 {/snippet}
 
 <main class="flex h-screen flex-col">
   <!-- Context header -->
-  <header data-tauri-drag-region class="flex shrink-0 items-center gap-3 border-b border-[var(--sg-border)] bg-[var(--sg-surface)] pt-1 pr-1 pb-1 pl-[var(--sg-titlebar-inset)]" style="view-transition-name: sg-app-header">
-    <button onclick={() => goto("/")} data-testid="btn-back-projects" class="rounded px-2 py-0.5 text-xs text-[var(--sg-text-dim)] hover:bg-[var(--sg-surface-raised)] hover:text-[var(--sg-text)]">
+  <header
+    data-tauri-drag-region
+    class="flex shrink-0 items-center gap-3 border-b border-[var(--sg-border)] bg-[var(--sg-surface)] pt-1 pr-1 pb-1 pl-[var(--sg-titlebar-inset)]"
+    style="view-transition-name: sg-app-header"
+  >
+    <button
+      onclick={() => goto('/')}
+      data-testid="btn-back-projects"
+      class="rounded px-2 py-0.5 text-xs text-[var(--sg-text-dim)] hover:bg-[var(--sg-surface-raised)] hover:text-[var(--sg-text)]"
+    >
       &larr; Projects
     </button>
     <div class="h-3 w-px bg-[var(--sg-border)]"></div>
-    <span class="text-xs text-[var(--sg-text)]">{workspace?.workspacePath.split("/").pop() ?? "..."}</span>
+    <span class="text-xs text-[var(--sg-text)]"
+      >{workspace?.workspacePath.split('/').pop() ?? '...'}</span
+    >
     <span class="text-xs text-[var(--sg-text-faint)]">&rsaquo;</span>
     <span class="text-xs text-[var(--sg-primary)]">
-      {selectedWorktree?.branch ?? (selectedWorktree?.detached ? "detached" : "—")}
+      {selectedWorktree?.branch ?? (selectedWorktree?.detached ? 'detached' : '—')}
     </span>
     <div class="ml-auto flex items-center">
       <button
@@ -1481,36 +1598,70 @@
           goto(
             workspace?.workspacePath
               ? `/settings?workspace=${encodeURIComponent(workspace.workspacePath)}`
-              : "/settings",
+              : '/settings'
           )}
         class="rounded-full p-1 text-[var(--sg-text-faint)] hover:bg-[var(--sg-surface-raised)] hover:text-[var(--sg-text)]"
         title="Settings"
         data-testid="btn-open-settings"
       >
-        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+        <svg
+          xmlns="http://www.w3.org/2000/svg"
+          width="16"
+          height="16"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+          ><circle cx="12" cy="12" r="3" /><path
+            d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"
+          /></svg
+        >
       </button>
-      <UpdateBadge href={workspace?.workspacePath ? `/settings?workspace=${encodeURIComponent(workspace.workspacePath)}` : '/settings'} />
+      <UpdateBadge
+        href={workspace?.workspacePath
+          ? `/settings?workspace=${encodeURIComponent(workspace.workspacePath)}`
+          : '/settings'}
+      />
       <WindowControls />
     </div>
   </header>
 
   {#if loading}
-    <div class="flex flex-1 flex-col items-center justify-center gap-3" style="animation: sg-fade-in 0.3s ease-out">
+    <div
+      class="flex flex-1 flex-col items-center justify-center gap-3"
+      style="animation: sg-fade-in 0.3s ease-out"
+    >
       <Spinner size="lg" />
       <p class="text-sm text-[var(--sg-text-faint)]">Loading workspace…</p>
     </div>
   {:else}
     {#if error}
-      <div class="border-b border-[var(--sg-border)] bg-[var(--sg-surface-raised)] px-4 py-2 text-xs text-[var(--sg-danger)]" style="animation: sg-slide-down 0.2s ease-out">{error}</div>
+      <div
+        class="border-b border-[var(--sg-border)] bg-[var(--sg-surface-raised)] px-4 py-2 text-xs text-[var(--sg-danger)]"
+        style="animation: sg-slide-down 0.2s ease-out"
+      >
+        {error}
+      </div>
     {/if}
 
-    <div class="flex min-h-0 flex-1" style="view-transition-name: sg-page-content; animation: sg-fade-in 0.3s ease-out">
+    <div
+      class="flex min-h-0 flex-1"
+      style="view-transition-name: sg-page-content; animation: sg-fade-in 0.3s ease-out"
+    >
       <!-- Left sidebar -->
-      <aside class="flex w-[260px] shrink-0 flex-col border-r border-[var(--sg-border)] bg-[var(--sg-surface)]">
+      <aside
+        class="flex w-[260px] shrink-0 flex-col border-r border-[var(--sg-border)] bg-[var(--sg-surface)]"
+      >
         <!-- Root info -->
         <div class="border-b border-[var(--sg-border-subtle)] px-3 py-2">
           <div class="flex items-center gap-1.5">
-            <p class="text-[10px] font-semibold uppercase tracking-wider text-[var(--sg-text-faint)]">Root</p>
+            <p
+              class="text-[10px] font-semibold uppercase tracking-wider text-[var(--sg-text-faint)]"
+            >
+              Root
+            </p>
             {#if rootWorktree}
               <span
                 class="inline-flex items-center gap-0.5 rounded-full bg-[var(--sg-warning)]/15 px-1.5 py-px text-[9px] font-medium text-[var(--sg-warning)] cursor-help"
@@ -1521,14 +1672,25 @@
               </span>
             {/if}
           </div>
-          <p class="mt-0.5 truncate text-xs text-[var(--sg-text-dim)]">{workspace ? tildify(workspace.rootPath) : "—"}</p>
+          <p class="mt-0.5 truncate text-xs text-[var(--sg-text-dim)]">
+            {workspace ? tildify(workspace.rootPath) : '—'}
+          </p>
         </div>
 
         <!-- Create worktree form -->
-        <form onsubmit={createFirstWorktree} class="border-b border-[var(--sg-border-subtle)] px-3 py-3">
-          <p class="mb-2 text-[10px] font-semibold uppercase tracking-wider text-[var(--sg-text-faint)]">New worktree</p>
+        <form
+          onsubmit={createFirstWorktree}
+          class="border-b border-[var(--sg-border-subtle)] px-3 py-3"
+        >
+          <p
+            class="mb-2 text-[10px] font-semibold uppercase tracking-wider text-[var(--sg-text-faint)]"
+          >
+            New worktree
+          </p>
 
-          <label for="source-ref" class="mb-0.5 block text-[10px] text-[var(--sg-text-faint)]">Source ref</label>
+          <label for="source-ref" class="mb-0.5 block text-[10px] text-[var(--sg-text-faint)]"
+            >Source ref</label
+          >
           <div>
             <Autocomplete
               items={refItems}
@@ -1544,13 +1706,18 @@
           {/if}
           <div class="mb-2"></div>
 
-          <label for="new-branch" class="mb-0.5 block text-[10px] text-[var(--sg-text-faint)]">New branch</label>
+          <label for="new-branch" class="mb-0.5 block text-[10px] text-[var(--sg-text-faint)]"
+            >New branch</label
+          >
           <input
             id="new-branch"
             bind:value={newBranch}
             oninput={() => (formTouched.branch = true)}
             data-testid="input-new-branch"
-            class="w-full rounded border bg-[var(--sg-input-bg)] px-2 py-1 text-xs text-[var(--sg-text)] placeholder-[var(--sg-text-faint)] outline-none {formTouched.branch && branchError ? 'border-[var(--sg-danger)] focus:border-[var(--sg-danger)]' : 'border-[var(--sg-input-border)] focus:border-[var(--sg-input-focus)]'}"
+            class="w-full rounded border bg-[var(--sg-input-bg)] px-2 py-1 text-xs text-[var(--sg-text)] placeholder-[var(--sg-text-faint)] outline-none {formTouched.branch &&
+            branchError
+              ? 'border-[var(--sg-danger)] focus:border-[var(--sg-danger)]'
+              : 'border-[var(--sg-input-border)] focus:border-[var(--sg-input-focus)]'}"
             placeholder="feature/my-task"
           />
           {#if formTouched.branch && branchError}
@@ -1576,7 +1743,11 @@
         <!-- Worktree list -->
         <div class="flex min-h-0 flex-1 flex-col">
           <div class="flex items-center justify-between px-3 py-2">
-            <p class="text-[10px] font-semibold uppercase tracking-wider text-[var(--sg-text-faint)]">Worktrees</p>
+            <p
+              class="text-[10px] font-semibold uppercase tracking-wider text-[var(--sg-text-faint)]"
+            >
+              Worktrees
+            </p>
             <button
               onclick={() => {
                 hooksModalOpen = true;
@@ -1596,26 +1767,43 @@
                 <!-- svelte-ignore a11y_no_static_element_interactions -->
                 <!-- svelte-ignore a11y_click_events_have_key_events -->
                 <div
-                  class="group mb-0.5 flex w-full cursor-pointer items-center gap-2 rounded px-2 py-1.5 text-left text-xs {activeWorktreePath === wt.path ? 'bg-[var(--sg-surface-raised)] text-[var(--sg-primary)]' : 'text-[var(--sg-text-dim)] hover:bg-[var(--sg-surface-raised)]'}"
+                  class="group mb-0.5 flex w-full cursor-pointer items-center gap-2 rounded px-2 py-1.5 text-left text-xs {activeWorktreePath ===
+                  wt.path
+                    ? 'bg-[var(--sg-surface-raised)] text-[var(--sg-primary)]'
+                    : 'text-[var(--sg-text-dim)] hover:bg-[var(--sg-surface-raised)]'}"
                   data-testid="worktree-item"
                   data-branch={wt.branch}
                   data-path={wt.path}
                   data-active={activeWorktreePath === wt.path ? 'true' : 'false'}
-                  onclick={() => { activeWorktreePath = activeWorktreePath === wt.path ? null : wt.path; }}
-                  oncontextmenu={(e) => handleWorktreeContextMenu(wt, e)}
+                  onclick={() => {
+                    activeWorktreePath = activeWorktreePath === wt.path ? null : wt.path;
+                  }}
+                  oncontextmenu={e => handleWorktreeContextMenu(wt, e)}
                 >
-                  <span class="h-1.5 w-1.5 shrink-0 rounded-full {activeWorktreePath === wt.path ? 'bg-[var(--sg-primary)]' : 'bg-[var(--sg-border)]'}"></span>
-                  <span class="min-w-0 flex-1 truncate">{wt.branch ?? (wt.detached ? "detached" : "unknown")}</span>
+                  <span
+                    class="h-1.5 w-1.5 shrink-0 rounded-full {activeWorktreePath === wt.path
+                      ? 'bg-[var(--sg-primary)]'
+                      : 'bg-[var(--sg-border)]'}"
+                  ></span>
+                  <span class="min-w-0 flex-1 truncate"
+                    >{wt.branch ?? (wt.detached ? 'detached' : 'unknown')}</span
+                  >
                   {#if (worktreeChangeCounts[wt.path] ?? 0) > 0}
-                    <span class="shrink-0 rounded-full bg-[var(--sg-warning)]/20 px-1.5 py-0.5 font-mono text-[9px] font-bold text-[var(--sg-warning)] group-hover:hidden">
+                    <span
+                      class="shrink-0 rounded-full bg-[var(--sg-warning)]/20 px-1.5 py-0.5 font-mono text-[9px] font-bold text-[var(--sg-warning)] group-hover:hidden"
+                    >
                       {worktreeChangeCounts[wt.path]}
                     </span>
                   {/if}
                   <!-- svelte-ignore a11y_no_static_element_interactions -->
                   <!-- svelte-ignore a11y_click_events_have_key_events -->
-                  <div class="hidden shrink-0 items-center gap-0.5 group-hover:flex" role="none" onclick={(e) => e.stopPropagation()}>
+                  <div
+                    class="hidden shrink-0 items-center gap-0.5 group-hover:flex"
+                    role="none"
+                    onclick={e => e.stopPropagation()}
+                  >
                     <button
-                      onclick={(event) => openRunHookMenu(wt, event.currentTarget as HTMLElement)}
+                      onclick={event => openRunHookMenu(wt, event.currentTarget as HTMLElement)}
                       class="rounded p-0.5 text-[var(--sg-text-faint)] hover:bg-[var(--sg-surface)] hover:text-[var(--sg-text)]"
                       title="Run hook"
                     >
@@ -1657,18 +1845,31 @@
 
         <!-- Active worktree actions (simplified: one ref field) -->
         {#if selectedWorktree && activeWorktreePath !== workspace?.rootPath}
-          <div class="border-t border-[var(--sg-border-subtle)] px-3 py-2" style="animation: sg-fade-in 0.15s ease-out">
-            <p class="mb-1 text-[10px] font-semibold uppercase tracking-wider text-[var(--sg-text-faint)]">
+          <div
+            class="border-t border-[var(--sg-border-subtle)] px-3 py-2"
+            style="animation: sg-fade-in 0.15s ease-out"
+          >
+            <p
+              class="mb-1 text-[10px] font-semibold uppercase tracking-wider text-[var(--sg-text-faint)]"
+            >
               Worktree actions
             </p>
-            <div class="mb-1.5 rounded border border-[var(--sg-border-subtle)] bg-[var(--sg-surface)] px-2 py-1">
+            <div
+              class="mb-1.5 rounded border border-[var(--sg-border-subtle)] bg-[var(--sg-surface)] px-2 py-1"
+            >
               <span class="text-[9px] text-[var(--sg-text-faint)]">Branch</span>
-              <p class="truncate font-mono text-[11px] font-medium text-[var(--sg-text)]">{selectedWorktree.branch ?? "detached HEAD"}</p>
+              <p class="truncate font-mono text-[11px] font-medium text-[var(--sg-text)]">
+                {selectedWorktree.branch ?? 'detached HEAD'}
+              </p>
               {#if selectedWorktree.head}
-                <span class="font-mono text-[9px] text-[var(--sg-text-faint)]">{selectedWorktree.head.slice(0, 8)}</span>
+                <span class="font-mono text-[9px] text-[var(--sg-text-faint)]"
+                  >{selectedWorktree.head.slice(0, 8)}</span
+                >
               {/if}
             </div>
-            <label for="action-ref" class="mb-0.5 block text-[10px] text-[var(--sg-text-faint)]">Target ref</label>
+            <label for="action-ref" class="mb-0.5 block text-[10px] text-[var(--sg-text-faint)]"
+              >Target ref</label
+            >
             <div class="mb-1.5">
               <Autocomplete
                 items={refItems}
@@ -1679,7 +1880,10 @@
             </div>
             <div class="flex gap-1">
               <button
-                onclick={() => { if (selectedWorktree && actionRef) handleCheckoutWorktree(selectedWorktree, actionRef); }}
+                onclick={() => {
+                  if (selectedWorktree && actionRef)
+                    handleCheckoutWorktree(selectedWorktree, actionRef);
+                }}
                 disabled={!actionRef}
                 class="flex-1 rounded bg-[var(--sg-primary)] px-2 py-1 text-[10px] font-semibold text-[var(--sg-bg)] hover:bg-[var(--sg-primary-hover)] disabled:cursor-not-allowed disabled:opacity-40"
                 title="Checkout: switch this worktree to the target ref (auto-stashes uncommitted changes)"
@@ -1687,7 +1891,10 @@
                 Checkout
               </button>
               <button
-                onclick={() => { if (selectedWorktree && actionRef) handleResetWorktree(selectedWorktree, actionRef, "mixed"); }}
+                onclick={() => {
+                  if (selectedWorktree && actionRef)
+                    handleResetWorktree(selectedWorktree, actionRef, 'mixed');
+                }}
                 disabled={!actionRef}
                 class="rounded border border-[var(--sg-border)] px-2 py-1 text-[10px] text-[var(--sg-text-dim)] hover:bg-[var(--sg-surface-raised)] hover:text-[var(--sg-text)] disabled:cursor-not-allowed disabled:opacity-40"
                 title="Reset --mixed: move branch pointer to target ref, keep changes as unstaged"
@@ -1695,7 +1902,10 @@
                 Reset
               </button>
               <button
-                onclick={() => { if (selectedWorktree && actionRef) handleResetWorktree(selectedWorktree, actionRef, "hard"); }}
+                onclick={() => {
+                  if (selectedWorktree && actionRef)
+                    handleResetWorktree(selectedWorktree, actionRef, 'hard');
+                }}
                 disabled={!actionRef}
                 class="rounded border border-[var(--sg-danger)]/30 px-2 py-1 text-[10px] text-[var(--sg-danger)] hover:bg-[var(--sg-danger)]/10 disabled:cursor-not-allowed disabled:opacity-40"
                 title="Reset --hard: move branch pointer to target ref and DISCARD all changes"
@@ -1703,7 +1913,9 @@
                 Hard reset
               </button>
             </div>
-            <p class="mt-1 text-[9px] text-[var(--sg-text-faint)]">Right-click a commit in the graph for quick actions</p>
+            <p class="mt-1 text-[9px] text-[var(--sg-text-faint)]">
+              Right-click a commit in the graph for quick actions
+            </p>
           </div>
         {/if}
       </aside>
@@ -1712,9 +1924,11 @@
       <section class="flex min-w-0 flex-1 flex-col overflow-hidden">
         <!-- View toggles (history / changes / terminal) -->
         {#if selectedWorktree && activeWorktreePath !== workspace?.rootPath}
-          <div class="flex items-center gap-1 border-b border-[var(--sg-border)] bg-[var(--sg-surface)] px-4">
+          <div
+            class="flex items-center gap-1 border-b border-[var(--sg-border)] bg-[var(--sg-surface)] px-4"
+          >
             <button
-              onclick={() => (activeTab = "history")}
+              onclick={() => (activeTab = 'history')}
               data-testid="tab-history"
               class="border-b-2 px-3 py-2 text-xs font-medium transition {activeTab === 'history'
                 ? 'border-[var(--sg-primary)] text-[var(--sg-primary)]'
@@ -1723,21 +1937,24 @@
               History
             </button>
             <button
-              onclick={() => (activeTab = "changes")}
+              onclick={() => (activeTab = 'changes')}
               data-testid="tab-changes"
-              class="flex items-center gap-1.5 border-b-2 px-3 py-2 text-xs font-medium transition {activeTab === 'changes'
+              class="flex items-center gap-1.5 border-b-2 px-3 py-2 text-xs font-medium transition {activeTab ===
+              'changes'
                 ? 'border-[var(--sg-primary)] text-[var(--sg-primary)]'
                 : 'border-transparent text-[var(--sg-text-dim)] hover:text-[var(--sg-text)]'}"
             >
               Changes
               {#if worktreeStatus.length > 0}
-                <span class="rounded-full bg-[var(--sg-warning)]/20 px-1.5 py-0.5 text-[9px] font-bold text-[var(--sg-warning)]">
+                <span
+                  class="rounded-full bg-[var(--sg-warning)]/20 px-1.5 py-0.5 text-[9px] font-bold text-[var(--sg-warning)]"
+                >
                   {worktreeStatus.length}
                 </span>
               {/if}
             </button>
             <button
-              onclick={() => (activeTab = "terminal")}
+              onclick={() => (activeTab = 'terminal')}
               data-testid="tab-terminal"
               class="border-b-2 px-3 py-2 text-xs font-medium transition {activeTab === 'terminal'
                 ? 'border-[var(--sg-primary)] text-[var(--sg-primary)]'
@@ -1748,11 +1965,13 @@
           </div>
         {/if}
 
-        {#if activeTab === "changes" && selectedWorktree && activeWorktreePath !== workspace?.rootPath}
+        {#if activeTab === 'changes' && selectedWorktree && activeWorktreePath !== workspace?.rootPath}
           <!-- Staging View: left = file lists + commit form, right = always-visible diff panel -->
           <div class="flex min-h-0 flex-1">
             <!-- Left column: file lists + commit form -->
-            <div class="flex w-[260px] shrink-0 flex-col overflow-hidden border-r border-[var(--sg-border-subtle)]">
+            <div
+              class="flex w-[260px] shrink-0 flex-col overflow-hidden border-r border-[var(--sg-border-subtle)]"
+            >
               {#if statusLoading}
                 <div class="flex flex-1 items-center justify-center gap-2">
                   <Spinner size="md" />
@@ -1766,122 +1985,197 @@
                 >
                   <!-- Unstaged files -->
                   <div class="flex flex-col overflow-hidden" style:height="{splitPct}%">
-                  <div class="flex min-h-0 flex-1 flex-col overflow-y-auto">
-                    <div class="sticky top-0 z-10 flex items-center justify-between bg-[var(--sg-surface)] px-3 py-1.5">
-                      <p class="text-[10px] font-semibold uppercase tracking-wider text-[var(--sg-text-faint)]">
-                        Changes ({unstagedFiles.length})
-                      </p>
-                      {#if unstagedFiles.length > 0}
-                        <button
-                          onclick={() => hasMultiSelection
-                            ? handleStageFiles([...selectedFilePaths].filter((k) => k.startsWith("unstaged:")).map((k) => k.slice(9)))
-                            : handleStageFiles(unstagedFiles.map((f) => f.path))}
-                          disabled={!!stagingAction}
-                          data-testid="btn-stage-all"
-                          class="text-[9px] text-[var(--sg-text-dim)] hover:text-[var(--sg-text)] disabled:opacity-40"
-                        >{hasMultiSelection ? "Stage selected" : "Stage all"}</button>
+                    <div class="flex min-h-0 flex-1 flex-col overflow-y-auto">
+                      <div
+                        class="sticky top-0 z-10 flex items-center justify-between bg-[var(--sg-surface)] px-3 py-1.5"
+                      >
+                        <p
+                          class="text-[10px] font-semibold uppercase tracking-wider text-[var(--sg-text-faint)]"
+                        >
+                          Changes ({unstagedFiles.length})
+                        </p>
+                        {#if unstagedFiles.length > 0}
+                          <button
+                            onclick={() =>
+                              hasMultiSelection
+                                ? handleStageFiles(
+                                    [...selectedFilePaths]
+                                      .filter(k => k.startsWith('unstaged:'))
+                                      .map(k => k.slice(9))
+                                  )
+                                : handleStageFiles(unstagedFiles.map(f => f.path))}
+                            disabled={!!stagingAction}
+                            data-testid="btn-stage-all"
+                            class="text-[9px] text-[var(--sg-text-dim)] hover:text-[var(--sg-text)] disabled:opacity-40"
+                            >{hasMultiSelection ? 'Stage selected' : 'Stage all'}</button
+                          >
+                        {/if}
+                      </div>
+                      {#if unstagedFiles.length === 0}
+                        <p class="px-3 pb-2 text-[10px] text-[var(--sg-text-faint)]">
+                          No unstaged changes
+                        </p>
+                      {:else}
+                        {#each unstagedFiles as file}
+                          <!-- svelte-ignore a11y_no_static_element_interactions -->
+                          <!-- svelte-ignore a11y_click_events_have_key_events -->
+                          <div
+                            class="group flex cursor-pointer items-center gap-1 px-2 py-0.5 {selectedFilePaths.has(
+                              `unstaged:${file.path}`
+                            )
+                              ? 'bg-[var(--sg-primary)]/10'
+                              : stagingDiffFile === file.path && !stagingDiffStaged
+                                ? 'bg-[var(--sg-surface-raised)]'
+                                : 'hover:bg-[var(--sg-surface-raised)]'}"
+                            data-testid="unstaged-file"
+                            data-filepath={file.path}
+                            onmousedown={e => handleFileMouseDown(e, `unstaged:${file.path}`)}
+                            onmouseenter={() => handleFileMouseEnter(`unstaged:${file.path}`)}
+                            onclick={e => handleFileClick(e, `unstaged:${file.path}`)}
+                            title={file.path}
+                          >
+                            <div class="flex min-w-0 flex-1 items-center gap-1.5">
+                              {@render fileStatusIcon(file.workTreeStatus)}
+                              <span class="truncate text-[11px] text-[var(--sg-text-dim)]"
+                                >{file.path}</span
+                              >
+                            </div>
+                            <button
+                              onclick={e => {
+                                e.stopPropagation();
+                                handleStageFiles([file.path]);
+                              }}
+                              disabled={stagingAction === file.path}
+                              class="shrink-0 rounded p-0.5 text-[var(--sg-text-faint)] opacity-0 hover:bg-[var(--sg-surface)] hover:text-[var(--sg-primary)] group-hover:opacity-100 disabled:opacity-40"
+                              title="Stage"
+                            >
+                              {#if stagingAction === file.path}
+                                <Spinner size="sm" />
+                              {:else}
+                                <svg
+                                  width="12"
+                                  height="12"
+                                  viewBox="0 0 24 24"
+                                  fill="none"
+                                  stroke="currentColor"
+                                  stroke-width="2.5"
+                                  stroke-linecap="round"
+                                  ><line x1="12" y1="5" x2="12" y2="19" /><line
+                                    x1="5"
+                                    y1="12"
+                                    x2="19"
+                                    y2="12"
+                                  /></svg
+                                >
+                              {/if}
+                            </button>
+                          </div>
+                        {/each}
                       {/if}
                     </div>
-                    {#if unstagedFiles.length === 0}
-                      <p class="px-3 pb-2 text-[10px] text-[var(--sg-text-faint)]">No unstaged changes</p>
-                    {:else}
-                      {#each unstagedFiles as file}
-                        <!-- svelte-ignore a11y_no_static_element_interactions -->
-                        <!-- svelte-ignore a11y_click_events_have_key_events -->
-                        <div
-                          class="group flex cursor-pointer items-center gap-1 px-2 py-0.5 {selectedFilePaths.has(`unstaged:${file.path}`) ? 'bg-[var(--sg-primary)]/10' : stagingDiffFile === file.path && !stagingDiffStaged ? 'bg-[var(--sg-surface-raised)]' : 'hover:bg-[var(--sg-surface-raised)]'}"
-                          data-testid="unstaged-file"
-                          data-filepath={file.path}
-                          onmousedown={(e) => handleFileMouseDown(e, `unstaged:${file.path}`)}
-                          onmouseenter={() => handleFileMouseEnter(`unstaged:${file.path}`)}
-                          onclick={(e) => handleFileClick(e, `unstaged:${file.path}`)}
-                          title={file.path}
-                        >
-                          <div class="flex min-w-0 flex-1 items-center gap-1.5">
-                            {@render fileStatusIcon(file.workTreeStatus)}
-                            <span class="truncate text-[11px] text-[var(--sg-text-dim)]">{file.path}</span>
-                          </div>
-                          <button
-                            onclick={(e) => { e.stopPropagation(); handleStageFiles([file.path]); }}
-                            disabled={stagingAction === file.path}
-                            class="shrink-0 rounded p-0.5 text-[var(--sg-text-faint)] opacity-0 hover:bg-[var(--sg-surface)] hover:text-[var(--sg-primary)] group-hover:opacity-100 disabled:opacity-40"
-                            title="Stage"
-                          >
-                            {#if stagingAction === file.path}
-                              <Spinner size="sm" />
-                            {:else}
-                              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-                            {/if}
-                          </button>
-                        </div>
-                      {/each}
-                    {/if}
-                  </div>
                   </div>
 
                   <!-- Draggable divider -->
                   <!-- svelte-ignore a11y_no_static_element_interactions -->
                   <div
-                    class="group relative z-10 flex h-[5px] shrink-0 cursor-row-resize items-center justify-center border-y border-[var(--sg-border-subtle)] bg-[var(--sg-surface)] hover:border-[var(--sg-primary)]/40 hover:bg-[var(--sg-primary)]/5 {isSplitDragging ? 'border-[var(--sg-primary)]/40 bg-[var(--sg-primary)]/5' : ''}"
+                    class="group relative z-10 flex h-[5px] shrink-0 cursor-row-resize items-center justify-center border-y border-[var(--sg-border-subtle)] bg-[var(--sg-surface)] hover:border-[var(--sg-primary)]/40 hover:bg-[var(--sg-primary)]/5 {isSplitDragging
+                      ? 'border-[var(--sg-primary)]/40 bg-[var(--sg-primary)]/5'
+                      : ''}"
                     onpointerdown={onSplitPointerDown}
                     onpointermove={onSplitPointerMove}
                     onpointerup={onSplitPointerUp}
                   >
-                    <div class="h-[3px] w-6 rounded-full bg-[var(--sg-border)] transition-colors group-hover:bg-[var(--sg-primary)]/50 {isSplitDragging ? 'bg-[var(--sg-primary)]/50' : ''}"></div>
+                    <div
+                      class="h-[3px] w-6 rounded-full bg-[var(--sg-border)] transition-colors group-hover:bg-[var(--sg-primary)]/50 {isSplitDragging
+                        ? 'bg-[var(--sg-primary)]/50'
+                        : ''}"
+                    ></div>
                   </div>
 
                   <!-- Staged files -->
                   <div class="flex min-h-0 flex-1 flex-col overflow-hidden">
-                  <div class="flex min-h-0 flex-1 flex-col overflow-y-auto">
-                    <div class="sticky top-0 z-10 flex items-center justify-between bg-[var(--sg-surface)] px-3 py-1.5">
-                      <p class="text-[10px] font-semibold uppercase tracking-wider text-[var(--sg-text-faint)]">
-                        Staged ({stagedFiles.length})
-                      </p>
-                      {#if stagedFiles.length > 0}
-                        <button
-                          onclick={() => hasMultiSelection
-                            ? handleUnstageFiles([...selectedFilePaths].filter((k) => k.startsWith("staged:")).map((k) => k.slice(7)))
-                            : handleUnstageFiles(stagedFiles.map((f) => f.path))}
-                          disabled={!!stagingAction}
-                          class="text-[9px] text-[var(--sg-text-dim)] hover:text-[var(--sg-text)] disabled:opacity-40"
-                        >{hasMultiSelection ? "Unstage selected" : "Unstage all"}</button>
+                    <div class="flex min-h-0 flex-1 flex-col overflow-y-auto">
+                      <div
+                        class="sticky top-0 z-10 flex items-center justify-between bg-[var(--sg-surface)] px-3 py-1.5"
+                      >
+                        <p
+                          class="text-[10px] font-semibold uppercase tracking-wider text-[var(--sg-text-faint)]"
+                        >
+                          Staged ({stagedFiles.length})
+                        </p>
+                        {#if stagedFiles.length > 0}
+                          <button
+                            onclick={() =>
+                              hasMultiSelection
+                                ? handleUnstageFiles(
+                                    [...selectedFilePaths]
+                                      .filter(k => k.startsWith('staged:'))
+                                      .map(k => k.slice(7))
+                                  )
+                                : handleUnstageFiles(stagedFiles.map(f => f.path))}
+                            disabled={!!stagingAction}
+                            class="text-[9px] text-[var(--sg-text-dim)] hover:text-[var(--sg-text)] disabled:opacity-40"
+                            >{hasMultiSelection ? 'Unstage selected' : 'Unstage all'}</button
+                          >
+                        {/if}
+                      </div>
+                      {#if stagedFiles.length === 0}
+                        <p class="px-3 pb-2 text-[10px] text-[var(--sg-text-faint)]">
+                          No staged changes
+                        </p>
+                      {:else}
+                        {#each stagedFiles as file}
+                          <!-- svelte-ignore a11y_no_static_element_interactions -->
+                          <!-- svelte-ignore a11y_click_events_have_key_events -->
+                          <div
+                            class="group flex cursor-pointer items-center gap-1 px-2 py-0.5 {selectedFilePaths.has(
+                              `staged:${file.path}`
+                            )
+                              ? 'bg-[var(--sg-primary)]/10'
+                              : stagingDiffFile === file.path && stagingDiffStaged
+                                ? 'bg-[var(--sg-surface-raised)]'
+                                : 'hover:bg-[var(--sg-surface-raised)]'}"
+                            data-testid="staged-file"
+                            data-filepath={file.path}
+                            onmousedown={e => handleFileMouseDown(e, `staged:${file.path}`)}
+                            onmouseenter={() => handleFileMouseEnter(`staged:${file.path}`)}
+                            onclick={e => handleFileClick(e, `staged:${file.path}`)}
+                            title={file.path}
+                          >
+                            <div class="flex min-w-0 flex-1 items-center gap-1.5">
+                              {@render fileStatusIcon(file.indexStatus)}
+                              <span class="truncate text-[11px] text-[var(--sg-text-dim)]"
+                                >{file.path}</span
+                              >
+                            </div>
+                            <button
+                              onclick={e => {
+                                e.stopPropagation();
+                                handleUnstageFiles([file.path]);
+                              }}
+                              disabled={stagingAction === file.path}
+                              class="shrink-0 rounded p-0.5 text-[var(--sg-text-faint)] opacity-0 hover:bg-[var(--sg-surface)] hover:text-[var(--sg-warning)] group-hover:opacity-100 disabled:opacity-40"
+                              title="Unstage"
+                            >
+                              {#if stagingAction === file.path}
+                                <Spinner size="sm" />
+                              {:else}
+                                <svg
+                                  width="12"
+                                  height="12"
+                                  viewBox="0 0 24 24"
+                                  fill="none"
+                                  stroke="currentColor"
+                                  stroke-width="2.5"
+                                  stroke-linecap="round"
+                                  ><line x1="5" y1="12" x2="19" y2="12" /></svg
+                                >
+                              {/if}
+                            </button>
+                          </div>
+                        {/each}
                       {/if}
                     </div>
-                    {#if stagedFiles.length === 0}
-                      <p class="px-3 pb-2 text-[10px] text-[var(--sg-text-faint)]">No staged changes</p>
-                    {:else}
-                      {#each stagedFiles as file}
-                        <!-- svelte-ignore a11y_no_static_element_interactions -->
-                        <!-- svelte-ignore a11y_click_events_have_key_events -->
-                        <div
-                          class="group flex cursor-pointer items-center gap-1 px-2 py-0.5 {selectedFilePaths.has(`staged:${file.path}`) ? 'bg-[var(--sg-primary)]/10' : stagingDiffFile === file.path && stagingDiffStaged ? 'bg-[var(--sg-surface-raised)]' : 'hover:bg-[var(--sg-surface-raised)]'}"
-                          data-testid="staged-file"
-                          data-filepath={file.path}
-                          onmousedown={(e) => handleFileMouseDown(e, `staged:${file.path}`)}
-                          onmouseenter={() => handleFileMouseEnter(`staged:${file.path}`)}
-                          onclick={(e) => handleFileClick(e, `staged:${file.path}`)}
-                          title={file.path}
-                        >
-                          <div class="flex min-w-0 flex-1 items-center gap-1.5">
-                            {@render fileStatusIcon(file.indexStatus)}
-                            <span class="truncate text-[11px] text-[var(--sg-text-dim)]">{file.path}</span>
-                          </div>
-                          <button
-                            onclick={(e) => { e.stopPropagation(); handleUnstageFiles([file.path]); }}
-                            disabled={stagingAction === file.path}
-                            class="shrink-0 rounded p-0.5 text-[var(--sg-text-faint)] opacity-0 hover:bg-[var(--sg-surface)] hover:text-[var(--sg-warning)] group-hover:opacity-100 disabled:opacity-40"
-                            title="Unstage"
-                          >
-                            {#if stagingAction === file.path}
-                              <Spinner size="sm" />
-                            {:else}
-                              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="5" y1="12" x2="19" y2="12"/></svg>
-                            {/if}
-                          </button>
-                        </div>
-                      {/each}
-                    {/if}
-                  </div>
                   </div>
                 </div>
 
@@ -1892,7 +2186,12 @@
                     placeholder="Commit message"
                     rows="3"
                     data-testid="commit-message"
-                    onkeydown={(e) => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); handleCreateCommit(); } }}
+                    onkeydown={e => {
+                      if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+                        e.preventDefault();
+                        handleCreateCommit();
+                      }
+                    }}
                     class="w-full resize-none rounded border border-[var(--sg-input-border)] bg-[var(--sg-input-bg)] px-2 py-1.5 text-xs text-[var(--sg-text)] placeholder-[var(--sg-text-faint)] outline-none focus:border-[var(--sg-input-focus)]"
                   ></textarea>
                   <button
@@ -1900,15 +2199,19 @@
                     disabled={committing || !commitMessage.trim() || stagedFiles.length === 0}
                     data-testid="btn-commit"
                     class="mt-1.5 flex w-full items-center justify-center gap-2 rounded bg-[var(--sg-primary)] px-2.5 py-1.5 text-xs font-semibold text-[var(--sg-bg)] hover:bg-[var(--sg-primary-hover)] disabled:cursor-not-allowed disabled:opacity-40"
-                    title={stagedFiles.length === 0 ? "Stage changes first" : "Commit staged changes"}
+                    title={stagedFiles.length === 0
+                      ? 'Stage changes first'
+                      : 'Commit staged changes'}
                   >
                     {#if committing}
                       <Spinner size="sm" /> Committing…
                     {:else}
-                      Commit{stagedFiles.length > 0 ? ` (${stagedFiles.length})` : ""}
+                      Commit{stagedFiles.length > 0 ? ` (${stagedFiles.length})` : ''}
                     {/if}
                   </button>
-                  <p class="mt-1 text-center text-[9px] text-[var(--sg-text-faint)]">Ctrl+Enter to commit · Enter for new line</p>
+                  <p class="mt-1 text-center text-[9px] text-[var(--sg-text-faint)]">
+                    Ctrl+Enter to commit · Enter for new line
+                  </p>
                 </div>
               {/if}
             </div>
@@ -1916,26 +2219,57 @@
             <!-- Right column: always-visible diff panel -->
             <div class="flex min-w-0 flex-1 flex-col overflow-hidden bg-[var(--sg-bg)]">
               {#if hasMultiSelection}
-                <div class="flex flex-1 flex-col items-center justify-center gap-1.5 px-4 text-center">
-                  <p class="text-xs font-medium text-[var(--sg-text-dim)]">{selectedFilePaths.size} files selected</p>
-                  <p class="text-[10px] text-[var(--sg-text-faint)]">Use "Stage selected" or "Unstage selected" to act on all selected files at once.</p>
+                <div
+                  class="flex flex-1 flex-col items-center justify-center gap-1.5 px-4 text-center"
+                >
+                  <p class="text-xs font-medium text-[var(--sg-text-dim)]">
+                    {selectedFilePaths.size} files selected
+                  </p>
+                  <p class="text-[10px] text-[var(--sg-text-faint)]">
+                    Use "Stage selected" or "Unstage selected" to act on all selected files at once.
+                  </p>
                 </div>
               {:else if stagingDiffFile}
                 <!-- Diff header -->
-                <div data-testid="diff-panel-header" class="flex shrink-0 items-center gap-2 border-b border-[var(--sg-border-subtle)] bg-[var(--sg-surface)] px-3 py-1.5">
-                  <span class="rounded-sm px-1 py-px text-[9px] font-bold {stagingDiffStaged ? 'bg-[var(--sg-primary)]/15 text-[var(--sg-primary)]' : 'bg-[var(--sg-warning)]/15 text-[var(--sg-warning)]'}">
-                    {stagingDiffStaged ? "STAGED" : "UNSTAGED"}
+                <div
+                  data-testid="diff-panel-header"
+                  class="flex shrink-0 items-center gap-2 border-b border-[var(--sg-border-subtle)] bg-[var(--sg-surface)] px-3 py-1.5"
+                >
+                  <span
+                    class="rounded-sm px-1 py-px text-[9px] font-bold {stagingDiffStaged
+                      ? 'bg-[var(--sg-primary)]/15 text-[var(--sg-primary)]'
+                      : 'bg-[var(--sg-warning)]/15 text-[var(--sg-warning)]'}"
+                  >
+                    {stagingDiffStaged ? 'STAGED' : 'UNSTAGED'}
                   </span>
                   {#if stagingDiffOrigPath}
-                    <span class="truncate font-mono text-[11px] text-[var(--sg-text-faint)]">{stagingDiffOrigPath}</span>
-                    <svg class="h-3 w-3 shrink-0 text-[var(--sg-text-faint)]" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8h10M9 4l4 4-4 4"/></svg>
-                    <span class="truncate font-mono text-[11px] text-[var(--sg-text-dim)]">{stagingDiffFile}</span>
+                    <span class="truncate font-mono text-[11px] text-[var(--sg-text-faint)]"
+                      >{stagingDiffOrigPath}</span
+                    >
+                    <svg
+                      class="h-3 w-3 shrink-0 text-[var(--sg-text-faint)]"
+                      viewBox="0 0 16 16"
+                      fill="none"
+                      stroke="currentColor"
+                      stroke-width="2"
+                      stroke-linecap="round"
+                      stroke-linejoin="round"><path d="M3 8h10M9 4l4 4-4 4" /></svg
+                    >
+                    <span class="truncate font-mono text-[11px] text-[var(--sg-text-dim)]"
+                      >{stagingDiffFile}</span
+                    >
                   {:else}
-                    <span class="truncate font-mono text-[11px] text-[var(--sg-text-dim)]">{stagingDiffFile}</span>
+                    <span class="truncate font-mono text-[11px] text-[var(--sg-text-dim)]"
+                      >{stagingDiffFile}</span
+                    >
                   {/if}
                 </div>
                 <!-- Syntax-highlighted diff content (shared DiffViewer component, minimal mode) -->
-                <DiffViewer diff={stagingDiffContent} loading={stagingDiffLoading} filePath={stagingDiffFile} />
+                <DiffViewer
+                  diff={stagingDiffContent}
+                  loading={stagingDiffLoading}
+                  filePath={stagingDiffFile}
+                />
               {:else}
                 <div class="flex flex-1 items-center justify-center">
                   <p class="text-xs text-[var(--sg-text-faint)]">Select a file to view its diff</p>
@@ -1943,21 +2277,30 @@
               {/if}
             </div>
           </div>
-        {:else if activeTab === "history" || !selectedWorktree || activeWorktreePath === workspace?.rootPath}
+        {:else if activeTab === 'history' || !selectedWorktree || activeWorktreePath === workspace?.rootPath}
           <!-- Commit graph -->
-          <div class="flex min-h-0 {selectedCommits.length > 0 ? "h-1/2" : "flex-1"} flex-col">
-            <div class="flex items-center justify-between border-b border-[var(--sg-border-subtle)] bg-[var(--sg-surface)] px-4 py-2">
+          <div class="flex min-h-0 {selectedCommits.length > 0 ? 'h-1/2' : 'flex-1'} flex-col">
+            <div
+              class="flex items-center justify-between border-b border-[var(--sg-border-subtle)] bg-[var(--sg-surface)] px-4 py-2"
+            >
               <div class="flex items-center gap-2">
-                <p class="text-[10px] font-semibold uppercase tracking-wider text-[var(--sg-text-faint)]">Commit graph</p>
+                <p
+                  class="text-[10px] font-semibold uppercase tracking-wider text-[var(--sg-text-faint)]"
+                >
+                  Commit graph
+                </p>
                 {#if selectedCommits.length > 0}
                   <span class="text-[10px] text-[var(--sg-primary)]">
-                    {selectedCommits.length === 1 ? "1 commit selected" : `${selectedCommits.length} commits selected`}
+                    {selectedCommits.length === 1
+                      ? '1 commit selected'
+                      : `${selectedCommits.length} commits selected`}
                   </span>
                 {/if}
               </div>
               <span class="text-[10px] text-[var(--sg-text-faint)]">
                 {#if graphHasMore && totalCommitCount !== null}
-                  Showing {(graph?.commits.length ?? 0).toLocaleString()} of {totalCommitCount.toLocaleString()} commits
+                  Showing {(graph?.commits.length ?? 0).toLocaleString()} of {totalCommitCount.toLocaleString()}
+                  commits
                 {:else if graphHasMore}
                   {(graph?.commits.length ?? 0).toLocaleString()}+ commits
                 {:else}
@@ -1968,15 +2311,20 @@
 
             <div class="flex flex-1 flex-col overflow-hidden bg-[var(--sg-bg)]">
               {#if loading}
-                <div class="flex flex-1 items-center justify-center gap-2" style="animation: sg-fade-in 0.3s ease-out">
+                <div
+                  class="flex flex-1 items-center justify-center gap-2"
+                  style="animation: sg-fade-in 0.3s ease-out"
+                >
                   <Spinner size="md" />
                   <p class="text-xs text-[var(--sg-text-faint)]">Loading commit history…</p>
                 </div>
               {:else}
                 <CommitGraph
                   commits={graph?.commits ?? []}
-                  worktrees={worktrees}
-                  activeWorktree={selectedWorktree && activeWorktreePath !== workspace?.rootPath ? selectedWorktree : null}
+                  {worktrees}
+                  activeWorktree={selectedWorktree && activeWorktreePath !== workspace?.rootPath
+                    ? selectedWorktree
+                    : null}
                   oncreateworktree={handleCreateWorktreeFromGraph}
                   oncheckout={handleGraphCheckout}
                   onreset={handleGraphReset}
@@ -1991,7 +2339,10 @@
 
           <!-- Diff viewer (shown when commits selected) -->
           {#if selectedCommits.length > 0}
-            <div class="flex min-h-0 flex-1 flex-col border-t border-[var(--sg-border)]" style="animation: sg-slide-up 0.15s ease-out">
+            <div
+              class="flex min-h-0 flex-1 flex-col border-t border-[var(--sg-border)]"
+              style="animation: sg-slide-up 0.15s ease-out"
+            >
               <DiffViewer
                 files={diffFiles}
                 selectedFile={diffSelectedFile}
@@ -2006,11 +2357,11 @@
           {/if}
         {:else}
           <!-- Root worktree (protected) message, or terminal tab with no shell -->
-          {#if activeTab === "terminal" && !defaultShell}
+          {#if activeTab === 'terminal' && !defaultShell}
             <div class="flex flex-1 items-center justify-center">
               <p class="text-sm text-[var(--sg-text-faint)]">No shell detected on this system</p>
             </div>
-          {:else if activeTab !== "terminal"}
+          {:else if activeTab !== 'terminal'}
             <div class="flex flex-1 items-center justify-center">
               <p class="text-sm text-[var(--sg-text-faint)]">Select a worktree to view changes</p>
             </div>
@@ -2023,14 +2374,19 @@
         {#each [...terminalInitializedPaths] as wtPath (wtPath)}
           <div
             class="flex min-h-0 flex-1 flex-col overflow-hidden"
-            style:display={activeTab === "terminal" && activeWorktreePath === wtPath ? "flex" : "none"}
+            style:display={activeTab === 'terminal' && activeWorktreePath === wtPath
+              ? 'flex'
+              : 'none'}
           >
-            <TerminalContainer {defaultShell} {availableShells} cwd={wtPath} />
+            <TerminalContainer
+              {defaultShell}
+              {availableShells}
+              cwd={wtPath}
+              launchRequest={hookTerminalLaunchRequest}
+            />
           </div>
         {/each}
       </section>
-
-
     </div>
   {/if}
 </main>
@@ -2048,35 +2404,85 @@
 
 {#if operationStatus}
   <div class="fixed inset-0 z-[80] bg-black/45"></div>
-  <div class="fixed inset-0 z-[90] flex items-center justify-center p-4" style="animation: sg-fade-in 0.2s ease-out">
-    <div class="w-[min(940px,98vw)] rounded-xl border border-[var(--sg-border)] bg-[var(--sg-surface)] px-4 py-4 shadow-xl">
+  <div
+    class="fixed inset-0 z-[90] flex items-center justify-center p-4"
+    style="animation: sg-fade-in 0.2s ease-out"
+  >
+    <div
+      class="w-[min(940px,98vw)] rounded-xl border border-[var(--sg-border)] bg-[var(--sg-surface)] px-4 py-4 shadow-xl"
+    >
       <div class="flex items-center gap-3">
-        <Spinner size="md" />
+        {#if operationCompleted}
+          <div
+            class="flex h-8 w-8 items-center justify-center rounded-full border border-[var(--sg-primary)]/40 bg-[var(--sg-primary)]/15 text-[var(--sg-primary)]"
+          >
+            <svg
+              class="h-4 w-4"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            >
+              <path d="m5 12 5 5L20 7"></path>
+            </svg>
+          </div>
+        {:else}
+          <Spinner size="md" />
+        {/if}
         <div>
           <p class="text-sm font-semibold text-[var(--sg-text)]">{operationStatus.title}</p>
-          <p class="mt-0.5 text-xs text-[var(--sg-text-dim)]">{operationStatus.detail}</p>
+          <p class="mt-0.5 text-xs text-[var(--sg-text-dim)]">
+            {#if operationCompleted}
+              {operationStatus.detail} Completed.
+            {:else}
+              {operationStatus.detail}
+            {/if}
+          </p>
         </div>
       </div>
       {#if activeHookName}
         <p class="mt-3 text-xs text-[var(--sg-primary)]">Running hook: {activeHookName}</p>
       {/if}
       {#if operationError}
-        <div class="mt-3 rounded border border-[var(--sg-danger)]/35 bg-[var(--sg-danger)]/10 px-3 py-2">
+        <div
+          class="mt-3 rounded border border-[var(--sg-danger)]/35 bg-[var(--sg-danger)]/10 px-3 py-2"
+        >
           <p class="text-xs font-medium text-[var(--sg-danger)]">Operation failed</p>
           <p class="mt-0.5 text-[11px] text-[var(--sg-text-dim)]">{operationError}</p>
         </div>
       {/if}
       <div class="mt-3 grid gap-3 lg:grid-cols-[1.2fr,1fr]">
-        <div class="max-h-[340px] overflow-auto rounded border border-[var(--sg-border-subtle)] bg-[var(--sg-surface-raised)] p-2.5">
+        <div
+          class="max-h-[340px] overflow-auto rounded border border-[var(--sg-border-subtle)] bg-[var(--sg-surface-raised)] p-2.5"
+        >
           <div class="mb-2 flex flex-wrap items-center gap-1.5 text-[10px]">
-            <span class="rounded border border-[var(--sg-border)] bg-[var(--sg-surface)] px-1.5 py-px text-[var(--sg-text-faint)]">Pending: {hookStatusSummary.pending}</span>
-            <span class="rounded border border-[var(--sg-accent)]/40 bg-[var(--sg-accent)]/15 px-1.5 py-px text-[var(--sg-accent)]">Running: {hookStatusSummary.running}</span>
-            <span class="rounded border border-[var(--sg-primary)]/40 bg-[var(--sg-primary)]/15 px-1.5 py-px text-[var(--sg-primary)]">Complete: {hookStatusSummary.success}</span>
-            <span class="rounded border border-[var(--sg-warning)]/40 bg-[var(--sg-warning)]/15 px-1.5 py-px text-[var(--sg-warning)]">Skipped: {hookStatusSummary.skipped}</span>
-            <span class="rounded border border-[var(--sg-danger)]/40 bg-[var(--sg-danger)]/15 px-1.5 py-px text-[var(--sg-danger)]">Errors: {hookStatusSummary.error + hookStatusSummary.timed_out}</span>
+            <span
+              class="rounded border border-[var(--sg-border)] bg-[var(--sg-surface)] px-1.5 py-px text-[var(--sg-text-faint)]"
+              >Pending: {hookStatusSummary.pending}</span
+            >
+            <span
+              class="rounded border border-[var(--sg-accent)]/40 bg-[var(--sg-accent)]/15 px-1.5 py-px text-[var(--sg-accent)]"
+              >Running: {hookStatusSummary.running}</span
+            >
+            <span
+              class="rounded border border-[var(--sg-primary)]/40 bg-[var(--sg-primary)]/15 px-1.5 py-px text-[var(--sg-primary)]"
+              >Complete: {hookStatusSummary.success}</span
+            >
+            <span
+              class="rounded border border-[var(--sg-warning)]/40 bg-[var(--sg-warning)]/15 px-1.5 py-px text-[var(--sg-warning)]"
+              >Skipped: {hookStatusSummary.skipped}</span
+            >
+            <span
+              class="rounded border border-[var(--sg-danger)]/40 bg-[var(--sg-danger)]/15 px-1.5 py-px text-[var(--sg-danger)]"
+              >Errors: {hookStatusSummary.error + hookStatusSummary.timed_out}</span
+            >
           </div>
           {#if operationHooks.length === 0}
-            <p class="text-[10px] text-[var(--sg-text-faint)]">No hooks registered for this operation.</p>
+            <p class="text-[10px] text-[var(--sg-text-faint)]">
+              No hooks registered for this operation.
+            </p>
           {:else}
             <div class="space-y-2">
               {#each operationHooks as hook (hook.id)}
@@ -2086,15 +2492,22 @@
                       <p class="truncate text-xs font-medium text-[var(--sg-text)]">{hook.name}</p>
                       <p class="mt-0.5 text-[10px] text-[var(--sg-text-faint)]">{hook.trigger}</p>
                     </div>
-                    <span class={`shrink-0 rounded border px-1.5 py-px text-[10px] ${statusBadgeClass(hook.status)}`}>
+                    <span
+                      class={`shrink-0 rounded border px-1.5 py-px text-[10px] ${statusBadgeClass(hook.status)}`}
+                    >
                       {statusLabel(hook.status)}
                     </span>
                   </div>
-                  <div class="mt-1.5 max-h-24 overflow-auto rounded border border-[var(--sg-border-subtle)] bg-[var(--sg-bg)] p-1.5">
+                  <div
+                    class="mt-1.5 max-h-24 overflow-auto rounded border border-[var(--sg-border-subtle)] bg-[var(--sg-bg)] p-1.5"
+                  >
                     {#if hook.logs.length === 0}
                       <p class="text-[10px] text-[var(--sg-text-faint)]">Waiting for output...</p>
                     {:else}
-                      <pre class="whitespace-pre-wrap break-words font-mono text-[10px] leading-relaxed text-[var(--sg-text-dim)]">{hook.logs.join("\n\n")}</pre>
+                      <pre
+                        class="whitespace-pre-wrap break-words font-mono text-[10px] leading-relaxed text-[var(--sg-text-dim)]">{hook.logs.join(
+                          '\n\n'
+                        )}</pre>
                     {/if}
                   </div>
                 </div>
@@ -2103,26 +2516,37 @@
           {/if}
         </div>
 
-        <div class="max-h-[340px] overflow-auto rounded border border-[var(--sg-border-subtle)] bg-[var(--sg-surface-raised)] p-2.5">
-          <p class="mb-1 text-[10px] font-semibold uppercase tracking-wider text-[var(--sg-text-faint)]">Operation Timeline</p>
+        <div
+          class="max-h-[340px] overflow-auto rounded border border-[var(--sg-border-subtle)] bg-[var(--sg-surface-raised)] p-2.5"
+        >
+          <p
+            class="mb-1 text-[10px] font-semibold uppercase tracking-wider text-[var(--sg-text-faint)]"
+          >
+            Operation Timeline
+          </p>
           {#if operationLogs.length === 0}
             <p class="text-[10px] text-[var(--sg-text-faint)]">Waiting for hook output...</p>
           {:else}
-            <pre class="whitespace-pre-wrap break-words font-mono text-[10px] leading-relaxed text-[var(--sg-text-dim)]">{operationLogs.join("\n")}</pre>
+            <pre
+              class="whitespace-pre-wrap break-words font-mono text-[10px] leading-relaxed text-[var(--sg-text-dim)]">{operationLogs.join(
+                '\n'
+              )}</pre>
           {/if}
         </div>
       </div>
-      {#if operationError}
+      {#if operationError || operationCompleted}
         <div class="mt-3 flex justify-end">
           <button
             onclick={() => endOperation(true)}
             class="rounded border border-[var(--sg-border)] px-2.5 py-1 text-xs text-[var(--sg-text-dim)] hover:bg-[var(--sg-surface-raised)] hover:text-[var(--sg-text)]"
           >
-            Dismiss
+            {operationError ? 'Dismiss' : 'Close'}
           </button>
         </div>
       {:else}
-        <p class="mt-3 text-[10px] text-[var(--sg-text-faint)]">Please wait. This can include lifecycle hooks and git operations.</p>
+        <p class="mt-3 text-[10px] text-[var(--sg-text-faint)]">
+          Please wait. This can include lifecycle hooks and git operations.
+        </p>
       {/if}
     </div>
   </div>
@@ -2130,7 +2554,7 @@
 
 <WorkspaceHooksModal
   open={hooksModalOpen}
-  workspacePath={workspace?.workspacePath ?? ""}
+  workspacePath={workspace?.workspacePath ?? ''}
   onClose={() => {
     hooksModalOpen = false;
   }}

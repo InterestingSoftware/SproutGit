@@ -1,6 +1,7 @@
 # SproutGit Documentation Platform Plan
 
 ## Objective
+
 Adopt a modern documentation platform that is:
 
 - Hosted on the SproutGit website
@@ -10,6 +11,7 @@ Adopt a modern documentation platform that is:
 - Future-proof for versioning and API/reference growth
 
 ## Decision Summary
+
 Primary recommendation: Astro Starlight.
 
 Why this is the best fit for SproutGit now:
@@ -21,6 +23,7 @@ Why this is the best fit for SproutGit now:
 - Supports modern search integrations and static hosting workflows
 
 ## Scope
+
 In scope:
 
 - Documentation architecture and content organization
@@ -37,6 +40,7 @@ Out of scope for this plan:
 - Full migration of all existing docs in one step
 
 ## Proposed Information Architecture
+
 Top-level doc sections:
 
 1. Getting Started
@@ -55,6 +59,7 @@ Content format strategy:
 - Treat README as a project entry point, but keep canonical deep docs in the docs site
 
 ## Search Strategy
+
 Phase 1 (initial launch):
 
 - Use built-in/local static search option suitable for static docs
@@ -72,6 +77,7 @@ Acceptance expectations for search:
 - Keyboard-friendly behavior and fast response on desktop/mobile
 
 ## llms.txt Strategy
+
 Goal:
 
 - Publish `llms.txt` from the docs website so LLM tools can discover key documentation resources and project context.
@@ -93,6 +99,7 @@ Suggested `llms.txt` content categories:
 - Release notes location
 
 ## Contribution Model (Human + AI)
+
 Goals:
 
 - Make docs updates as easy as code changes
@@ -115,6 +122,7 @@ Authoring guidelines:
 - Use consistent terminology: repository, workspace, worktree, branch
 
 ## Migration Plan
+
 ### Phase 0: Preparation
 
 - Audit current docs in `docs/`, README, and website pages
@@ -174,6 +182,7 @@ Exit criteria:
 - Reduced doc discovery friction
 
 ## CI/CD and Quality Gates (Planned)
+
 Planned checks for docs pull requests:
 
 1. Docs build must pass
@@ -188,6 +197,7 @@ Release/deploy model:
 - Preview builds for PRs to review docs before merge
 
 ## Ownership and Operating Model
+
 Proposed ownership:
 
 - Maintainers own final editorial and structural decisions
@@ -200,6 +210,7 @@ Maintenance cadence:
 - Recurring docs quality sweep (dead links, stale screenshots, drift checks)
 
 ## Risks and Mitigations
+
 Risk: docs drift from product behavior.
 Mitigation: require docs impact review in feature PR template and CI checks.
 
@@ -213,6 +224,7 @@ Risk: `llms.txt` becomes stale.
 Mitigation: generate from metadata and validate in CI.
 
 ## Success Metrics
+
 1. Time-to-first-answer for common tasks decreases (qualitative + support feedback).
 2. Docs PR frequency increases without quality regressions.
 3. Search success improves (fewer repeated navigation clicks before target page).
@@ -220,10 +232,12 @@ Mitigation: generate from metadata and validate in CI.
 5. `llms.txt` remains current across releases.
 
 ## Open Decisions
+
 1. Final search provider at scale (stay static/local vs Algolia).
 2. Versioning trigger: at what release threshold to enable versioned docs.
 3. Screenshot/media standards and update ownership.
 4. Whether to keep all architecture docs in one location or split between `/docs` and website docs content.
 
 ## Next Step (Planning Only)
+
 Create a short architecture decision record (ADR) confirming Astro Starlight as the selected platform and linking this plan as the implementation guide.

@@ -36,7 +36,9 @@ export default async function globalSetup() {
     console.warn('[e2e] Skipping tauri build (SPROUTGIT_E2E_SKIP_BUILD=1).');
     const existingBinary = resolveBuiltBinaryPath();
     if (!existingBinary) {
-      throw new Error('SPROUTGIT_E2E_SKIP_BUILD=1 was set, but no built SproutGit binary was found. Run `pnpm run test:e2e:build` first.');
+      throw new Error(
+        'SPROUTGIT_E2E_SKIP_BUILD=1 was set, but no built SproutGit binary was found. Run `pnpm run test:e2e:build` first.'
+      );
     }
     process.env.SPROUTGIT_E2E_TAURI_COMMAND = existingBinary;
     process.env.SPROUTGIT_E2E_TAURI_CWD = process.cwd();
@@ -52,7 +54,9 @@ export default async function globalSetup() {
 
   const builtBinary = resolveBuiltBinaryPath();
   if (!builtBinary) {
-    throw new Error('Build completed but no SproutGit release binary could be located for E2E launch.');
+    throw new Error(
+      'Build completed but no SproutGit release binary could be located for E2E launch.'
+    );
   }
 
   process.env.SPROUTGIT_E2E_TAURI_COMMAND = builtBinary;

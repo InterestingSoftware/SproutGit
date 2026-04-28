@@ -9,8 +9,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 const MCP_SOCKET =
-  process.env.SPROUTGIT_PLAYWRIGHT_SOCKET_PATH ??
-  join(tmpdir(), 'sproutgit-playwright.sock');
+  process.env.SPROUTGIT_PLAYWRIGHT_SOCKET_PATH ?? join(tmpdir(), 'sproutgit-playwright.sock');
 const TCP_PORT = Number.parseInt(process.env.SPROUTGIT_PLAYWRIGHT_TCP_PORT ?? '6274', 10) || 6274;
 const TAURI_COMMAND = process.env.SPROUTGIT_E2E_TAURI_COMMAND;
 const TAURI_CWD = process.env.SPROUTGIT_E2E_TAURI_CWD;
@@ -26,7 +25,7 @@ function parseCommandSpec(spec: string): { command: string; args: string[] } {
 
     const isDoubleQuoted = raw.startsWith('"') && raw.endsWith('"');
     const isSingleQuoted = raw.startsWith("'") && raw.endsWith("'");
-    const unwrapped = (isDoubleQuoted || isSingleQuoted) ? raw.slice(1, -1) : raw;
+    const unwrapped = isDoubleQuoted || isSingleQuoted ? raw.slice(1, -1) : raw;
     const value = unwrapped.replace(/\\([\\"'])/g, '$1');
     tokens.push(value);
   }

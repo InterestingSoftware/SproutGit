@@ -12,15 +12,15 @@
   const {
     title,
     message,
-    confirmLabel = "Confirm",
-    cancelLabel = "Cancel",
+    confirmLabel = 'Confirm',
+    cancelLabel = 'Cancel',
     danger = false,
     onconfirm,
     oncancel,
   }: Props = $props();
 
   function handleKeydown(e: KeyboardEvent) {
-    if (e.key === "Escape") oncancel();
+    if (e.key === 'Escape') oncancel();
   }
 </script>
 
@@ -30,13 +30,15 @@
   class="fixed inset-0 z-50 flex items-center justify-center bg-black/40"
   style="animation: sg-fade-in 0.1s ease-out"
   onkeydown={handleKeydown}
-  onmousedown={(e) => { if (e.target === e.currentTarget) oncancel(); }}
+  onmousedown={e => {
+    if (e.target === e.currentTarget) oncancel();
+  }}
 >
   <!-- svelte-ignore a11y_no_static_element_interactions -->
   <div
     class="w-full max-w-sm rounded-lg border border-[var(--sg-border)] bg-[var(--sg-surface)] p-4 shadow-2xl"
     style="animation: sg-slide-up 0.15s ease-out"
-    onmousedown={(e) => e.stopPropagation()}
+    onmousedown={e => e.stopPropagation()}
   >
     <h3 class="mb-1 text-sm font-semibold text-[var(--sg-text)]">{title}</h3>
     <p class="mb-4 text-xs leading-relaxed text-[var(--sg-text-dim)]">{message}</p>

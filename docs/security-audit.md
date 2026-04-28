@@ -22,6 +22,7 @@ Risk:
 Untrusted refs/keys/URLs could begin with `-` and be interpreted as options by git.
 
 Remediation:
+
 - Added `validate_non_option_value` and `validate_git_config_key`.
 - Added `validate_repo_url`.
 - Updated command paths to validate before execution.
@@ -33,6 +34,7 @@ Risk:
 No explicit allowlist/registry for git/system action types, making audit/test coverage weaker.
 
 Remediation:
+
 - Added `GitAction` registry with explicit action labels.
 - Added `SystemAction` registry with explicit action labels.
 - Routed command execution through helper builders/executors that require an action enum.
@@ -44,6 +46,7 @@ Risk:
 Using `which` only can fail on Windows.
 
 Remediation:
+
 - Added cross-platform command lookup helper using `where` on Windows.
 
 ### 4. PATH separator portability issue (Resolved)
@@ -52,6 +55,7 @@ Risk:
 Hardcoded `:` separator in PATH augmentation is not cross-platform.
 
 Remediation:
+
 - Replaced PATH manipulation with `split_paths`/`join_paths`.
 - Added OS-specific preferred path entries with fallback behavior.
 
@@ -60,6 +64,7 @@ Remediation:
 Framework: Rust built-in unit tests (`cargo test`).
 
 Current security-focused unit tests:
+
 - Registry uniqueness for `GitAction`.
 - Registry uniqueness for `SystemAction`.
 - Rejection of option-injection prefix for untrusted values.
@@ -67,6 +72,7 @@ Current security-focused unit tests:
 - Validation of repository URL constraints.
 
 CI requirement:
+
 - `cargo test` runs in the Rust matrix job on Linux, macOS, and Windows.
 
 ## Residual Risk Notes

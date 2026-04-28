@@ -1,6 +1,17 @@
 import { test, expect } from '../fixtures';
-import { createTestRepo, querySqlite, resetConfigDb, resetTestDirs, runGit } from '../helpers/fixtures';
-import { createWorktreeViaUi, DEFAULT_UI_TIMEOUT, importRepoViaUi, reloadToHome } from '../helpers/ui';
+import {
+  createTestRepo,
+  querySqlite,
+  resetConfigDb,
+  resetTestDirs,
+  runGit,
+} from '../helpers/fixtures';
+import {
+  createWorktreeViaUi,
+  DEFAULT_UI_TIMEOUT,
+  importRepoViaUi,
+  reloadToHome,
+} from '../helpers/ui';
 import { dirname, join } from 'node:path';
 
 test.describe('Worktree workflow', () => {
@@ -20,14 +31,22 @@ test.describe('Worktree workflow', () => {
     await createWorktreeViaUi(tauriPage, 'feature/e2e-alpha');
     await createWorktreeViaUi(tauriPage, 'feature/e2e-beta');
 
-    const alphaItem = tauriPage.locator('[data-testid="worktree-item"][data-branch="feature/e2e-alpha"]');
-    const betaItem = tauriPage.locator('[data-testid="worktree-item"][data-branch="feature/e2e-beta"]');
+    const alphaItem = tauriPage.locator(
+      '[data-testid="worktree-item"][data-branch="feature/e2e-alpha"]'
+    );
+    const betaItem = tauriPage.locator(
+      '[data-testid="worktree-item"][data-branch="feature/e2e-beta"]'
+    );
 
     await expect(alphaItem).toBeVisible();
     await expect(betaItem).toBeVisible();
 
     // Verify git state: both worktrees are registered in git
-    const alphaPath = await alphaItem.getAttribute('data-path') ?? (() => { throw new Error('alpha worktree-item missing data-path'); })();
+    const alphaPath =
+      (await alphaItem.getAttribute('data-path')) ??
+      (() => {
+        throw new Error('alpha worktree-item missing data-path');
+      })();
     const gitRoot = join(dirname(dirname(alphaPath)), 'root');
     const worktreeList = runGit(gitRoot, ['worktree', 'list', '--porcelain']);
     expect(worktreeList).toContain('feature/e2e-alpha');
@@ -52,7 +71,7 @@ test.describe('Worktree workflow', () => {
 
     await tauriPage.waitForFunction(
       `!document.querySelector('[data-testid="worktree-item"][data-branch="feature/e2e-alpha"]')`,
-      DEFAULT_UI_TIMEOUT,
+      DEFAULT_UI_TIMEOUT
     );
     await expect(betaItem).toBeVisible();
 
@@ -65,7 +84,7 @@ test.describe('Worktree workflow', () => {
     const stateDbPath = join(dirname(dirname(alphaPath)), '.sproutgit', 'state.db');
     const metaRows = querySqlite(
       stateDbPath,
-      `SELECT value FROM meta WHERE key = 'workspace_path'`,
+      `SELECT value FROM meta WHERE key = 'workspace_path'`
     );
     expect(metaRows.length).toBe(1);
     expect(metaRows[0]?.[0]).toContain('worktree-test-workspace');

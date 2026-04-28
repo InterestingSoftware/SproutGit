@@ -16,6 +16,7 @@ pub enum SystemAction { CommandLookup, OpenEditor }
 ```
 
 **Benefits:**
+
 - ✅ Audit trail: every git operation is explicitly named
 - ✅ Security: input validation and environment setup centralized
 - ✅ Testing: unit tests can validate action uniqueness and invoke patterns
@@ -48,11 +49,13 @@ Result<Output, String>
    - Used across git.rs, diff.rs, editor.rs, workspace.rs
 
 2. **Base command builders encapsulate setup**
+
    ```rust
    pub fn base_git_command() -> Command
    pub fn git_command(action: GitAction, args: &[&str]) -> Command
    pub fn system_command(action: SystemAction, program: &str, args: &[&str]) -> Command
    ```
+
    - New operations inherit PATH, environment, and action tracking automatically
 
 3. **Helper utilities are standalone**
@@ -95,11 +98,13 @@ Result<Output, String>
 ### Current Composability: 4/10
 
 **Can compose:**
+
 - Input validators (stack them: `validate_non_option_value()` → `validate_repo_url()`)
 - Command builders (call `git_command()` with different args)
 - Error handling (try-catch chains)
 
 **Cannot easily compose:**
+
 - Multi-step atomic operations (transaction/rollback pattern needed)
 - Result aggregation (no collector/builder for complex results)
 - Batch operations (no queue or pipeline abstraction)
@@ -209,6 +214,7 @@ pub async fn tag_list(repo_path: String) -> Result<Vec<TagInfo>, String> {
 ### Tier 1: High-Value, Low-Effort
 
 **1. Add a `GitTransaction` builder pattern**
+
 ```rust
 pub struct GitTransaction {
     ops: Vec<Box<dyn GitOp>>,
@@ -222,17 +228,20 @@ impl GitTransaction {
     pub fn execute(self) -> Result<Vec<Output>, String> { ... }
 }
 ```
+
 - **Benefit**: Multi-step operations with rollback; atomic from user perspective
 - **Effort**: ~200 lines
 - **Example**: `GitTransaction::new().create_worktree(...).checkout(...).execute()?`
 
 **2. Add read-only caching with invalidation**
+
 ```rust
 pub struct GitCache {
     refs: RefCell<Option<CachedValue<Vec<RefInfo>>>>,
     status: RefCell<Option<CachedValue<StatusOutput>>>,
 }
 ```
+
 - **Benefit**: 30-40% reduction for read-heavy workflows
 - **Effort**: ~150 lines
 - **Example**: Second `list_refs()` call returns cached result
@@ -240,11 +249,13 @@ pub struct GitCache {
 ### Tier 2: Medium-Value, Medium-Effort
 
 **3. Add async/parallel operation support**
+
 - Use `tokio` or `async-std` for parallel unrelated git operations
 - **Benefit**: Faster batch operations, non-blocking frontend
 - **Effort**: ~300 lines + dependency
 
 **4. Add semantic high-level operations**
+
 ```rust
 pub async fn create_feature_branch_with_worktree(
     repo_path: &str,
@@ -252,6 +263,7 @@ pub async fn create_feature_branch_with_worktree(
     from_ref: &str,
 ) -> Result<CreateFeatureBranchResult, String>
 ```
+
 - Combines create + checkout + validation
 - **Benefit**: Simpler client code, fewer edge cases
 - **Effort**: ~100 lines per operation
@@ -259,25 +271,27 @@ pub async fn create_feature_branch_with_worktree(
 ### Tier 3: Lower-Priority
 
 **5. Add middleware/instrumentation layer**
+
 - Logging, metrics, tracing for each git operation
 - **Benefit**: Observability, debugging, performance profiling
 
 **6. Add plugin system**
+
 - Dynamic operation registration
 - **Benefit**: Third-party extensions
 - **Effort**: ~500+ lines
 
 ## Verdict: Is It a Good Platform?
 
-| Aspect | Rating | Notes |
-|--------|--------|-------|
-| **Security** | 9/10 | Excellent input validation, injection-safe |
-| **Auditability** | 9/10 | All operations registered, testable |
-| **Reusability** | 7/10 | Validators and helpers are reusable; high-level ops are not |
-| **Composability** | 4/10 | Can't easily chain multi-step operations without manual orchestration |
-| **Performance** | 7/10 | Efficient for single operations; could batch better |
-| **Extensibility** | 6/10 | Easy to add new git operations; hard to extend behavior |
-| **Async-Ready** | 6/10 | Uses async/await at Tauri boundary, but operations are blocking |
+| Aspect            | Rating | Notes                                                                 |
+| ----------------- | ------ | --------------------------------------------------------------------- |
+| **Security**      | 9/10   | Excellent input validation, injection-safe                            |
+| **Auditability**  | 9/10   | All operations registered, testable                                   |
+| **Reusability**   | 7/10   | Validators and helpers are reusable; high-level ops are not           |
+| **Composability** | 4/10   | Can't easily chain multi-step operations without manual orchestration |
+| **Performance**   | 7/10   | Efficient for single operations; could batch better                   |
+| **Extensibility** | 6/10   | Easy to add new git operations; hard to extend behavior               |
+| **Async-Ready**   | 6/10   | Uses async/await at Tauri boundary, but operations are blocking       |
 
 **Recommendation**: ✅ **Yes, it's a solid foundation**, but add a `GitTransaction` pattern (Tier 1) before building complex workflows. This adds composability and rollback semantics without breaking existing code.
 

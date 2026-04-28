@@ -12,9 +12,7 @@ const playwrightBin =
     : join(process.cwd(), 'node_modules', '.bin', 'playwright');
 
 const args =
-  process.platform === 'linux'
-    ? ['install', '--with-deps', 'chromium']
-    : ['install', 'chromium'];
+  process.platform === 'linux' ? ['install', '--with-deps', 'chromium'] : ['install', 'chromium'];
 
 console.log(`[setup-playwright] Running: ${playwrightBin} ${args.join(' ')}`);
 // On Windows, .cmd files must be run via cmd.exe (shell: true).

@@ -19,7 +19,7 @@ concurrency:
 
 jobs:
   build:
-    name: "01 · Build Site"
+    name: '01 · Build Site'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -51,7 +51,7 @@ jobs:
           path: website/dist
 
   deploy:
-    name: "02 · Deploy Pages"
+    name: '02 · Deploy Pages'
     needs: build
     runs-on: ubuntu-latest
     environment:

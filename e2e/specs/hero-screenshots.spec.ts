@@ -1,10 +1,7 @@
 import { test } from '../fixtures';
 import { createHeroMediaRepo } from '../helpers/benchmark-repos';
 import { appendRepoFile, resetConfigDb, resetTestDirs, writeRepoFile } from '../helpers/fixtures';
-import {
-  captureScreenshotVariants,
-  resizeWindowForScreenshot,
-} from '../helpers/screenshots';
+import { captureScreenshotVariants, resizeWindowForScreenshot } from '../helpers/screenshots';
 import {
   createWorktreeViaUi,
   DEFAULT_UI_TIMEOUT,
@@ -15,7 +12,10 @@ import {
 } from '../helpers/ui';
 
 test.describe('Hero screenshots @screenshots', () => {
-  test.skip(!process.env.CAPTURE_SCREENSHOTS, 'Set CAPTURE_SCREENSHOTS=1 to generate curated screenshots');
+  test.skip(
+    !process.env.CAPTURE_SCREENSHOTS,
+    'Set CAPTURE_SCREENSHOTS=1 to generate curated screenshots'
+  );
 
   test.beforeEach(async ({ tauriPage }) => {
     resetTestDirs();
@@ -23,7 +23,9 @@ test.describe('Hero screenshots @screenshots', () => {
     await reloadToHome(tauriPage);
   });
 
-  test('captures canonical UI screenshots from the pinned hero repo', async ({ tauriPage }, testInfo) => {
+  test('captures canonical UI screenshots from the pinned hero repo', async ({
+    tauriPage,
+  }, testInfo) => {
     // Compact window so screenshots have less whitespace and look tighter.
     await resizeWindowForScreenshot(tauriPage, 960, 620);
 
@@ -41,29 +43,48 @@ test.describe('Hero screenshots @screenshots', () => {
     await captureScreenshotVariants(tauriPage, testInfo, 'workspace/commit-graph');
 
     // ── Shot 2: diff/changes-panel — changes tab with a file selected ─────────
-    const settingsWt = tauriPage.locator('[data-testid="worktree-item"][data-branch="feature/settings-redesign"]');
-    const settingsPath = await settingsWt.getAttribute('data-path') ?? (() => { throw new Error('worktree-item missing data-path'); })();
+    const settingsWt = tauriPage.locator(
+      '[data-testid="worktree-item"][data-branch="feature/settings-redesign"]'
+    );
+    const settingsPath =
+      (await settingsWt.getAttribute('data-path')) ??
+      (() => {
+        throw new Error('worktree-item missing data-path');
+      })();
 
-    writeRepoFile(settingsPath, 'src/ui/settings/index.tsx',
+    writeRepoFile(
+      settingsPath,
+      'src/ui/settings/index.tsx',
       'export function SettingsPage() {\n' +
-      '  return (\n' +
-      '    <div className="settings-page">\n' +
-      '      <h1>Settings</h1>\n' +
-      '      <ThemeSection />\n' +
-      '      <NotificationsSection />\n' +
-      '    </div>\n' +
-      '  );\n' +
-      '}\n');
+        '  return (\n' +
+        '    <div className="settings-page">\n' +
+        '      <h1>Settings</h1>\n' +
+        '      <ThemeSection />\n' +
+        '      <NotificationsSection />\n' +
+        '    </div>\n' +
+        '  );\n' +
+        '}\n'
+    );
     appendRepoFile(settingsPath, 'src/config.ts', '// updated by settings feature');
-    writeRepoFile(settingsPath, 'src/ui/settings/theme.tsx',
+    writeRepoFile(
+      settingsPath,
+      'src/ui/settings/theme.tsx',
       'export function ThemeSection() {\n' +
-      '  return <section>Theme: <select><option>Auto</option></select></section>;\n' +
-      '}\n');
-    writeRepoFile(settingsPath, 'src/ui/settings/notifications.tsx',
+        '  return <section>Theme: <select><option>Auto</option></select></section>;\n' +
+        '}\n'
+    );
+    writeRepoFile(
+      settingsPath,
+      'src/ui/settings/notifications.tsx',
       'export function NotificationsSection() {\n' +
-      '  return <section>Notifications: <input type="checkbox" defaultChecked /></section>;\n' +
-      '}\n');
-    appendRepoFile(settingsPath, 'tests/settings.test.ts', '  it("renders theme section", () => {});');
+        '  return <section>Notifications: <input type="checkbox" defaultChecked /></section>;\n' +
+        '}\n'
+    );
+    appendRepoFile(
+      settingsPath,
+      'tests/settings.test.ts',
+      '  it("renders theme section", () => {});'
+    );
 
     await settingsWt.click();
     await openChangesTab(tauriPage);
@@ -139,7 +160,7 @@ test.describe('Hero screenshots @screenshots', () => {
     // Wait for the first PTY to be assigned (data-pty-id populated).
     await tauriPage.waitForFunction(
       `(() => document.querySelector('[data-pty-id]:not([data-pty-id=""])') !== null)()`,
-      DEFAULT_UI_TIMEOUT,
+      DEFAULT_UI_TIMEOUT
     );
 
     // Add a second terminal session.
@@ -147,7 +168,10 @@ test.describe('Hero screenshots @screenshots', () => {
     await addBtn.click();
     // If a shell picker appeared, choose the first option.
     const shellOption = tauriPage.getByTestId('terminal-shell-option');
-    const shellMenuVisible = await shellOption.first().isVisible().catch(() => false);
+    const shellMenuVisible = await shellOption
+      .first()
+      .isVisible()
+      .catch(() => false);
     if (shellMenuVisible) {
       await shellOption.first().click();
     }
@@ -155,7 +179,7 @@ test.describe('Hero screenshots @screenshots', () => {
     // Wait until two PTY panels exist.
     await tauriPage.waitForFunction(
       `(() => document.querySelectorAll('[data-pty-id]:not([data-pty-id=""])').length >= 2)()`,
-      DEFAULT_UI_TIMEOUT,
+      DEFAULT_UI_TIMEOUT
     );
 
     // Switch to grid layout (2-column).
@@ -175,7 +199,7 @@ test.describe('Hero screenshots @screenshots', () => {
       const ptyId = ptyIds[i];
       const cmd = commands[i % commands.length];
       await tauriPage.evaluate(
-        `window.__TAURI_INTERNALS__.invoke('terminal_input', { ptyId: ${JSON.stringify(ptyId)}, data: ${JSON.stringify(cmd)} })`,
+        `window.__TAURI_INTERNALS__.invoke('terminal_input', { ptyId: ${JSON.stringify(ptyId)}, data: ${JSON.stringify(cmd)} })`
       );
       // Stagger sends so output doesn't interleave.
       await new Promise(r => setTimeout(r, 500));
@@ -186,4 +210,3 @@ test.describe('Hero screenshots @screenshots', () => {
     await captureScreenshotVariants(tauriPage, testInfo, 'terminal/grid-view');
   });
 });
-

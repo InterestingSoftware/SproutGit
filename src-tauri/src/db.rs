@@ -31,9 +31,15 @@ async fn connect_sqlite(db_path: &Path) -> Result<DatabaseConnection, String> {
 }
 
 static WORKSPACE_MIGRATIONS: LazyLock<Migrations<'static>> = LazyLock::new(|| {
-    Migrations::new(vec![M::up(include_str!(
-        "../migrations/workspace/001_initial_schema.sql"
-    ))])
+    Migrations::new(vec![
+        M::up(include_str!("../migrations/workspace/001_initial_schema.sql")),
+        M::up(include_str!(
+            "../migrations/workspace/002_hook_keep_open_on_completion.sql"
+        )),
+        M::up(include_str!(
+            "../migrations/workspace/003_hook_execution_preferences.sql"
+        )),
+    ])
 });
 
 static CONFIG_MIGRATIONS: LazyLock<Migrations<'static>> = LazyLock::new(|| {

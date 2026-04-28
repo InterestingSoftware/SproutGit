@@ -4,7 +4,10 @@ import { resetConfigDb, resetTestDirs } from '../helpers/fixtures';
 import { importRepoViaUi, reloadToHome } from '../helpers/ui';
 
 test.describe('Canary repositories @canary', () => {
-  test.skip(!process.env.RUN_CANARY, 'Set RUN_CANARY=1 to run non-blocking canary repository checks');
+  test.skip(
+    !process.env.RUN_CANARY,
+    'Set RUN_CANARY=1 to run non-blocking canary repository checks'
+  );
 
   test.beforeEach(async ({ tauriPage }) => {
     resetTestDirs();

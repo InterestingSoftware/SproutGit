@@ -203,7 +203,7 @@ pub async fn list_worktrees(repo_path: String) -> Result<WorktreeListResult, Str
                 worktrees.push(item);
             }
             current = Some(WorktreeInfo {
-                path: rest.to_string(),
+                path: path_to_frontend(Path::new(rest)),
                 head: None,
                 branch: None,
                 detached: false,
@@ -357,9 +357,14 @@ pub async fn create_managed_worktree(
     managed_worktrees_path: String,
     from_ref: String,
     new_branch: String,
+    initiating_worktree_path: Option<String>,
 ) -> Result<CreateWorktreeResult, String> {
     let root_repo = normalize_existing_path(&root_repo_path)?;
     let worktrees_dir = normalize_or_create_dir(&managed_worktrees_path)?;
+    let initiating_worktree = crate::hooks::normalize_optional_existing_dir(
+        initiating_worktree_path.as_deref(),
+        "Initiating worktree path",
+    )?;
 
     let branch = new_branch.trim();
     let branch = validate_non_option_value(branch, "New branch")?;
@@ -382,9 +387,12 @@ pub async fn create_managed_worktree(
 
     if let Some(workspace_path) = workspace_from_root_repo(&root_repo) {
         let before_summary = execute_workspace_hooks_for_trigger(
-            &workspace_path,
+            crate::hooks::HookExecutionContext {
+                workspace_path: workspace_path.clone(),
+                trigger_worktree_path: Some(target_worktree.clone()),
+                initiating_worktree_path: initiating_worktree.clone(),
+            },
             "before_worktree_create",
-            &target_worktree,
             Some(&app_handle),
         )
         .await?;
@@ -419,9 +427,12 @@ pub async fn create_managed_worktree(
 
     if let Some(workspace_path) = workspace_from_root_repo(&root_repo) {
         let _ = execute_workspace_hooks_for_trigger(
-            &workspace_path,
+            crate::hooks::HookExecutionContext {
+                workspace_path: workspace_path.clone(),
+                trigger_worktree_path: Some(target_worktree.clone()),
+                initiating_worktree_path: initiating_worktree.clone(),
+            },
             "after_worktree_create",
-            &target_worktree,
             Some(&app_handle),
         )
         .await;
@@ -440,15 +451,23 @@ pub async fn delete_managed_worktree(
     root_repo_path: String,
     worktree_path: String,
     delete_branch: bool,
+    initiating_worktree_path: Option<String>,
 ) -> Result<String, String> {
     let root_repo = normalize_existing_path(&root_repo_path)?;
     let wt_path = normalize_existing_path(&worktree_path)?;
+    let initiating_worktree = crate::hooks::normalize_optional_existing_dir(
+        initiating_worktree_path.as_deref(),
+        "Initiating worktree path",
+    )?;
 
     if let Some(workspace_path) = workspace_from_root_repo(&root_repo) {
         let before_summary = execute_workspace_hooks_for_trigger(
-            &workspace_path,
+            crate::hooks::HookExecutionContext {
+                workspace_path: workspace_path.clone(),
+                trigger_worktree_path: Some(wt_path.clone()),
+                initiating_worktree_path: initiating_worktree.clone(),
+            },
             "before_worktree_remove",
-            &wt_path,
             Some(&app_handle),
         )
         .await?;
@@ -484,9 +503,12 @@ pub async fn delete_managed_worktree(
 
     if let Some(workspace_path) = workspace_from_root_repo(&root_repo) {
         let _ = execute_workspace_hooks_for_trigger(
-            &workspace_path,
+            crate::hooks::HookExecutionContext {
+                workspace_path: workspace_path.clone(),
+                trigger_worktree_path: Some(wt_path.clone()),
+                initiating_worktree_path: initiating_worktree.clone(),
+            },
             "after_worktree_remove",
-            &wt_path,
             Some(&app_handle),
         )
         .await;
@@ -509,9 +531,12 @@ pub async fn checkout_worktree(
 
     if let Some(workspace_path) = workspace_for_hooks.as_ref() {
         let before_summary = execute_workspace_hooks_for_trigger(
-            workspace_path,
+            crate::hooks::HookExecutionContext {
+                workspace_path: workspace_path.clone(),
+                trigger_worktree_path: Some(wt_path.clone()),
+                initiating_worktree_path: Some(wt_path.clone()),
+            },
             "before_worktree_switch",
-            &wt_path,
             Some(&app_handle),
         )
         .await?;
@@ -594,9 +619,12 @@ pub async fn checkout_worktree(
         if !pop_output.status.success() {
             if let Some(workspace_path) = workspace_for_hooks.as_ref() {
                 let _ = execute_workspace_hooks_for_trigger(
-                    workspace_path,
+                    crate::hooks::HookExecutionContext {
+                        workspace_path: workspace_path.clone(),
+                        trigger_worktree_path: Some(wt_path.clone()),
+                        initiating_worktree_path: Some(wt_path.clone()),
+                    },
                     "after_worktree_switch",
-                    &wt_path,
                     Some(&app_handle),
                 )
                 .await;
@@ -613,9 +641,12 @@ pub async fn checkout_worktree(
 
     if let Some(workspace_path) = workspace_for_hooks.as_ref() {
         let _ = execute_workspace_hooks_for_trigger(
-            workspace_path,
+            crate::hooks::HookExecutionContext {
+                workspace_path: workspace_path.clone(),
+                trigger_worktree_path: Some(wt_path.clone()),
+                initiating_worktree_path: Some(wt_path.clone()),
+            },
             "after_worktree_switch",
-            &wt_path,
             Some(&app_handle),
         )
         .await;
@@ -678,7 +709,15 @@ pub async fn create_feature_worktree(
     let feature = validate_non_option_value(&feature_name, "Feature name")?;
 
     // Use existing create_managed_worktree under the hood
-    create_managed_worktree(app_handle, root_path, worktrees_path, source, feature).await
+    create_managed_worktree(
+        app_handle,
+        root_path,
+        worktrees_path,
+        source,
+        feature,
+        None,
+    )
+    .await
 }
 
 /// Checkout a worktree to a target ref with automatic stash.

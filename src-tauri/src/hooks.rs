@@ -12,7 +12,7 @@ use tokio::time::timeout;
 
 use crate::db::connect_workspace_db;
 use crate::git::helpers::{
-    command_exists, now_epoch_seconds, run_git, strip_win_prefix, system_command,
+    command_exists, now_epoch_seconds, path_to_frontend, run_git, strip_win_prefix, system_command,
     validate_no_control_chars, shell_candidates_for_current_os, GitAction, SystemAction,
 };
 
@@ -23,10 +23,13 @@ pub struct WorkspaceHook {
     pub name: String,
     pub scope: String,
     pub trigger: String,
+    pub execution_target: String,
+    pub execution_mode: String,
     pub shell: String,
     pub script: String,
     pub enabled: bool,
     pub critical: bool,
+    pub keep_open_on_completion: bool,
     pub timeout_seconds: u32,
     pub created_at: i64,
     pub updated_at: i64,
@@ -39,10 +42,13 @@ pub struct WorkspaceHookWithDependencies {
     pub name: String,
     pub scope: String,
     pub trigger: String,
+    pub execution_target: String,
+    pub execution_mode: String,
     pub shell: String,
     pub script: String,
     pub enabled: bool,
     pub critical: bool,
+    pub keep_open_on_completion: bool,
     pub timeout_seconds: u32,
     pub created_at: i64,
     pub updated_at: i64,
@@ -55,10 +61,13 @@ pub struct HookUpsertInput {
     pub name: String,
     pub scope: String,
     pub trigger: String,
+    pub execution_target: String,
+    pub execution_mode: String,
     pub shell: String,
     pub script: String,
     pub enabled: bool,
     pub critical: bool,
+    pub keep_open_on_completion: bool,
     pub timeout_seconds: u32,
     pub dependency_ids: Vec<String>,
 }
@@ -69,10 +78,20 @@ struct RuntimeHook {
     name: String,
     scope: String,
     trigger: String,
+    execution_target: String,
+    execution_mode: String,
     shell: String,
     script: String,
     critical: bool,
+    keep_open_on_completion: bool,
     timeout_seconds: u32,
+}
+
+#[derive(Clone)]
+pub struct HookExecutionContext {
+    pub workspace_path: PathBuf,
+    pub trigger_worktree_path: Option<PathBuf>,
+    pub initiating_worktree_path: Option<PathBuf>,
 }
 
 #[derive(Clone)]
@@ -80,6 +99,7 @@ struct RuntimeHookResult {
     hook_id: String,
     hook_name: String,
     critical: bool,
+    keep_open_on_completion: bool,
     status: String,
     success: bool,
     error_message: Option<String>,
@@ -98,11 +118,23 @@ struct HookProgressEvent {
     trigger: String,
     hook_id: String,
     hook_name: String,
+    keep_open_on_completion: bool,
     phase: String,
     status: String,
     stdout_snippet: Option<String>,
     stderr_snippet: Option<String>,
     error_message: Option<String>,
+}
+
+#[derive(Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+struct HookTerminalLaunchEvent {
+    trigger: String,
+    hook_id: String,
+    hook_name: String,
+    shell: String,
+    cwd: String,
+    command: String,
 }
 
 fn emit_hook_progress(app_handle: Option<&tauri::AppHandle>, event: HookProgressEvent) {
@@ -124,6 +156,9 @@ const ALLOWED_TRIGGERS: &[&str] = &[
 const MAX_HOOK_OUTPUT_BYTES: usize = 64 * 1024;
 
 const ALLOWED_SCOPES: &[&str] = &["worktree", "workspace"];
+const ALLOWED_EXECUTION_TARGETS: &[&str] =
+    &["workspace", "trigger_worktree", "initiating_worktree"];
+const ALLOWED_EXECUTION_MODES: &[&str] = &["headless", "terminal_tab"];
 
 fn detect_available_hook_shells() -> Vec<String> {
     let detected: Vec<String> = shell_candidates_for_current_os()
@@ -206,6 +241,66 @@ fn validate_scope(scope: &str) -> Result<String, String> {
     Ok(scope)
 }
 
+fn validate_execution_target(execution_target: &str) -> Result<String, String> {
+    let execution_target = normalize_non_empty(execution_target, "Execution target")?;
+    if !ALLOWED_EXECUTION_TARGETS.contains(&execution_target.as_str()) {
+        return Err(format!(
+            "Unsupported execution target: {execution_target}"
+        ));
+    }
+    Ok(execution_target)
+}
+
+fn validate_execution_mode(execution_mode: &str) -> Result<String, String> {
+    let execution_mode = normalize_non_empty(execution_mode, "Execution mode")?;
+    if !ALLOWED_EXECUTION_MODES.contains(&execution_mode.as_str()) {
+        return Err(format!("Unsupported execution mode: {execution_mode}"));
+    }
+    Ok(execution_mode)
+}
+
+fn trigger_supports_initiating_worktree(trigger: &str) -> bool {
+    matches!(
+        trigger,
+        "before_worktree_create"
+            | "after_worktree_create"
+            | "before_worktree_remove"
+            | "after_worktree_remove"
+    )
+}
+
+fn trigger_supports_terminal_tab(trigger: &str) -> bool {
+    trigger == "manual" || trigger.starts_with("after_")
+}
+
+fn validate_execution_preferences(
+    trigger: &str,
+    execution_target: &str,
+    execution_mode: &str,
+) -> Result<(), String> {
+    if execution_target == "initiating_worktree" && !trigger_supports_initiating_worktree(trigger) {
+        return Err(format!(
+            "Trigger '{trigger}' cannot target the initiating worktree"
+        ));
+    }
+
+    if execution_mode == "terminal_tab" {
+        if execution_target == "workspace" {
+            return Err(
+                "Terminal tab execution requires a worktree target, not the workspace"
+                    .to_string(),
+            );
+        }
+        if !trigger_supports_terminal_tab(trigger) {
+            return Err(format!(
+                "Trigger '{trigger}' cannot run in a terminal tab"
+            ));
+        }
+    }
+
+    Ok(())
+}
+
 fn validate_timeout(timeout_seconds: u32) -> Result<u32, String> {
     if timeout_seconds == 0 {
         return Err("timeoutSeconds must be at least 1".to_string());
@@ -258,6 +353,17 @@ fn normalize_existing_dir(path_value: &str, field_name: &str) -> Result<PathBuf,
     Ok(normalized)
 }
 
+pub(crate) fn normalize_optional_existing_dir(
+    path_value: Option<&str>,
+    field_name: &str,
+) -> Result<Option<PathBuf>, String> {
+    let Some(value) = path_value.map(str::trim).filter(|value| !value.is_empty()) else {
+        return Ok(None);
+    };
+
+    normalize_existing_dir(value, field_name).map(Some)
+}
+
 fn truncate_utf8(input: &[u8], max_bytes: usize) -> String {
     let text = String::from_utf8_lossy(input).to_string();
     if text.len() <= max_bytes {
@@ -305,6 +411,22 @@ fn trigger_parts(trigger: &str) -> (String, String) {
     (phase.to_string(), action.to_string())
 }
 
+fn quote_posix_env_value(value: &str) -> String {
+    format!("'{}'", value.replace('\'', "'\"'\"'"))
+}
+
+fn quote_powershell_env_value(value: &str) -> String {
+    format!("'{}'", value.replace('\'', "''"))
+}
+
+fn shell_env_assignment(shell: &str, key: &str, value: &str) -> String {
+    if matches!(shell, "pwsh" | "powershell") {
+        format!("$env:{key} = {}", quote_powershell_env_value(value))
+    } else {
+        format!("export {key}={}", quote_posix_env_value(value))
+    }
+}
+
 fn path_tail(path: &Path) -> String {
     path.file_name()
         .map(|name| name.to_string_lossy().to_string())
@@ -317,6 +439,15 @@ struct WorktreeGitContext {
     head_full: Option<String>,
     head_short: Option<String>,
     detached: bool,
+}
+
+fn empty_worktree_git_context() -> WorktreeGitContext {
+    WorktreeGitContext {
+        branch_name: None,
+        head_full: None,
+        head_short: None,
+        detached: false,
+    }
 }
 
 fn load_worktree_git_context(worktree_path: &Path) -> WorktreeGitContext {
@@ -337,6 +468,142 @@ fn load_worktree_git_context(worktree_path: &Path) -> WorktreeGitContext {
         branch_name,
         head_full,
         head_short,
+    }
+}
+
+fn resolve_working_directory(
+    hook: &RuntimeHook,
+    context: &HookExecutionContext,
+) -> Result<Option<PathBuf>, String> {
+    match hook.execution_target.as_str() {
+        "workspace" => Ok(None),
+        "trigger_worktree" => context
+            .trigger_worktree_path
+            .clone()
+            .map(Some)
+            .ok_or_else(|| format!("Hook '{}' requires an affected worktree path", hook.name)),
+        "initiating_worktree" => context
+            .initiating_worktree_path
+            .clone()
+            .map(Some)
+            .ok_or_else(|| format!("Hook '{}' requires an initiating worktree path", hook.name)),
+        _ => Err(format!(
+            "Hook '{}' uses an unsupported execution target: {}",
+            hook.name, hook.execution_target
+        )),
+    }
+}
+
+fn build_hook_environment(
+    hook: &RuntimeHook,
+    context: &HookExecutionContext,
+    resolved_worktree_path: Option<&Path>,
+) -> Vec<(String, String)> {
+    let workspace_path = context.workspace_path.as_path();
+    let root_path = workspace_path.join("root");
+    let worktrees_path = workspace_path.join("worktrees");
+    let (trigger_phase, trigger_action) = trigger_parts(&hook.trigger);
+    let workspace_name = path_tail(workspace_path);
+    let worktree_name = resolved_worktree_path.map(path_tail).unwrap_or_default();
+    let worktree_context = resolved_worktree_path
+        .map(load_worktree_git_context)
+        .unwrap_or_else(empty_worktree_git_context);
+
+    let mut env = vec![
+        (
+            "SPROUTGIT_WORKSPACE_PATH".to_string(),
+            workspace_path.to_string_lossy().to_string(),
+        ),
+        ("SPROUTGIT_WORKSPACE_NAME".to_string(), workspace_name),
+        (
+            "SPROUTGIT_ROOT_PATH".to_string(),
+            root_path.to_string_lossy().to_string(),
+        ),
+        (
+            "SPROUTGIT_WORKTREES_PATH".to_string(),
+            worktrees_path.to_string_lossy().to_string(),
+        ),
+        (
+            "SPROUTGIT_WORKTREE_PATH".to_string(),
+            resolved_worktree_path
+                .map(|path| path.to_string_lossy().to_string())
+                .unwrap_or_default(),
+        ),
+        ("SPROUTGIT_WORKTREE_NAME".to_string(), worktree_name),
+        (
+            "SPROUTGIT_WORKTREE_BRANCH".to_string(),
+            worktree_context.branch_name.unwrap_or_default(),
+        ),
+        (
+            "SPROUTGIT_WORKTREE_HEAD".to_string(),
+            worktree_context.head_full.unwrap_or_default(),
+        ),
+        (
+            "SPROUTGIT_WORKTREE_HEAD_SHORT".to_string(),
+            worktree_context.head_short.unwrap_or_default(),
+        ),
+        (
+            "SPROUTGIT_WORKTREE_DETACHED".to_string(),
+            if worktree_context.detached { "true" } else { "false" }.to_string(),
+        ),
+        (
+            "SPROUTGIT_TRIGGER_WORKTREE_PATH".to_string(),
+            context
+                .trigger_worktree_path
+                .as_ref()
+                .map(|path| path.to_string_lossy().to_string())
+                .unwrap_or_default(),
+        ),
+        (
+            "SPROUTGIT_INITIATING_WORKTREE_PATH".to_string(),
+            context
+                .initiating_worktree_path
+                .as_ref()
+                .map(|path| path.to_string_lossy().to_string())
+                .unwrap_or_default(),
+        ),
+        ("SPROUTGIT_HOOK_ID".to_string(), hook.id.clone()),
+        ("SPROUTGIT_HOOK_NAME".to_string(), hook.name.clone()),
+        ("SPROUTGIT_HOOK_SCOPE".to_string(), hook.scope.clone()),
+        ("SPROUTGIT_HOOK_SHELL".to_string(), hook.shell.clone()),
+        (
+            "SPROUTGIT_HOOK_CRITICAL".to_string(),
+            if hook.critical { "true" } else { "false" }.to_string(),
+        ),
+        (
+            "SPROUTGIT_HOOK_TIMEOUT_SECONDS".to_string(),
+            hook.timeout_seconds.to_string(),
+        ),
+        (
+            "SPROUTGIT_HOOK_EXECUTION_TARGET".to_string(),
+            hook.execution_target.clone(),
+        ),
+        (
+            "SPROUTGIT_HOOK_EXECUTION_MODE".to_string(),
+            hook.execution_mode.clone(),
+        ),
+        ("SPROUTGIT_TRIGGER".to_string(), hook.trigger.clone()),
+        ("SPROUTGIT_TRIGGER_PHASE".to_string(), trigger_phase),
+        ("SPROUTGIT_TRIGGER_ACTION".to_string(), trigger_action),
+        ("SPROUTGIT_OS".to_string(), current_os_label().to_string()),
+    ];
+
+    env.sort_by(|a, b| a.0.cmp(&b.0));
+    env
+}
+
+fn compose_terminal_command(shell: &str, env: &[(String, String)], script: &str) -> String {
+    let assignments = env
+        .iter()
+        .map(|(key, value)| shell_env_assignment(shell, key, value))
+        .collect::<Vec<_>>();
+
+    // For PowerShell, use semicolons to separate statements since the entire command
+    // is sent as a single input to the PTY. For POSIX shells, use newlines.
+    if matches!(shell, "pwsh" | "powershell") {
+        format!("{}; {}", assignments.join("; "), script)
+    } else {
+        format!("{}\n{}\n", assignments.join("\n"), script)
     }
 }
 
@@ -566,7 +833,7 @@ async fn load_hook_by_id(
     let statement = Statement::from_sql_and_values(
         DbBackend::Sqlite,
         "
-        SELECT id, name, scope, trigger, shell, script, enabled, critical, timeout_seconds, created_at, updated_at
+        SELECT id, name, scope, trigger, execution_target, execution_mode, shell, script, enabled, critical, keep_open_on_completion, timeout_seconds, created_at, updated_at
         FROM hook_definitions
         WHERE id = ?
         LIMIT 1
@@ -707,11 +974,114 @@ fn resolve_script_execution(
 
 async fn execute_hook(
     hook: RuntimeHook,
-    workspace_path: PathBuf,
-    worktree_path: PathBuf,
+    context: HookExecutionContext,
+    app_handle: Option<tauri::AppHandle>,
 ) -> (RuntimeHookResult, Option<String>, Option<String>) {
-    let root_path = workspace_path.join("root");
-    let worktrees_path = workspace_path.join("worktrees");
+    let resolved_worktree_path = match resolve_working_directory(&hook, &context) {
+        Ok(path) => path,
+        Err(err) => {
+            return (
+                RuntimeHookResult {
+                    hook_id: hook.id,
+                    hook_name: hook.name,
+                    critical: hook.critical,
+                    keep_open_on_completion: hook.keep_open_on_completion,
+                    status: "failed".to_string(),
+                    success: false,
+                    error_message: Some(err),
+                },
+                None,
+                None,
+            );
+        },
+    };
+
+    let env = build_hook_environment(&hook, &context, resolved_worktree_path.as_deref());
+
+    if hook.execution_mode == "terminal_tab" {
+        let Some(worktree_path) = resolved_worktree_path.as_ref() else {
+            return (
+                RuntimeHookResult {
+                    hook_id: hook.id,
+                    hook_name: hook.name,
+                    critical: hook.critical,
+                    keep_open_on_completion: hook.keep_open_on_completion,
+                    status: "failed".to_string(),
+                    success: false,
+                    error_message: Some(
+                        "Terminal tab execution requires a worktree working directory"
+                            .to_string(),
+                    ),
+                },
+                None,
+                None,
+            );
+        };
+
+        let Some(app) = app_handle else {
+            return (
+                RuntimeHookResult {
+                    hook_id: hook.id,
+                    hook_name: hook.name,
+                    critical: hook.critical,
+                    keep_open_on_completion: hook.keep_open_on_completion,
+                    status: "failed".to_string(),
+                    success: false,
+                    error_message: Some(
+                        "Terminal tab execution requires an active app handle"
+                            .to_string(),
+                    ),
+                },
+                None,
+                None,
+            );
+        };
+
+        use tauri::Emitter;
+        let command = compose_terminal_command(&hook.shell, &env, &hook.script);
+        let emit_result = app.emit(
+            "hook-terminal-launch",
+            HookTerminalLaunchEvent {
+                trigger: hook.trigger.clone(),
+                hook_id: hook.id.clone(),
+                hook_name: hook.name.clone(),
+                shell: hook.shell.clone(),
+                cwd: path_to_frontend(worktree_path),
+                command,
+            },
+        );
+
+        return match emit_result {
+            Ok(_) => (
+                RuntimeHookResult {
+                    hook_id: hook.id,
+                    hook_name: hook.name,
+                    critical: hook.critical,
+                    keep_open_on_completion: hook.keep_open_on_completion,
+                    status: "success".to_string(),
+                    success: true,
+                    error_message: None,
+                },
+                Some("Launched in worktree terminal tab".to_string()),
+                None,
+            ),
+            Err(err) => (
+                RuntimeHookResult {
+                    hook_id: hook.id,
+                    hook_name: hook.name,
+                    critical: hook.critical,
+                    keep_open_on_completion: hook.keep_open_on_completion,
+                    status: "failed".to_string(),
+                    success: false,
+                    error_message: Some(format!(
+                        "Failed to launch worktree terminal tab: {err}"
+                    )),
+                },
+                None,
+                None,
+            ),
+        };
+    }
 
     let script_extension = hook_script_extension(&hook.shell);
     let script_path = std::env::temp_dir().join(format!(
@@ -727,6 +1097,7 @@ async fn execute_hook(
                 hook_id: hook.id,
                 hook_name: hook.name,
                 critical: hook.critical,
+                keep_open_on_completion: hook.keep_open_on_completion,
                 status: "failed".to_string(),
                 success: false,
                 error_message: Some(e),
@@ -746,6 +1117,7 @@ async fn execute_hook(
                     hook_id: hook.id,
                     hook_name: hook.name,
                     critical: hook.critical,
+                    keep_open_on_completion: hook.keep_open_on_completion,
                     status: "failed".to_string(),
                     success: false,
                     error_message: Some(err),
@@ -758,67 +1130,14 @@ async fn execute_hook(
 
     let arg_refs: Vec<&str> = args.iter().map(String::as_str).collect();
     let mut base = system_command(SystemAction::HookExecute, &program, &arg_refs);
-    let (trigger_phase, trigger_action) = trigger_parts(&hook.trigger);
-    let workspace_name = path_tail(&workspace_path);
-    let worktree_name = path_tail(&worktree_path);
-    let worktree_context = load_worktree_git_context(&worktree_path);
-
-    base.env(
-        "SPROUTGIT_WORKSPACE_PATH",
-        workspace_path.to_string_lossy().to_string(),
+    for (key, value) in &env {
+        base.env(key, value);
+    }
+    base.current_dir(
+        resolved_worktree_path
+            .as_deref()
+            .unwrap_or(context.workspace_path.as_path()),
     );
-    base.env("SPROUTGIT_WORKSPACE_NAME", workspace_name);
-    base.env(
-        "SPROUTGIT_ROOT_PATH",
-        root_path.to_string_lossy().to_string(),
-    );
-    base.env(
-        "SPROUTGIT_WORKTREES_PATH",
-        worktrees_path.to_string_lossy().to_string(),
-    );
-    base.env(
-        "SPROUTGIT_WORKTREE_PATH",
-        worktree_path.to_string_lossy().to_string(),
-    );
-    base.env("SPROUTGIT_WORKTREE_NAME", worktree_name);
-    base.env(
-        "SPROUTGIT_WORKTREE_BRANCH",
-        worktree_context.branch_name.unwrap_or_default(),
-    );
-    base.env(
-        "SPROUTGIT_WORKTREE_HEAD",
-        worktree_context.head_full.unwrap_or_default(),
-    );
-    base.env(
-        "SPROUTGIT_WORKTREE_HEAD_SHORT",
-        worktree_context.head_short.unwrap_or_default(),
-    );
-    base.env(
-        "SPROUTGIT_WORKTREE_DETACHED",
-        if worktree_context.detached {
-            "true"
-        } else {
-            "false"
-        },
-    );
-
-    base.env("SPROUTGIT_HOOK_ID", hook.id.clone());
-    base.env("SPROUTGIT_HOOK_NAME", hook.name.clone());
-    base.env("SPROUTGIT_HOOK_SCOPE", hook.scope.clone());
-    base.env("SPROUTGIT_HOOK_SHELL", hook.shell.clone());
-    base.env(
-        "SPROUTGIT_HOOK_CRITICAL",
-        if hook.critical { "true" } else { "false" },
-    );
-    base.env(
-        "SPROUTGIT_HOOK_TIMEOUT_SECONDS",
-        hook.timeout_seconds.to_string(),
-    );
-
-    base.env("SPROUTGIT_TRIGGER", hook.trigger.clone());
-    base.env("SPROUTGIT_TRIGGER_PHASE", trigger_phase);
-    base.env("SPROUTGIT_TRIGGER_ACTION", trigger_action);
-    base.env("SPROUTGIT_OS", current_os_label());
 
     let mut command = TokioCommand::from(base);
     command.stdout(Stdio::piped());
@@ -833,6 +1152,7 @@ async fn execute_hook(
                     hook_id: hook.id,
                     hook_name: hook.name,
                     critical: hook.critical,
+                    keep_open_on_completion: hook.keep_open_on_completion,
                     status: "failed".to_string(),
                     success: false,
                     error_message: Some(format!("Failed to spawn hook process: {e}")),
@@ -892,6 +1212,7 @@ async fn execute_hook(
                         hook_id: hook.id,
                         hook_name: hook.name,
                         critical: hook.critical,
+                        keep_open_on_completion: hook.keep_open_on_completion,
                         status: "success".to_string(),
                         success: true,
                         error_message: None,
@@ -910,6 +1231,7 @@ async fn execute_hook(
                         hook_id: hook.id,
                         hook_name: hook.name,
                         critical: hook.critical,
+                        keep_open_on_completion: hook.keep_open_on_completion,
                         status: "failed".to_string(),
                         success: false,
                         error_message,
@@ -924,6 +1246,7 @@ async fn execute_hook(
                 hook_id: hook.id,
                 hook_name: hook.name,
                 critical: hook.critical,
+                keep_open_on_completion: hook.keep_open_on_completion,
                 status: "failed".to_string(),
                 success: false,
                 error_message: Some(format!("Failed while waiting for hook process: {e}")),
@@ -936,6 +1259,7 @@ async fn execute_hook(
                 hook_id: hook.id,
                 hook_name: hook.name,
                 critical: hook.critical,
+                keep_open_on_completion: hook.keep_open_on_completion,
                 status: "timed_out".to_string(),
                 success: false,
                 error_message: Some(format!(
@@ -986,9 +1310,12 @@ fn to_runtime_hook(hook: WorkspaceHook) -> RuntimeHook {
         name: hook.name,
         scope: hook.scope,
         trigger: hook.trigger,
+        execution_target: hook.execution_target,
+        execution_mode: hook.execution_mode,
         shell: hook.shell,
         script: hook.script,
         critical: hook.critical,
+        keep_open_on_completion: hook.keep_open_on_completion,
         timeout_seconds: hook.timeout_seconds,
     }
 }
@@ -996,15 +1323,21 @@ fn to_runtime_hook(hook: WorkspaceHook) -> RuntimeHook {
 async fn execute_loaded_hooks(
     conn: &sea_orm::DatabaseConnection,
     trigger: &str,
-    worktree: &Path,
     hooks: HashMap<String, RuntimeHook>,
     dependency_map: HashMap<String, Vec<String>>,
-    workspace: &Path,
+    context: &HookExecutionContext,
     app_handle: Option<&tauri::AppHandle>,
 ) -> Result<HookExecutionSummary, String> {
     let mut pending = hooks;
     let mut completed: HashMap<String, RuntimeHookResult> = HashMap::new();
     let mut summary = HookExecutionSummary::default();
+    let run_record_path = context
+        .trigger_worktree_path
+        .as_ref()
+        .or(context.initiating_worktree_path.as_ref())
+        .unwrap_or(&context.workspace_path)
+        .to_string_lossy()
+        .to_string();
 
     while !pending.is_empty() {
         let mut ready_ids: Vec<String> = pending
@@ -1034,6 +1367,7 @@ async fn execute_loaded_hooks(
                         hook_id: blocked.id.clone(),
                         hook_name: blocked.name.clone(),
                         critical: blocked.critical,
+                        keep_open_on_completion: blocked.keep_open_on_completion,
                         status: "skipped".to_string(),
                         success: false,
                         error_message: err.clone(),
@@ -1051,7 +1385,7 @@ async fn execute_loaded_hooks(
                         HookRunRecord {
                             hook_id: blocked.id.clone(),
                             trigger: trigger.to_string(),
-                            worktree_path: worktree.to_string_lossy().to_string(),
+                            worktree_path: run_record_path.clone(),
                             status: "skipped".to_string(),
                             started_at: now_epoch_seconds() as i64,
                             finished_at: Some(now_epoch_seconds() as i64),
@@ -1069,6 +1403,7 @@ async fn execute_loaded_hooks(
                             trigger: trigger.to_string(),
                             hook_id: blocked.id.clone(),
                             hook_name: blocked.name.clone(),
+                            keep_open_on_completion: blocked.keep_open_on_completion,
                             phase: "skipped".to_string(),
                             status: "skipped".to_string(),
                             stdout_snippet: None,
@@ -1090,6 +1425,7 @@ async fn execute_loaded_hooks(
         });
 
         let mut joins = JoinSet::new();
+        let app_handle_owned = app_handle.cloned();
         for hook_id in ready_ids {
             let Some(hook) = pending.remove(&hook_id) else {
                 continue;
@@ -1101,6 +1437,7 @@ async fn execute_loaded_hooks(
                     trigger: trigger.to_string(),
                     hook_id: hook.id.clone(),
                     hook_name: hook.name.clone(),
+                    keep_open_on_completion: hook.keep_open_on_completion,
                     phase: "start".to_string(),
                     status: "running".to_string(),
                     stdout_snippet: None,
@@ -1109,11 +1446,7 @@ async fn execute_loaded_hooks(
                 },
             );
 
-            joins.spawn(execute_hook(
-                hook,
-                workspace.to_path_buf(),
-                worktree.to_path_buf(),
-            ));
+            joins.spawn(execute_hook(hook, context.clone(), app_handle_owned.clone()));
         }
 
         while let Some(join_result) = joins.join_next().await {
@@ -1136,7 +1469,7 @@ async fn execute_loaded_hooks(
                     HookRunRecord {
                         hook_id: hook_result.hook_id.clone(),
                         trigger: trigger.to_string(),
-                        worktree_path: worktree.to_string_lossy().to_string(),
+                        worktree_path: run_record_path.clone(),
                         status: hook_result.status.clone(),
                         started_at: now_epoch_seconds() as i64,
                         finished_at: Some(now_epoch_seconds() as i64),
@@ -1154,6 +1487,7 @@ async fn execute_loaded_hooks(
                         trigger: trigger.to_string(),
                         hook_id: hook_result.hook_id.clone(),
                         hook_name: hook_result.hook_name.clone(),
+                        keep_open_on_completion: hook_result.keep_open_on_completion,
                         phase: "end".to_string(),
                         status: hook_result.status.clone(),
                         stdout_snippet: stdout_for_event,
@@ -1177,7 +1511,7 @@ async fn load_hooks_for_trigger(
     let hook_statement = Statement::from_sql_and_values(
         DbBackend::Sqlite,
         "
-        SELECT id, name, scope, trigger, shell, script, enabled, critical, timeout_seconds, created_at, updated_at
+        SELECT id, name, scope, trigger, execution_target, execution_mode, shell, script, enabled, critical, keep_open_on_completion, timeout_seconds, created_at, updated_at
         FROM hook_definitions
         WHERE trigger = ? AND enabled = 1
         ORDER BY name ASC
@@ -1285,14 +1619,17 @@ async fn load_hook_closure(
 }
 
 pub async fn execute_workspace_hooks_for_trigger(
-    workspace_path: &Path,
+    context: HookExecutionContext,
     trigger: &str,
-    worktree_path: &Path,
     app_handle: Option<&tauri::AppHandle>,
 ) -> Result<HookExecutionSummary, String> {
     let trigger = validate_trigger(trigger)?;
-    let workspace = normalize_workspace_path(&workspace_path.to_string_lossy())?;
-    let worktree = worktree_path.to_path_buf();
+    let workspace = normalize_workspace_path(&context.workspace_path.to_string_lossy())?;
+    let context = HookExecutionContext {
+        workspace_path: workspace.clone(),
+        trigger_worktree_path: context.trigger_worktree_path,
+        initiating_worktree_path: context.initiating_worktree_path,
+    };
 
     let conn = connect_workspace_db(&workspace.to_string_lossy()).await?;
     let (hooks, dependency_map) = load_hooks_for_trigger(&conn, &trigger).await?;
@@ -1303,10 +1640,9 @@ pub async fn execute_workspace_hooks_for_trigger(
     execute_loaded_hooks(
         &conn,
         &trigger,
-        &worktree,
         hooks,
         dependency_map,
-        &workspace,
+        &context,
         app_handle,
     )
     .await
@@ -1324,7 +1660,7 @@ pub async fn list_workspace_hooks(
         Statement::from_sql_and_values(
             DbBackend::Sqlite,
             "
-            SELECT id, name, scope, trigger, shell, script, enabled, critical, timeout_seconds, created_at, updated_at
+            SELECT id, name, scope, trigger, execution_target, execution_mode, shell, script, enabled, critical, keep_open_on_completion, timeout_seconds, created_at, updated_at
             FROM hook_definitions
             WHERE trigger = ?
             ORDER BY name ASC
@@ -1335,7 +1671,7 @@ pub async fn list_workspace_hooks(
         Statement::from_string(
             DbBackend::Sqlite,
             "
-            SELECT id, name, scope, trigger, shell, script, enabled, critical, timeout_seconds, created_at, updated_at
+            SELECT id, name, scope, trigger, execution_target, execution_mode, shell, script, enabled, critical, keep_open_on_completion, timeout_seconds, created_at, updated_at
             FROM hook_definitions
             ORDER BY trigger ASC, name ASC
             "
@@ -1359,10 +1695,13 @@ pub async fn list_workspace_hooks(
             name: hook.name,
             scope: hook.scope,
             trigger: hook.trigger,
+            execution_target: hook.execution_target,
+            execution_mode: hook.execution_mode,
             shell: hook.shell,
             script: hook.script,
             enabled: hook.enabled,
             critical: hook.critical,
+            keep_open_on_completion: hook.keep_open_on_completion,
             timeout_seconds: hook.timeout_seconds,
             created_at: hook.created_at,
             updated_at: hook.updated_at,
@@ -1384,6 +1723,9 @@ pub async fn create_workspace_hook(
     let name = normalize_non_empty(&input.name, "Hook name")?;
     let scope = validate_scope(&input.scope)?;
     let trigger = validate_trigger(&input.trigger)?;
+    let execution_target = validate_execution_target(&input.execution_target)?;
+    let execution_mode = validate_execution_mode(&input.execution_mode)?;
+    validate_execution_preferences(&trigger, &execution_target, &execution_mode)?;
     let shell = validate_shell(&input.shell)?;
     let script = normalize_hook_script(&input.script)?;
     let timeout_seconds = validate_timeout(input.timeout_seconds)? as i64;
@@ -1397,25 +1739,31 @@ pub async fn create_workspace_hook(
             name,
             scope,
             trigger,
+            execution_target,
+            execution_mode,
             shell,
             script,
             enabled,
             critical,
+            keep_open_on_completion,
             timeout_seconds,
             created_at,
             updated_at
         )
-            VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ",
         vec![
             id.clone().into(),
             name.clone().into(),
             scope.clone().into(),
             trigger.clone().into(),
+            execution_target.clone().into(),
+            execution_mode.clone().into(),
             shell.clone().into(),
             script.clone().into(),
             (input.enabled as i64).into(),
             (input.critical as i64).into(),
+            (input.keep_open_on_completion as i64).into(),
             timeout_seconds.into(),
             now.into(),
             now.into(),
@@ -1444,10 +1792,13 @@ pub async fn create_workspace_hook(
         name: hook.name,
         scope: hook.scope,
         trigger: hook.trigger,
+        execution_target: hook.execution_target,
+        execution_mode: hook.execution_mode,
         shell: hook.shell,
         script: hook.script,
         enabled: hook.enabled,
         critical: hook.critical,
+        keep_open_on_completion: hook.keep_open_on_completion,
         timeout_seconds: hook.timeout_seconds,
         created_at: hook.created_at,
         updated_at: hook.updated_at,
@@ -1467,6 +1818,9 @@ pub async fn update_workspace_hook(
     let name = normalize_non_empty(&input.name, "Hook name")?;
     let scope = validate_scope(&input.scope)?;
     let trigger = validate_trigger(&input.trigger)?;
+    let execution_target = validate_execution_target(&input.execution_target)?;
+    let execution_mode = validate_execution_mode(&input.execution_mode)?;
+    validate_execution_preferences(&trigger, &execution_target, &execution_mode)?;
     let shell = validate_shell(&input.shell)?;
     let script = normalize_hook_script(&input.script)?;
     let timeout_seconds = validate_timeout(input.timeout_seconds)? as i64;
@@ -1479,10 +1833,13 @@ pub async fn update_workspace_hook(
         SET name = ?,
             scope = ?,
             trigger = ?,
+            execution_target = ?,
+            execution_mode = ?,
             shell = ?,
             script = ?,
             enabled = ?,
             critical = ?,
+            keep_open_on_completion = ?,
             timeout_seconds = ?,
             updated_at = ?
         WHERE id = ?
@@ -1491,10 +1848,13 @@ pub async fn update_workspace_hook(
             name.clone().into(),
             scope.clone().into(),
             trigger.clone().into(),
+            execution_target.clone().into(),
+            execution_mode.clone().into(),
             shell.clone().into(),
             script.clone().into(),
             (input.enabled as i64).into(),
             (input.critical as i64).into(),
+            (input.keep_open_on_completion as i64).into(),
             timeout_seconds.into(),
             now.into(),
             hook_id.clone().into(),
@@ -1528,10 +1888,13 @@ pub async fn update_workspace_hook(
         name: hook.name,
         scope: hook.scope,
         trigger: hook.trigger,
+        execution_target: hook.execution_target,
+        execution_mode: hook.execution_mode,
         shell: hook.shell,
         script: hook.script,
         enabled: hook.enabled,
         critical: hook.critical,
+        keep_open_on_completion: hook.keep_open_on_completion,
         timeout_seconds: hook.timeout_seconds,
         created_at: hook.created_at,
         updated_at: hook.updated_at,
@@ -1607,9 +1970,14 @@ pub async fn run_workspace_hook(
     workspace_path: String,
     hook_id: String,
     worktree_path: String,
+    initiating_worktree_path: Option<String>,
 ) -> Result<(), String> {
     let workspace = normalize_workspace_path(&workspace_path)?;
     let worktree = normalize_existing_dir(&worktree_path, "Worktree path")?;
+    let initiating_worktree = normalize_optional_existing_dir(
+        initiating_worktree_path.as_deref(),
+        "Initiating worktree path",
+    )?;
     let hook_id = normalize_non_empty(&hook_id, "Hook id")?;
     let conn = connect_workspace_db(&workspace.to_string_lossy()).await?;
 
@@ -1617,10 +1985,13 @@ pub async fn run_workspace_hook(
     let summary = execute_loaded_hooks(
         &conn,
         &trigger,
-        &worktree,
         hooks,
         dependency_map,
-        &workspace,
+        &HookExecutionContext {
+            workspace_path: workspace.clone(),
+            trigger_worktree_path: Some(worktree),
+            initiating_worktree_path: initiating_worktree,
+        },
         Some(&app_handle),
     )
     .await?;

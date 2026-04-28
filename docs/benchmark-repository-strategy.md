@@ -1,6 +1,7 @@
 # SproutGit Benchmark Repository Strategy
 
 ## Purpose
+
 Define a durable strategy for sample repositories used by SproutGit for:
 
 - Product screenshots and videos
@@ -11,6 +12,7 @@ Define a durable strategy for sample repositories used by SproutGit for:
 This strategy avoids stale, hand-curated datasets while preserving deterministic media capture.
 
 ## Decision Summary
+
 Use a hybrid model:
 
 1. Generated benchmark repositories are the source of truth.
@@ -24,6 +26,7 @@ Rationale:
 - Generated plus snapshot repositories provide both freshness and repeatability.
 
 ## Repository Classes
+
 ### Class A: Hero Media Repository
 
 Use one stable benchmark repo for all public screenshots and videos.
@@ -66,6 +69,7 @@ Policy:
 - Failures trigger investigation, not immediate release failure.
 
 ## Freshness and Stability Model
+
 ### Continuous Freshness
 
 Maintain generator scripts and regenerate benchmark repositories regularly.
@@ -90,6 +94,7 @@ Usage:
 - CI runs should include latest plus previous snapshot for drift checks.
 
 ## Media Capture Policy
+
 Use a deterministic runbook for screenshots and videos.
 
 Rules:
@@ -109,6 +114,7 @@ Suggested canonical shot list:
 6. Context menu and copy actions
 
 ## Governance and Ownership
+
 ### Owners
 
 - Maintainers own benchmark scenario definitions and acceptance criteria.
@@ -125,6 +131,7 @@ Any benchmark scenario change should include:
 4. Whether a new snapshot tag is required
 
 ## CI and Validation Strategy
+
 Planned checks:
 
 1. Generator outputs are deterministic for fixed seeds
@@ -138,6 +145,7 @@ Recommended lane split:
 - Non-blocking lane: popular repository canaries
 
 ## Risk Register
+
 Risk: benchmark scenarios become unrealistic.
 Mitigation: periodic review against real-world canary findings.
 
@@ -151,12 +159,14 @@ Risk: media inconsistency across releases.
 Mitigation: enforce pinned snapshot plus canonical capture runbook.
 
 ## Success Criteria
+
 1. Screenshot and video capture remains reproducible across releases.
 2. Benchmark datasets are refreshed via defined regeneration triggers without manual churn.
 3. Regressions are detected in generated benchmarks before release.
 4. Canary lane reveals real-world drift without destabilizing release cadence.
 
 ## Rollout Plan
+
 ### Phase 1
 
 - Define scenario modules and deterministic generation inputs
@@ -182,6 +192,7 @@ Mitigation: enforce pinned snapshot plus canonical capture runbook.
 - Publish internal guidance for maintainers and contributors
 
 ## Open Questions
+
 1. Which exact repos should be in the canary rotation?
 2. What retention window is appropriate for snapshot tags?
 3. Which benchmark failures should block release immediately?

@@ -113,7 +113,7 @@ export function querySqlite(dbPath: string, sql: string): string[][] {
     stdio: 'pipe',
   }).trim();
   if (!output) return [];
-  return output.split('\n').map((row) => row.split('\t'));
+  return output.split('\n').map(row => row.split('\t'));
 }
 
 export function executeSqlite(dbPath: string, sql: string) {
@@ -132,11 +132,21 @@ export function checkout(repoPath: string, ref: string, create = false) {
   runGit(repoPath, create ? ['checkout', '-b', ref] : ['checkout', ref]);
 }
 
-export function mergeNoFastForward(repoPath: string, ref: string, message: string, sequence: number) {
+export function mergeNoFastForward(
+  repoPath: string,
+  ref: string,
+  message: string,
+  sequence: number
+) {
   runGit(repoPath, ['merge', '--no-ff', ref, '-m', message], gitEnv(sequence));
 }
 
-export function createAnnotatedTag(repoPath: string, tag: string, message: string, sequence: number) {
+export function createAnnotatedTag(
+  repoPath: string,
+  tag: string,
+  message: string,
+  sequence: number
+) {
   runGit(repoPath, ['tag', '-a', tag, '-m', message], gitEnv(sequence));
 }
 
@@ -158,11 +168,7 @@ interface CreateTestRepoOptions {
 }
 
 export function createTestRepo(name: string, opts: CreateTestRepoOptions = {}) {
-  const {
-    extraCommits = 0,
-    branches = [],
-    files = {},
-  } = opts;
+  const { extraCommits = 0, branches = [], files = {} } = opts;
 
   const repoPath = join(REPOS_DIR, name);
   mkdirSync(repoPath, { recursive: true });

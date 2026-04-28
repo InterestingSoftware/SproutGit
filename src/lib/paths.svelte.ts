@@ -12,7 +12,7 @@ let _home = $state('');
 
 if (typeof window !== 'undefined' && !IS_WINDOWS) {
   homeDir()
-    .then((h) => {
+    .then(h => {
       // Normalise: ensure no trailing separator
       _home = h.endsWith('/') ? h.slice(0, -1) : h;
     })
