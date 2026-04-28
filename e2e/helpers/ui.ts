@@ -1,3 +1,4 @@
+import { existsSync, unlinkSync } from 'node:fs';
 import { basename, dirname } from 'node:path';
 import { BrowserPageAdapter, type TauriPage } from '@srsholmes/tauri-playwright';
 
@@ -331,6 +332,26 @@ export async function openHistoryTab(tauriPage: AdapterPage) {
   await tab.click();
 }
 
+function isTransientGitIndexLockError(message: string): boolean {
+  return (
+    message.includes('index.lock') &&
+    (message.includes('File exists') || message.includes('Another git process seems to be running'))
+  );
+}
+
+function removeStaleGitIndexLockFromError(message: string): void {
+  const lockPath = /Unable to create '([^']+index\.lock)'/.exec(message)?.[1];
+  if (!lockPath) return;
+
+  try {
+    if (existsSync(lockPath)) {
+      unlinkSync(lockPath);
+    }
+  } catch {
+    // Best-effort cleanup: if deletion fails, the retry will surface the underlying error.
+  }
+}
+
 /** Ensure a worktree is active (selected + tab bar visible) without accidentally toggling it off.
  *
  * The sidebar click handler is a toggle — if the worktree is already active, clicking it
@@ -449,22 +470,33 @@ export async function stageAndCommitViaUi(tauriPage: AdapterPage, message: strin
     throw new Error('stageAndCommitViaUi: commit button never became enabled');
   }
 
-  await commitButton.click();
+  const maxCommitAttempts = 2;
+  for (let attempt = 0; attempt < maxCommitAttempts; attempt += 1) {
+    await commitButton.click();
 
-  const resultDeadline = Date.now() + DEFAULT_UI_TIMEOUT;
-  while (Date.now() < resultDeadline) {
-    const successes = await tauriPage.allTextContents(
-      '[data-testid="toast-item"][data-toast-type="success"] [data-testid="toast-message"]'
-    );
-    if (successes.some(t => t.includes(message))) return;
+    const resultDeadline = Date.now() + DEFAULT_UI_TIMEOUT;
+    while (Date.now() < resultDeadline) {
+      const successes = await tauriPage.allTextContents(
+        '[data-testid="toast-item"][data-toast-type="success"] [data-testid="toast-message"]'
+      );
+      if (successes.some(t => t.includes(message))) return;
 
-    const errors = await tauriPage.allTextContents(
-      '[data-testid="toast-item"][data-toast-type="error"] [data-testid="toast-message"]'
-    );
-    const err = errors.find(Boolean);
-    if (err) throw new Error(`Commit failed: ${err}`);
+      const errors = await tauriPage.allTextContents(
+        '[data-testid="toast-item"][data-toast-type="error"] [data-testid="toast-message"]'
+      );
+      const err = errors.find(Boolean);
+      if (err) {
+        if (attempt + 1 < maxCommitAttempts && isTransientGitIndexLockError(err)) {
+          removeStaleGitIndexLockFromError(err);
+          // A short backoff resolves transient lock contention from overlapping git operations.
+          await delay(450);
+          break;
+        }
+        throw new Error(`Commit failed: ${err}`);
+      }
 
-    await delay(120);
+      await delay(120);
+    }
   }
 
   throw new Error(`Commit did not produce success toast for message: ${message}`);
