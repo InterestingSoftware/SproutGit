@@ -267,7 +267,6 @@ export async function importRepoViaUi(tauriPage: AdapterPage, repoPath: string) 
 }
 
 export async function createWorktreeViaUi(tauriPage: AdapterPage, branchName: string) {
-  const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
   await tauriPage.getByTestId('input-new-branch').fill(branchName);
   const createButton = tauriPage.getByTestId('btn-create-worktree');
   const isDisabled = async () => (await createButton.getAttribute('disabled')) !== null;
@@ -359,7 +358,6 @@ function removeStaleGitIndexLockFromError(message: string): void {
  * clicking, and re-clicking if we detect we accidentally toggled off.
  */
 export async function selectWorktreeViaUi(tauriPage: AdapterPage, branchName: string) {
-  const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
   const itemSelector = `[data-testid="worktree-item"][data-branch="${branchName}"]`;
   const tabSelector = '[data-testid="tab-changes"]';
   const item = tauriPage.locator(itemSelector);
@@ -397,12 +395,10 @@ export async function selectWorktreeViaUi(tauriPage: AdapterPage, branchName: st
 
 /** Delete a worktree by branch name via the hover button and confirm the dialog. */
 export async function deleteWorktreeViaUi(tauriPage: AdapterPage, branchName: string) {
-  const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
-
   await tauriPage.evaluate(`(() => {
     const button = document.querySelector('[data-testid="worktree-item"][data-branch="${branchName}"] [data-testid="btn-delete-worktree"]');
     if (!(button instanceof HTMLElement)) {
-      throw new Error('delete worktree button not found for ${branchName}');
+      throw new Error(\`delete worktree button not found for ${branchName}\`);
     }
     button.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
   })()`);
@@ -432,8 +428,6 @@ export async function deleteWorktreeViaUi(tauriPage: AdapterPage, branchName: st
  * switched to the Changes tab and the worktree has at least one unstaged file visible.
  */
 export async function stageAndCommitViaUi(tauriPage: AdapterPage, message: string) {
-  const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
-
   await tauriPage.getByTestId('btn-stage-all').waitFor(DEFAULT_UI_TIMEOUT);
   await tauriPage.getByTestId('btn-stage-all').click();
 
