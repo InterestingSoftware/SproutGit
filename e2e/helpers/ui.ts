@@ -398,7 +398,7 @@ export async function deleteWorktreeViaUi(tauriPage: AdapterPage, branchName: st
   await tauriPage.evaluate(`(() => {
     const button = document.querySelector('[data-testid="worktree-item"][data-branch="${branchName}"] [data-testid="btn-delete-worktree"]');
     if (!(button instanceof HTMLElement)) {
-      throw new Error(\`delete worktree button not found for ${branchName}\`);
+      throw new Error(${JSON.stringify(`delete worktree button not found for ${branchName}`)});
     }
     button.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
   })()`);
