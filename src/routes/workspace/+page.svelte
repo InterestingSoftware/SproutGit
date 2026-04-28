@@ -109,6 +109,7 @@
   let operationError = $state<string | null>(null);
   let activeHookName = $state<string | null>(null);
   let operationLogs = $state<string[]>([]);
+  let operationCompleted = $state(false);
 
   type OperationHookStatus = "pending" | "running" | "success" | "skipped" | "timed_out" | "error";
   type OperationHookState = {
@@ -116,10 +117,15 @@
     name: string;
     trigger: string;
     status: OperationHookStatus;
+    keepOpenOnCompletion: boolean;
     logs: string[];
   };
 
   let operationHooks = $state<OperationHookState[]>([]);
+
+  const shouldKeepOperationOpen = $derived(
+    operationHooks.some((hook) => hook.keepOpenOnCompletion),
+  );
 
   const hookStatusSummary = $derived.by(() => {
     const summary = {
@@ -205,6 +211,7 @@
       name: event.hookName,
       trigger: event.trigger,
       status: "pending",
+      keepOpenOnCompletion: event.keepOpenOnCompletion ?? false,
       logs: [],
     };
 
@@ -216,12 +223,15 @@
     operationLogs = [...operationLogs, line];
   }
 
-  function toOperationHookState(hook: Pick<WorkspaceHook, "id" | "name" | "trigger">): OperationHookState {
+  function toOperationHookState(
+    hook: Pick<WorkspaceHook, "id" | "name" | "trigger" | "keepOpenOnCompletion">,
+  ): OperationHookState {
     return {
       id: hook.id,
       name: hook.name,
       trigger: hook.trigger,
       status: "pending",
+      keepOpenOnCompletion: hook.keepOpenOnCompletion,
       logs: [],
     };
   }
@@ -374,10 +384,11 @@
     title: string,
     detail: string,
     triggers: WorkspaceHookTrigger[] = [],
-    preloadedHooks: Array<Pick<WorkspaceHook, "id" | "name" | "trigger">> = [],
+    preloadedHooks: Array<Pick<WorkspaceHook, "id" | "name" | "trigger" | "keepOpenOnCompletion">> = [],
   ) {
     operationStatus = { title, detail };
     operationError = null;
+    operationCompleted = false;
     activeHookName = null;
     operationLogs = [];
     operationHooks = [];
@@ -394,18 +405,23 @@
       const hookLists = await Promise.all(
         triggers.map(async (trigger) => {
           const hooks = await listWorkspaceHooks(workspacePath, trigger);
-          return Array.isArray(hooks) ? hooks : [];
+          return Array.isArray(hooks) ? hooks.filter((hook) => hook.enabled) : [];
         }),
       );
 
       const seen = new Set<string>();
-      const hooks: Array<Pick<WorkspaceHook, "id" | "name" | "trigger">> = [];
+      const hooks: Array<Pick<WorkspaceHook, "id" | "name" | "trigger" | "keepOpenOnCompletion">> = [];
 
       for (const triggerHooks of hookLists) {
         for (const hook of triggerHooks) {
           if (seen.has(hook.id)) continue;
           seen.add(hook.id);
-          hooks.push({ id: hook.id, name: hook.name, trigger: hook.trigger });
+          hooks.push({
+            id: hook.id,
+            name: hook.name,
+            trigger: hook.trigger,
+            keepOpenOnCompletion: hook.keepOpenOnCompletion,
+          });
         }
       }
 
@@ -421,9 +437,26 @@
   }
 
   function endOperation(force = false) {
-    if (operationError && !force) return;
+    if (force) {
+      operationStatus = null;
+      operationError = null;
+      operationCompleted = false;
+      activeHookName = null;
+      operationHooks = [];
+      return;
+    }
+
+    if (operationError) return;
+
+    if (shouldKeepOperationOpen) {
+      operationCompleted = true;
+      activeHookName = null;
+      return;
+    }
+
     operationStatus = null;
     operationError = null;
+    operationCompleted = false;
     activeHookName = null;
     operationHooks = [];
   }
@@ -441,6 +474,7 @@
         ...current,
         name: event.hookName,
         trigger: event.trigger,
+        keepOpenOnCompletion: event.keepOpenOnCompletion ?? current.keepOpenOnCompletion,
         status: nextStatus,
         logs: [...current.logs, "Started"],
       }));
@@ -453,6 +487,7 @@
         ...current,
         name: event.hookName,
         trigger: event.trigger,
+        keepOpenOnCompletion: event.keepOpenOnCompletion ?? current.keepOpenOnCompletion,
         status: nextStatus,
         logs: event.errorMessage
           ? [...current.logs, `Skipped: ${event.errorMessage}`]
@@ -496,6 +531,7 @@
       ...current,
       name: event.hookName,
       trigger: event.trigger,
+      keepOpenOnCompletion: event.keepOpenOnCompletion ?? current.keepOpenOnCompletion,
       status: nextStatus,
       logs: [...current.logs, ...hookLogs],
     }));
@@ -2051,10 +2087,24 @@
   <div class="fixed inset-0 z-[90] flex items-center justify-center p-4" style="animation: sg-fade-in 0.2s ease-out">
     <div class="w-[min(940px,98vw)] rounded-xl border border-[var(--sg-border)] bg-[var(--sg-surface)] px-4 py-4 shadow-xl">
       <div class="flex items-center gap-3">
-        <Spinner size="md" />
+        {#if operationCompleted}
+          <div class="flex h-8 w-8 items-center justify-center rounded-full border border-[var(--sg-primary)]/40 bg-[var(--sg-primary)]/15 text-[var(--sg-primary)]">
+            <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="m5 12 5 5L20 7"></path>
+            </svg>
+          </div>
+        {:else}
+          <Spinner size="md" />
+        {/if}
         <div>
           <p class="text-sm font-semibold text-[var(--sg-text)]">{operationStatus.title}</p>
-          <p class="mt-0.5 text-xs text-[var(--sg-text-dim)]">{operationStatus.detail}</p>
+          <p class="mt-0.5 text-xs text-[var(--sg-text-dim)]">
+            {#if operationCompleted}
+              {operationStatus.detail} Completed.
+            {:else}
+              {operationStatus.detail}
+            {/if}
+          </p>
         </div>
       </div>
       {#if activeHookName}
@@ -2112,13 +2162,13 @@
           {/if}
         </div>
       </div>
-      {#if operationError}
+      {#if operationError || operationCompleted}
         <div class="mt-3 flex justify-end">
           <button
             onclick={() => endOperation(true)}
             class="rounded border border-[var(--sg-border)] px-2.5 py-1 text-xs text-[var(--sg-text-dim)] hover:bg-[var(--sg-surface-raised)] hover:text-[var(--sg-text)]"
           >
-            Dismiss
+            {operationError ? 'Dismiss' : 'Close'}
           </button>
         </div>
       {:else}

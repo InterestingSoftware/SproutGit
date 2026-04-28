@@ -31,9 +31,12 @@ async fn connect_sqlite(db_path: &Path) -> Result<DatabaseConnection, String> {
 }
 
 static WORKSPACE_MIGRATIONS: LazyLock<Migrations<'static>> = LazyLock::new(|| {
-    Migrations::new(vec![M::up(include_str!(
-        "../migrations/workspace/001_initial_schema.sql"
-    ))])
+    Migrations::new(vec![
+        M::up(include_str!("../migrations/workspace/001_initial_schema.sql")),
+        M::up(include_str!(
+            "../migrations/workspace/002_hook_keep_open_on_completion.sql"
+        )),
+    ])
 });
 
 static CONFIG_MIGRATIONS: LazyLock<Migrations<'static>> = LazyLock::new(|| {
@@ -41,6 +44,25 @@ static CONFIG_MIGRATIONS: LazyLock<Migrations<'static>> = LazyLock::new(|| {
         "../migrations/config/001_initial_schema.sql"
     ))])
 });
+
+fn ensure_workspace_schema_compatibility(conn: &rusqlite::Connection) -> Result<(), String> {
+    match conn.execute(
+        "ALTER TABLE hook_definitions ADD COLUMN keep_open_on_completion INTEGER NOT NULL DEFAULT 0",
+        [],
+    ) {
+        Ok(_) => Ok(()),
+        Err(err) => {
+            let message = err.to_string();
+            if message.contains("duplicate column name") {
+                Ok(())
+            } else {
+                Err(format!(
+                    "Failed to ensure workspace schema compatibility: {message}"
+                ))
+            }
+        },
+    }
+}
 
 fn run_workspace_migrations(db_path: &Path) -> Result<(), String> {
     if let Some(parent) = db_path.parent() {
@@ -51,7 +73,8 @@ fn run_workspace_migrations(db_path: &Path) -> Result<(), String> {
     apply_connection_pragmas(&conn)?;
     WORKSPACE_MIGRATIONS
         .to_latest(&mut conn)
-        .map_err(|e| format!("Workspace database migration failed: {e}"))
+        .map_err(|e| format!("Workspace database migration failed: {e}"))?;
+    ensure_workspace_schema_compatibility(&conn)
 }
 
 fn run_config_migrations(db_path: &Path) -> Result<(), String> {

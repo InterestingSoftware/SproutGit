@@ -101,6 +101,7 @@ export type WorkspaceHook = {
   script: string;
   enabled: boolean;
   critical: boolean;
+  keepOpenOnCompletion: boolean;
   timeoutSeconds: number;
   createdAt: number;
   updatedAt: number;
@@ -115,6 +116,7 @@ export type HookUpsertInput = {
   script: string;
   enabled: boolean;
   critical: boolean;
+  keepOpenOnCompletion: boolean;
   timeoutSeconds: number;
   dependencyIds: string[];
 };
@@ -149,6 +151,7 @@ export type HookProgressEvent = {
   trigger: string;
   hookId: string;
   hookName: string;
+  keepOpenOnCompletion?: boolean;
   phase: 'start' | 'end' | 'skipped';
   status: string;
   stdoutSnippet?: string | null;

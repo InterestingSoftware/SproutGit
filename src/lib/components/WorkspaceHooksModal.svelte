@@ -112,6 +112,7 @@
     script: defaultScript(),
     enabled: true,
     critical: false,
+    keepOpenOnCompletion: false,
     timeoutSeconds: 600,
     dependencyIds: [],
   });
@@ -173,6 +174,7 @@
       script: defaultScript(),
       enabled: true,
       critical: false,
+      keepOpenOnCompletion: false,
       timeoutSeconds: 600,
       dependencyIds: [],
     };
@@ -193,6 +195,7 @@
       script: hook.script,
       enabled: hook.enabled,
       critical: hook.critical,
+      keepOpenOnCompletion: hook.keepOpenOnCompletion,
       timeoutSeconds: hook.timeoutSeconds,
       dependencyIds: [...hook.dependencyIds],
     };
@@ -358,6 +361,9 @@
                     <div class="mt-1 flex flex-wrap items-center gap-1.5">
                       {#if hook.critical}
                         <span class="rounded border border-[var(--sg-danger)]/30 bg-[var(--sg-danger)]/10 px-1.5 py-0.5 text-[10px] font-medium text-[var(--sg-danger)]">Critical</span>
+                      {/if}
+                      {#if hook.keepOpenOnCompletion}
+                        <span class="rounded border border-[var(--sg-accent)]/30 bg-[var(--sg-accent)]/10 px-1.5 py-0.5 text-[10px] font-medium text-[var(--sg-accent)]">Keep run dialog open</span>
                       {/if}
                       {#if hook.dependencyIds.length > 0}
                         <span class="rounded border border-[var(--sg-border)] px-1.5 py-0.5 text-[10px] text-[var(--sg-text-faint)]">
@@ -538,6 +544,20 @@
                 <span class="block text-xs text-[var(--sg-text)]">Critical</span>
                 <span class="block text-[10px] text-[var(--sg-text-faint)]"
                   >If this fails in a before_* trigger, the worktree operation is blocked.</span
+                >
+              </span>
+            </Checkbox>
+
+            <Checkbox
+              checked={form.keepOpenOnCompletion}
+              onChange={(next) => {
+                form = { ...form, keepOpenOnCompletion: next };
+              }}
+            >
+              <span>
+                <span class="block text-xs text-[var(--sg-text)]">Keep run dialog open</span>
+                <span class="block text-[10px] text-[var(--sg-text-faint)]"
+                  >Leave the operation dialog open after completion so output remains visible.</span
                 >
               </span>
             </Checkbox>

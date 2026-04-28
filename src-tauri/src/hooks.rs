@@ -27,6 +27,7 @@ pub struct WorkspaceHook {
     pub script: String,
     pub enabled: bool,
     pub critical: bool,
+    pub keep_open_on_completion: bool,
     pub timeout_seconds: u32,
     pub created_at: i64,
     pub updated_at: i64,
@@ -43,6 +44,7 @@ pub struct WorkspaceHookWithDependencies {
     pub script: String,
     pub enabled: bool,
     pub critical: bool,
+    pub keep_open_on_completion: bool,
     pub timeout_seconds: u32,
     pub created_at: i64,
     pub updated_at: i64,
@@ -59,6 +61,7 @@ pub struct HookUpsertInput {
     pub script: String,
     pub enabled: bool,
     pub critical: bool,
+    pub keep_open_on_completion: bool,
     pub timeout_seconds: u32,
     pub dependency_ids: Vec<String>,
 }
@@ -72,6 +75,7 @@ struct RuntimeHook {
     shell: String,
     script: String,
     critical: bool,
+    keep_open_on_completion: bool,
     timeout_seconds: u32,
 }
 
@@ -80,6 +84,7 @@ struct RuntimeHookResult {
     hook_id: String,
     hook_name: String,
     critical: bool,
+    keep_open_on_completion: bool,
     status: String,
     success: bool,
     error_message: Option<String>,
@@ -98,6 +103,7 @@ struct HookProgressEvent {
     trigger: String,
     hook_id: String,
     hook_name: String,
+    keep_open_on_completion: bool,
     phase: String,
     status: String,
     stdout_snippet: Option<String>,
@@ -566,7 +572,7 @@ async fn load_hook_by_id(
     let statement = Statement::from_sql_and_values(
         DbBackend::Sqlite,
         "
-        SELECT id, name, scope, trigger, shell, script, enabled, critical, timeout_seconds, created_at, updated_at
+        SELECT id, name, scope, trigger, shell, script, enabled, critical, keep_open_on_completion, timeout_seconds, created_at, updated_at
         FROM hook_definitions
         WHERE id = ?
         LIMIT 1
@@ -727,6 +733,7 @@ async fn execute_hook(
                 hook_id: hook.id,
                 hook_name: hook.name,
                 critical: hook.critical,
+                keep_open_on_completion: hook.keep_open_on_completion,
                 status: "failed".to_string(),
                 success: false,
                 error_message: Some(e),
@@ -746,6 +753,7 @@ async fn execute_hook(
                     hook_id: hook.id,
                     hook_name: hook.name,
                     critical: hook.critical,
+                    keep_open_on_completion: hook.keep_open_on_completion,
                     status: "failed".to_string(),
                     success: false,
                     error_message: Some(err),
@@ -833,6 +841,7 @@ async fn execute_hook(
                     hook_id: hook.id,
                     hook_name: hook.name,
                     critical: hook.critical,
+                    keep_open_on_completion: hook.keep_open_on_completion,
                     status: "failed".to_string(),
                     success: false,
                     error_message: Some(format!("Failed to spawn hook process: {e}")),
@@ -892,6 +901,7 @@ async fn execute_hook(
                         hook_id: hook.id,
                         hook_name: hook.name,
                         critical: hook.critical,
+                        keep_open_on_completion: hook.keep_open_on_completion,
                         status: "success".to_string(),
                         success: true,
                         error_message: None,
@@ -910,6 +920,7 @@ async fn execute_hook(
                         hook_id: hook.id,
                         hook_name: hook.name,
                         critical: hook.critical,
+                        keep_open_on_completion: hook.keep_open_on_completion,
                         status: "failed".to_string(),
                         success: false,
                         error_message,
@@ -924,6 +935,7 @@ async fn execute_hook(
                 hook_id: hook.id,
                 hook_name: hook.name,
                 critical: hook.critical,
+                keep_open_on_completion: hook.keep_open_on_completion,
                 status: "failed".to_string(),
                 success: false,
                 error_message: Some(format!("Failed while waiting for hook process: {e}")),
@@ -936,6 +948,7 @@ async fn execute_hook(
                 hook_id: hook.id,
                 hook_name: hook.name,
                 critical: hook.critical,
+                keep_open_on_completion: hook.keep_open_on_completion,
                 status: "timed_out".to_string(),
                 success: false,
                 error_message: Some(format!(
@@ -989,6 +1002,7 @@ fn to_runtime_hook(hook: WorkspaceHook) -> RuntimeHook {
         shell: hook.shell,
         script: hook.script,
         critical: hook.critical,
+        keep_open_on_completion: hook.keep_open_on_completion,
         timeout_seconds: hook.timeout_seconds,
     }
 }
@@ -1034,6 +1048,7 @@ async fn execute_loaded_hooks(
                         hook_id: blocked.id.clone(),
                         hook_name: blocked.name.clone(),
                         critical: blocked.critical,
+                        keep_open_on_completion: blocked.keep_open_on_completion,
                         status: "skipped".to_string(),
                         success: false,
                         error_message: err.clone(),
@@ -1069,6 +1084,7 @@ async fn execute_loaded_hooks(
                             trigger: trigger.to_string(),
                             hook_id: blocked.id.clone(),
                             hook_name: blocked.name.clone(),
+                            keep_open_on_completion: blocked.keep_open_on_completion,
                             phase: "skipped".to_string(),
                             status: "skipped".to_string(),
                             stdout_snippet: None,
@@ -1101,6 +1117,7 @@ async fn execute_loaded_hooks(
                     trigger: trigger.to_string(),
                     hook_id: hook.id.clone(),
                     hook_name: hook.name.clone(),
+                    keep_open_on_completion: hook.keep_open_on_completion,
                     phase: "start".to_string(),
                     status: "running".to_string(),
                     stdout_snippet: None,
@@ -1154,6 +1171,7 @@ async fn execute_loaded_hooks(
                         trigger: trigger.to_string(),
                         hook_id: hook_result.hook_id.clone(),
                         hook_name: hook_result.hook_name.clone(),
+                        keep_open_on_completion: hook_result.keep_open_on_completion,
                         phase: "end".to_string(),
                         status: hook_result.status.clone(),
                         stdout_snippet: stdout_for_event,
@@ -1177,7 +1195,7 @@ async fn load_hooks_for_trigger(
     let hook_statement = Statement::from_sql_and_values(
         DbBackend::Sqlite,
         "
-        SELECT id, name, scope, trigger, shell, script, enabled, critical, timeout_seconds, created_at, updated_at
+        SELECT id, name, scope, trigger, shell, script, enabled, critical, keep_open_on_completion, timeout_seconds, created_at, updated_at
         FROM hook_definitions
         WHERE trigger = ? AND enabled = 1
         ORDER BY name ASC
@@ -1324,7 +1342,7 @@ pub async fn list_workspace_hooks(
         Statement::from_sql_and_values(
             DbBackend::Sqlite,
             "
-            SELECT id, name, scope, trigger, shell, script, enabled, critical, timeout_seconds, created_at, updated_at
+            SELECT id, name, scope, trigger, shell, script, enabled, critical, keep_open_on_completion, timeout_seconds, created_at, updated_at
             FROM hook_definitions
             WHERE trigger = ?
             ORDER BY name ASC
@@ -1335,7 +1353,7 @@ pub async fn list_workspace_hooks(
         Statement::from_string(
             DbBackend::Sqlite,
             "
-            SELECT id, name, scope, trigger, shell, script, enabled, critical, timeout_seconds, created_at, updated_at
+            SELECT id, name, scope, trigger, shell, script, enabled, critical, keep_open_on_completion, timeout_seconds, created_at, updated_at
             FROM hook_definitions
             ORDER BY trigger ASC, name ASC
             "
@@ -1363,6 +1381,7 @@ pub async fn list_workspace_hooks(
             script: hook.script,
             enabled: hook.enabled,
             critical: hook.critical,
+            keep_open_on_completion: hook.keep_open_on_completion,
             timeout_seconds: hook.timeout_seconds,
             created_at: hook.created_at,
             updated_at: hook.updated_at,
@@ -1401,11 +1420,12 @@ pub async fn create_workspace_hook(
             script,
             enabled,
             critical,
+            keep_open_on_completion,
             timeout_seconds,
             created_at,
             updated_at
         )
-            VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ",
         vec![
             id.clone().into(),
@@ -1416,6 +1436,7 @@ pub async fn create_workspace_hook(
             script.clone().into(),
             (input.enabled as i64).into(),
             (input.critical as i64).into(),
+            (input.keep_open_on_completion as i64).into(),
             timeout_seconds.into(),
             now.into(),
             now.into(),
@@ -1448,6 +1469,7 @@ pub async fn create_workspace_hook(
         script: hook.script,
         enabled: hook.enabled,
         critical: hook.critical,
+        keep_open_on_completion: hook.keep_open_on_completion,
         timeout_seconds: hook.timeout_seconds,
         created_at: hook.created_at,
         updated_at: hook.updated_at,
@@ -1483,6 +1505,7 @@ pub async fn update_workspace_hook(
             script = ?,
             enabled = ?,
             critical = ?,
+            keep_open_on_completion = ?,
             timeout_seconds = ?,
             updated_at = ?
         WHERE id = ?
@@ -1495,6 +1518,7 @@ pub async fn update_workspace_hook(
             script.clone().into(),
             (input.enabled as i64).into(),
             (input.critical as i64).into(),
+            (input.keep_open_on_completion as i64).into(),
             timeout_seconds.into(),
             now.into(),
             hook_id.clone().into(),
@@ -1532,6 +1556,7 @@ pub async fn update_workspace_hook(
         script: hook.script,
         enabled: hook.enabled,
         critical: hook.critical,
+        keep_open_on_completion: hook.keep_open_on_completion,
         timeout_seconds: hook.timeout_seconds,
         created_at: hook.created_at,
         updated_at: hook.updated_at,
