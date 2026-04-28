@@ -94,7 +94,7 @@ export function pathKey(path: string): string {
  * Returns `true` when both arguments are nullish, `false` if exactly one is.
  */
 export function pathsEqual(a: string | null | undefined, b: string | null | undefined): boolean {
-  if (a == null || b == null) return a === b;
+  if (a == null || b == null) return a == b;
   return pathKey(a) === pathKey(b);
 }
 

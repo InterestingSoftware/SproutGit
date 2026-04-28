@@ -24,7 +24,7 @@ afterEach(() => {
 describe('path-utils', () => {
   describe('normalizePathSeparators', () => {
     it('converts backslashes to forward slashes', async () => {
-      setUserAgent('Mozilla/5.0 (Linux)');
+      setUserAgent('Mozilla/5.0 (Windows NT 10.0)');
       const { normalizePathSeparators } = await loadFresh();
       expect(normalizePathSeparators('C:\\Users\\foo\\bar')).toBe('C:/Users/foo/bar');
     });
@@ -44,6 +44,15 @@ describe('path-utils', () => {
       const { stripTrailingSeparator } = await loadFresh();
       expect(stripTrailingSeparator('/foo/bar/')).toBe('/foo/bar');
       expect(stripTrailingSeparator('C:\\foo\\')).toBe('C:/foo');
+    });
+
+    it('leaves paths without trailing separators unchanged and handles edge cases', async () => {
+      setUserAgent('Mozilla/5.0 (Linux)');
+      const { stripTrailingSeparator } = await loadFresh();
+      expect(stripTrailingSeparator('/foo/bar')).toBe('/foo/bar');
+      expect(stripTrailingSeparator('C:\\foo\\bar')).toBe('C:/foo/bar');
+      expect(stripTrailingSeparator('')).toBe('');
+      expect(stripTrailingSeparator('//')).toBe('/');
     });
 
     it('preserves the root separator', async () => {
@@ -70,6 +79,9 @@ describe('path-utils', () => {
       setUserAgent('Mozilla/5.0 (X11; Linux x86_64)');
       const { pathKey } = await loadFresh();
       expect(pathKey('/home/runner/work/SproutGit/SproutGit')).toBe(
+        '/home/runner/work/SproutGit/SproutGit'
+      );
+      expect(pathKey('\\home\\runner\\work\\SproutGit\\SproutGit')).toBe(
         '/home/runner/work/SproutGit/SproutGit'
       );
     });
@@ -99,6 +111,8 @@ describe('path-utils', () => {
       const { pathsEqual } = await loadFresh();
       expect(pathsEqual(null, null)).toBe(true);
       expect(pathsEqual(undefined, undefined)).toBe(true);
+      expect(pathsEqual(null, undefined)).toBe(true);
+      expect(pathsEqual(undefined, null)).toBe(true);
       expect(pathsEqual(null, '/foo')).toBe(false);
       expect(pathsEqual('/foo', undefined)).toBe(false);
     });
@@ -115,6 +129,12 @@ describe('path-utils', () => {
       setUserAgent('Mozilla/5.0 (Linux)');
       const { pathStartsWith } = await loadFresh();
       expect(pathStartsWith('/foo/bar', '/foo/barbaz')).toBe(false);
+    });
+
+    it('matches when parent has a trailing separator', async () => {
+      setUserAgent('Mozilla/5.0 (Linux)');
+      const { pathStartsWith } = await loadFresh();
+      expect(pathStartsWith('/foo/', '/foo/bar')).toBe(true);
     });
 
     it('matches the path itself', async () => {
