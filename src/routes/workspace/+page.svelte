@@ -52,6 +52,7 @@
   } from '$lib/sproutgit';
   import { toast } from '$lib/toast.svelte';
   import { tildify } from '$lib/paths.svelte';
+  import { findPath, normalizePathSeparators, pathsEqual } from '$lib/path-utils';
   import { validateBranchName, validateSourceRef } from '$lib/validation';
   import { openPath } from '@tauri-apps/plugin-opener';
   import { FolderOpen, Play, Trash2, SquareTerminal, ShieldAlert, Settings } from 'lucide-svelte';
@@ -534,15 +535,18 @@
   const refError = $derived(validateSourceRef(selectedRef));
   const formValid = $derived(!branchError && !refError);
 
-  const rootWorktree = $derived(worktrees.find(item => item.path === workspace?.rootPath) ?? null);
+  const rootWorktree = $derived(
+    worktrees.find(item => pathsEqual(item.path, workspace?.rootPath)) ?? null
+  );
 
-  const nonRootWorktrees = $derived(worktrees.filter(item => item.path !== workspace?.rootPath));
+  const activeIsRoot = $derived(pathsEqual(activeWorktreePath, workspace?.rootPath));
+
+  const nonRootWorktrees = $derived(
+    worktrees.filter(item => !pathsEqual(item.path, workspace?.rootPath))
+  );
 
   const selectedWorktree = $derived(
-    worktrees.find(
-      item =>
-        item.path.toLowerCase() === activeWorktreePath?.toLowerCase()
-    ) ?? null
+    worktrees.find(item => pathsEqual(item.path, activeWorktreePath)) ?? null
   );
 
   const refItems = $derived(refs.map(r => ({ label: r.name, value: r.name, detail: r.kind })));
@@ -602,7 +606,7 @@
       activeTab === 'terminal' &&
       defaultShell &&
       activeWorktreePath &&
-      activeWorktreePath !== workspace?.rootPath &&
+      !pathsEqual(activeWorktreePath, workspace?.rootPath) &&
       !terminalInitializedPaths.has(activeWorktreePath)
     ) {
       terminalInitializedPaths = new Set([...terminalInitializedPaths, activeWorktreePath]);
@@ -868,16 +872,17 @@
   let unlistenWorktreeChanged: (() => void) | null = null;
 
   async function handleWorktreeChanged(changedPathRaw: string) {
-    // Normalize path separators: the Rust watcher emits OS-native paths
-    // (backslashes on Windows) while listWorktrees returns git-output forward slashes.
-    const changedPath = changedPathRaw.replace(/\\/g, '/');
+    // The Rust watcher emits OS-native paths (backslashes on Windows) while
+    // listWorktrees returns forward-slash paths. Normalise separators only —
+    // never lowercase, since Linux filesystems are case-sensitive.
+    const changedPath = normalizePathSeparators(changedPathRaw);
     // Update the change count and file list for the specific worktree that changed.
     // Never resets activeWorktreePath or activeTab, and never touches the graph
     // (to avoid a visible full re-render while the user is on the Changes tab).
     try {
       const result = await getWorktreeStatus(changedPath);
       worktreeChangeCounts[changedPath] = result.files.length;
-      if (changedPath === selectedWorktree?.path) {
+      if (pathsEqual(changedPath, selectedWorktree?.path)) {
         worktreeStatus = result.files;
         // Refresh active diff to reflect the new working tree / index state.
         if (stagingDiffFile && activeTab === 'changes') {
@@ -936,15 +941,12 @@
         throw new Error('Path is not a SproutGit project.');
       }
 
-      // Normalize all paths to lowercase for consistent comparison
-      workspace = {
-        ...status,
-        rootPath: status.rootPath.toLowerCase(),
-        workspacePath: status.workspacePath.toLowerCase(),
-        worktreesPath: status.worktreesPath.toLowerCase(),
-        metadataPath: status.metadataPath.toLowerCase(),
-        stateDbPath: status.stateDbPath.toLowerCase(),
-      };
+      // Preserve original-case paths from the backend. Filesystems on Linux are
+      // case-sensitive, so lowercasing breaks any subsequent path operation
+      // (e.g. running `git -C <path>`). Path comparisons that need to tolerate
+      // case-only differences on Windows do their own case folding at the
+      // comparison site.
+      workspace = status;
 
       const [worktreeData, refsData, graphData] = await Promise.all([
         readWithRetry(() => listWorktrees(status.rootPath), isWorktreeListResult, 'Worktree list'),
@@ -956,10 +958,7 @@
         ),
       ]);
 
-      worktrees = worktreeData.worktrees.map(wt => ({
-        ...wt,
-        path: wt.path.toLowerCase(),
-      }));
+      worktrees = worktreeData.worktrees;
       refs = refsData.refs;
       initializeGraphState(graphData);
       selectedRef = refsData.refs[0]?.name ?? 'HEAD';
@@ -977,13 +976,14 @@
       }
 
       // Restore the previously active worktree if still valid (survives HMR).
-      const savedWt = sessionStorage.getItem('sg_active_wt')?.toLowerCase();
-      const normalizedWorktrees = worktreeData.worktrees.map(wt => wt.path.toLowerCase());
-      if (savedWt && normalizedWorktrees.some(wt => wt === savedWt)) {
-        activeWorktreePath = savedWt;
-      } else {
-        activeWorktreePath = normalizedWorktrees[0] ?? null;
-      }
+      // Resolve the persisted path against the live worktree list using
+      // filesystem-aware equality so the result is the actual on-disk path
+      // (preserves case on Linux).
+      const savedWtRaw = sessionStorage.getItem('sg_active_wt') ?? '';
+      const matchedSavedWt = savedWtRaw
+        ? findPath(worktreeData.worktrees, wt => wt.path, savedWtRaw)
+        : null;
+      activeWorktreePath = matchedSavedWt?.path ?? worktreeData.worktrees[0]?.path ?? null;
       // (activeTab is already initialised from sessionStorage at declaration time.)
 
       // Load available shells and the user's default shell preference
@@ -996,8 +996,8 @@
 
       // Load change counts for all non-root worktrees
       const nonRoot = worktreeData.worktrees
-        .filter(wt => wt.path.toLowerCase() !== status.rootPath.toLowerCase())
-        .map(wt => wt.path.toLowerCase());
+        .filter(wt => !pathsEqual(wt.path, status.rootPath))
+        .map(wt => wt.path);
       void loadAllWorktreeChangeCounts(nonRoot);
       void setupWatcher();
     } catch (err) {
@@ -1050,13 +1050,13 @@
 
       toast.success(`Worktree created: ${createdBranch}`);
 
-      const normalizedCreatedPath = createdWorktreePath.replace(/\\/g, '/').toLowerCase();
+      const normalizedCreatedPath = normalizePathSeparators(createdWorktreePath);
       try {
         await refreshWorkspaceData();
         // Switch to the newly created worktree, falling back to first non-root.
         activeWorktreePath =
-          worktrees.find(wt => wt.path.toLowerCase() === normalizedCreatedPath)?.path ??
-          worktrees.find(wt => wt.path !== currentWorkspace.rootPath)?.path ??
+          findPath(worktrees, wt => wt.path, normalizedCreatedPath)?.path ??
+          worktrees.find(wt => !pathsEqual(wt.path, currentWorkspace.rootPath))?.path ??
           worktrees[0]?.path ??
           null;
       } catch {
@@ -1095,7 +1095,10 @@
   });
 
   function handleHookTerminalLaunch(event: HookTerminalLaunchEvent) {
-    const cwd = event.cwd.replace(/\\/g, '/').toLowerCase();
+    // Preserve case so the path remains valid on case-sensitive filesystems
+    // (Linux). Compare against existing worktree paths case-insensitively
+    // through `pathsEqual()` / `pathKey()` to tolerate Windows differences.
+    const cwd = normalizePathSeparators(event.cwd);
     // Set the active worktree FIRST so the lazy-init $effect (which may fire between
     // individual assignments in an async callback context) always sees the correct
     // worktree path and does not add the previously-active worktree to terminalInitializedPaths.
@@ -1259,7 +1262,7 @@
           }
           if (activeWorktreePath === wt.path) {
             activeWorktreePath =
-              worktrees.find(w => w.path !== workspace!.rootPath)?.path ??
+              worktrees.find(w => !pathsEqual(w.path, workspace!.rootPath))?.path ??
               worktrees[0]?.path ??
               null;
           }
@@ -1286,10 +1289,7 @@
       ),
       readWithRetry(() => listRefs(workspaceRootPath), isRefsResult, 'Ref list'),
     ]);
-    worktrees = refreshedWt.worktrees.map(wt => ({
-      ...wt,
-      path: wt.path.toLowerCase(),
-    }));
+    worktrees = refreshedWt.worktrees;
     initializeGraphState(refreshedGraph);
     refs = refreshedRefs.refs;
     if (graphHasMore) {
@@ -1305,7 +1305,7 @@
     }
     // Refresh change counts for all non-root worktrees
     const nonRoot = refreshedWt.worktrees
-      .filter(wt => wt.path !== workspaceRootPath)
+      .filter(wt => !pathsEqual(wt.path, workspaceRootPath))
       .map(wt => wt.path);
     void loadAllWorktreeChangeCounts(nonRoot);
     // Restart watcher so any newly created/deleted worktrees are included.
@@ -1414,12 +1414,12 @@
 
   // ── Graph-driven checkout/reset (from context menu) ──
   function handleGraphCheckout(targetRef: string) {
-    if (!selectedWorktree || activeWorktreePath === workspace?.rootPath) return;
+    if (!selectedWorktree || activeIsRoot) return;
     handleCheckoutWorktree(selectedWorktree, targetRef);
   }
 
   function handleGraphReset(targetRef: string, mode: 'soft' | 'mixed' | 'hard') {
-    if (!selectedWorktree || activeWorktreePath === workspace?.rootPath) return;
+    if (!selectedWorktree || activeIsRoot) return;
     handleResetWorktree(selectedWorktree, targetRef, mode);
   }
 
@@ -1844,7 +1844,7 @@
         </div>
 
         <!-- Active worktree actions (simplified: one ref field) -->
-        {#if selectedWorktree && activeWorktreePath !== workspace?.rootPath}
+        {#if selectedWorktree && !activeIsRoot}
           <div
             class="border-t border-[var(--sg-border-subtle)] px-3 py-2"
             style="animation: sg-fade-in 0.15s ease-out"
@@ -1923,7 +1923,7 @@
       <!-- Main content area -->
       <section class="flex min-w-0 flex-1 flex-col overflow-hidden">
         <!-- View toggles (history / changes / terminal) -->
-        {#if selectedWorktree && activeWorktreePath !== workspace?.rootPath}
+        {#if selectedWorktree && !activeIsRoot}
           <div
             class="flex items-center gap-1 border-b border-[var(--sg-border)] bg-[var(--sg-surface)] px-4"
           >
@@ -1965,7 +1965,7 @@
           </div>
         {/if}
 
-        {#if activeTab === 'changes' && selectedWorktree && activeWorktreePath !== workspace?.rootPath}
+        {#if activeTab === 'changes' && selectedWorktree && !activeIsRoot}
           <!-- Staging View: left = file lists + commit form, right = always-visible diff panel -->
           <div class="flex min-h-0 flex-1">
             <!-- Left column: file lists + commit form -->
@@ -2277,7 +2277,7 @@
               {/if}
             </div>
           </div>
-        {:else if activeTab === 'history' || !selectedWorktree || activeWorktreePath === workspace?.rootPath}
+        {:else if activeTab === 'history' || !selectedWorktree || activeIsRoot}
           <!-- Commit graph -->
           <div class="flex min-h-0 {selectedCommits.length > 0 ? 'h-1/2' : 'flex-1'} flex-col">
             <div
@@ -2322,9 +2322,7 @@
                 <CommitGraph
                   commits={graph?.commits ?? []}
                   {worktrees}
-                  activeWorktree={selectedWorktree && activeWorktreePath !== workspace?.rootPath
-                    ? selectedWorktree
-                    : null}
+                  activeWorktree={selectedWorktree && !activeIsRoot ? selectedWorktree : null}
                   oncreateworktree={handleCreateWorktreeFromGraph}
                   oncheckout={handleGraphCheckout}
                   onreset={handleGraphReset}

@@ -438,6 +438,13 @@ When adding or changing **any** git or system interaction, follow all rules belo
 - **Path canonicalization on Windows**: `std::fs::canonicalize()` returns `\\?\`-prefixed extended-length paths on Windows (e.g. `\\?\D:\...`). Always chain `strip_win_prefix()` from `crate::git::helpers` immediately after any `canonicalize()` call. This applies to paths stored in SQLite, set as subprocess env vars, or passed to shell scripts — not just paths serialised to the frontend. Git for Windows tolerates extended-length paths silently, but PowerShell cmdlets (e.g. `Join-Path`) reject them with cryptic errors.
 - **Single-source normalization rule**: Path normalization logic must live in shared helpers, not duplicated at call sites. When introducing a new canonicalization/normalization path, reuse existing helper functions or add one shared helper first.
 - **Path serialization — frontend-bound values**: Any `Path`/`PathBuf` value serialised in a Tauri command response (struct fields, `Ok(...)` return values) **must** be converted with `path_to_frontend()` from `crate::git::helpers`, not with `to_string_lossy()`. Git always outputs forward slashes on every OS; using the same convention prevents frontend path-comparison mismatches on Windows. Paths passed as arguments to git/system commands should stay as native OS paths via `to_string_lossy()` directly. **This also applies to path strings parsed from git command output** (e.g. the `worktree <path>` lines from `git worktree list --porcelain`) — call `path_to_frontend(Path::new(parsed_str))` rather than inlining `str.replace('\\', "/")` at the call site.
+- **Frontend path handling — required helpers (`$lib/path-utils`)**: All path operations in the webview/TypeScript code **must** go through `src/lib/path-utils.ts`. This is the frontend mirror of the Rust helpers (`path_to_frontend`, `strip_win_prefix`) and is the single source of truth for cross-platform path behavior in Svelte/TS.
+  - Use `normalizePathSeparators(p)` to canonicalize separators. **Never** inline `.replace(/\\/g, '/')` on a path string.
+  - Use `pathsEqual(a, b)` to compare paths. **Never** use `===` or `!==` directly on path strings (case sensitivity differs across macOS/Windows/Linux).
+  - Use `pathStartsWith(parent, child)` for prefix checks (directory-boundary aware).
+  - Use `findPath(items, getPath, target)` to look up an entry by path; this returns the **original-case** entry, which is critical for round-tripping paths back to the backend on Linux.
+  - **Never** call `.toLowerCase()` on a path for storage or for round-tripping back to the backend. Linux is case-sensitive and CI runners use mixed-case paths (e.g. `/home/runner/work/SproutGit/SproutGit`). Lowercasing for storage corrupts the path on Linux. Case-insensitive comparison is the responsibility of `pathKey()` / `pathsEqual()` at the comparison site only.
+  - The helpers detect the host OS via `navigator.userAgent`; comparison is case-insensitive on Windows and macOS, case-sensitive on Linux — matching real filesystem semantics.
 - **Least privilege and clear errors**: Fail closed on invalid input and return clear, user-safe error messages.
 
 ## Security Testing Requirements
@@ -499,6 +506,12 @@ Quick verification command before commit:
 
 ```bash
 rg -n "project\.json|YOUR_USERNAME|once CI is set up" README.md .github/copilot-instructions.md
+```
+
+Frontend path-handling drift check (should return zero hits outside `src/lib/path-utils.ts`):
+
+```bash
+rg -n "\.toLowerCase\(\)|\.replace\(/\\\\\\\\/g, *['\"]/['\"]\)" src/ --glob '!src/lib/path-utils.ts'
 ```
 
 ## Composability & Platform Extensibility

@@ -595,7 +595,9 @@
   {#if sessions.length === 0}
     <div class="flex flex-1 flex-col items-center justify-center gap-1.5">
       <p class="text-sm text-[var(--sg-text-faint)]">No terminal sessions</p>
-      <p class="text-xs text-[var(--sg-text-faint)]">Click <span class="font-mono">+</span> to start one</p>
+      <p class="text-xs text-[var(--sg-text-faint)]">
+        Click <span class="font-mono">+</span> to start one
+      </p>
     </div>
   {:else}
     <div class="min-h-0 flex-1 overflow-hidden" style={wrapperStyle}>
