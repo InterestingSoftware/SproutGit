@@ -16,12 +16,10 @@ function lineNumberAt(text, index) {
 function findMatches(text, regex) {
   const matches = [];
   for (const match of text.matchAll(regex)) {
-    if (typeof match.index === 'number') {
-      matches.push({
-        index: match.index,
-        value: match[0],
-      });
-    }
+    matches.push({
+      index: match.index,
+      value: match[0],
+    });
   }
   return matches;
 }
