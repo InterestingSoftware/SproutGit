@@ -301,6 +301,7 @@ static WORKSPACE_MIGRATIONS: LazyLock<Migrations<'static>> = LazyLock::new(|| {
 - Append the new `M::up(include_str!("../migrations/<db>/<NNN>_….sql"))` entry to the correct `LazyLock` vec.
 - Indexes that reference a column added in the same migration must appear after that `ALTER TABLE` in the same file, or in a later migration file.
 - Do not create bespoke `PRAGMA table_info` checks — the framework handles idempotency.
+- **Never add `ALTER TABLE … ADD COLUMN` statements outside migration files**, even as "compatibility shims" that try to swallow "duplicate column name" errors. SQLite error strings can vary across versions, making string-matching fragile. If a column is needed, add a numbered migration file and register it in the `LazyLock` vec.
 
 ### `db.rs` public API
 
@@ -436,7 +437,7 @@ When adding or changing **any** git or system interaction, follow all rules belo
 - **Path handling**: Use `Path`/`PathBuf` and platform-aware path/env separators. Do not hardcode `:` as PATH separator.
 - **Path canonicalization on Windows**: `std::fs::canonicalize()` returns `\\?\`-prefixed extended-length paths on Windows (e.g. `\\?\D:\...`). Always chain `strip_win_prefix()` from `crate::git::helpers` immediately after any `canonicalize()` call. This applies to paths stored in SQLite, set as subprocess env vars, or passed to shell scripts — not just paths serialised to the frontend. Git for Windows tolerates extended-length paths silently, but PowerShell cmdlets (e.g. `Join-Path`) reject them with cryptic errors.
 - **Single-source normalization rule**: Path normalization logic must live in shared helpers, not duplicated at call sites. When introducing a new canonicalization/normalization path, reuse existing helper functions or add one shared helper first.
-- **Path serialization — frontend-bound values**: Any `Path`/`PathBuf` value serialised in a Tauri command response (struct fields, `Ok(...)` return values) **must** be converted with `path_to_frontend()` from `crate::git::helpers`, not with `to_string_lossy()`. Git always outputs forward slashes on every OS; using the same convention prevents frontend path-comparison mismatches on Windows. Paths passed as arguments to git/system commands should stay as native OS paths via `to_string_lossy()` directly.
+- **Path serialization — frontend-bound values**: Any `Path`/`PathBuf` value serialised in a Tauri command response (struct fields, `Ok(...)` return values) **must** be converted with `path_to_frontend()` from `crate::git::helpers`, not with `to_string_lossy()`. Git always outputs forward slashes on every OS; using the same convention prevents frontend path-comparison mismatches on Windows. Paths passed as arguments to git/system commands should stay as native OS paths via `to_string_lossy()` directly. **This also applies to path strings parsed from git command output** (e.g. the `worktree <path>` lines from `git worktree list --porcelain`) — call `path_to_frontend(Path::new(parsed_str))` rather than inlining `str.replace('\\', "/")` at the call site.
 - **Least privilege and clear errors**: Fail closed on invalid input and return clear, user-safe error messages.
 
 ## Security Testing Requirements
@@ -492,6 +493,7 @@ When editing or relying on documentation in this repository:
 - If a command, script, route, or API wrapper changes in code, update the corresponding docs in the same change.
 - Prefer representative command/API summaries plus explicit source-of-truth links over exhaustive static lists that quickly drift.
 - Remove placeholders and stale claims (for example, outdated URLs or deleted files) immediately when discovered.
+- **When editing component markup or styles, check nearby code comments for implementation-detail references** (e.g. hardcoded class names, colour literals) that may no longer be accurate. Stale comments about specifics like "hardcoded `bg-[#1e1e2e]`" that have since been replaced with CSS-variable equivalents cause confusion and must be updated or removed in the same change.
 
 Quick verification command before commit:
 
@@ -780,3 +782,4 @@ The `Spinner.svelte` component supports:
 - Svelte 5 `class:` directive with Tailwind arbitrary values (e.g., `class:bg-[var(--x)]/10={cond}`) works but looks odd
 - Window overflow: parent containers must be `flex flex-col overflow-hidden` for child `flex-1 overflow-auto` to scroll properly
 - **Windows `\\?\` paths in PowerShell**: If a path produced by `canonicalize()` is set as a subprocess env var and consumed by PowerShell, `Join-Path` will fail with "Cannot process argument because the value of argument 'drive' is null". The env var is non-null so a `if (-not $var)` guard won't catch it — the crash happens on the next line that uses the path. Always apply `strip_win_prefix` before passing any path into a hook or child process environment.
+- **`TerminalContainer.svelte` auto-spawn**: The component spawns an initial terminal session on mount via a `$effect` guarded by a plain (non-reactive) `_autoSpawned` flag. Do not remove this — E2E flows assert that a `[data-pty-id]` element exists immediately after the Terminal tab is revealed. If the auto-spawn is absent, the terminal tab is stuck on "No terminal sessions" until the user manually clicks `+`. The flag guard also prevents a reactive loop that would occur if `sessions.length` were read directly inside the effect (which Svelte would track as a dependency and re-fire on every session change).

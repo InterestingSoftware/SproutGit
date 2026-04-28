@@ -202,10 +202,8 @@ pub async fn list_worktrees(repo_path: String) -> Result<WorktreeListResult, Str
             if let Some(item) = current.take() {
                 worktrees.push(item);
             }
-            // Normalize path to forward slashes for consistent frontend comparison
-            let normalized_path = rest.replace('\\', "/");
             current = Some(WorktreeInfo {
-                path: normalized_path,
+                path: path_to_frontend(Path::new(rest)),
                 head: None,
                 branch: None,
                 detached: false,

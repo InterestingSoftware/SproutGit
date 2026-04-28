@@ -48,30 +48,6 @@ static CONFIG_MIGRATIONS: LazyLock<Migrations<'static>> = LazyLock::new(|| {
     ))])
 });
 
-fn ensure_workspace_schema_compatibility(conn: &rusqlite::Connection) -> Result<(), String> {
-    let compatibility_statements = [
-        "ALTER TABLE hook_definitions ADD COLUMN keep_open_on_completion INTEGER NOT NULL DEFAULT 0",
-        "ALTER TABLE hook_definitions ADD COLUMN execution_target TEXT NOT NULL DEFAULT 'trigger_worktree'",
-        "ALTER TABLE hook_definitions ADD COLUMN execution_mode TEXT NOT NULL DEFAULT 'headless'",
-    ];
-
-    for statement in compatibility_statements {
-        match conn.execute(statement, []) {
-            Ok(_) => {},
-            Err(err) => {
-                let message = err.to_string();
-                if !message.contains("duplicate column name") {
-                    return Err(format!(
-                        "Failed to ensure workspace schema compatibility: {message}"
-                    ));
-                }
-            },
-        }
-    }
-
-    Ok(())
-}
-
 fn run_workspace_migrations(db_path: &Path) -> Result<(), String> {
     if let Some(parent) = db_path.parent() {
         ensure_directory(parent)?;
@@ -81,8 +57,7 @@ fn run_workspace_migrations(db_path: &Path) -> Result<(), String> {
     apply_connection_pragmas(&conn)?;
     WORKSPACE_MIGRATIONS
         .to_latest(&mut conn)
-        .map_err(|e| format!("Workspace database migration failed: {e}"))?;
-    ensure_workspace_schema_compatibility(&conn)
+        .map_err(|e| format!("Workspace database migration failed: {e}"))
 }
 
 fn run_config_migrations(db_path: &Path) -> Result<(), String> {

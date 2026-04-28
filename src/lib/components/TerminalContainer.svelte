@@ -37,6 +37,18 @@
   let counter = 0;
   let lastLaunchRequestId = $state<string | null>(null);
 
+  // Auto-spawn the first session when the component mounts and a default shell is available.
+  // The plain (non-reactive) `_autoSpawned` flag ensures this runs only once even if
+  // `defaultShell` later changes, and prevents a reactive loop since `sessions` is never
+  // read inside this effect.
+  let _autoSpawned = false;
+  $effect(() => {
+    if (!_autoSpawned && defaultShell) {
+      _autoSpawned = true;
+      addSession(defaultShell);
+    }
+  });
+
   // Panel component refs — used to forward focus() and refit().
   // Plain object (not $state) because we don't need reactivity on the refs themselves.
   const panelInstances: Partial<Record<string, { focus: () => void; refit: () => void } | null>> =

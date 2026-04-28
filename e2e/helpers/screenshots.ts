@@ -116,8 +116,8 @@ const DARK_XTERM_THEME = {
 async function forceTheme(tauriPage: TauriPage | BrowserPageAdapter, theme: 'light' | 'dark') {
   const termBg = theme === 'dark' ? DARK_XTERM_THEME.background : LIGHT_XTERM_THEME.background;
   const cssVars = theme === 'dark' ? DARK_CSS_VARS : LIGHT_CSS_VARS;
-  // Include a rule that overrides the terminal wrapper background so the dark
-  // hardcoded bg-[#1e1e2e] class is replaced for light-mode screenshots.
+  // Include a rule that forces the terminal wrapper background to match the
+  // selected screenshot theme so the wrapper stays in sync with the xterm canvas.
   const css = JSON.stringify(
     `:root{${cssVars}} [data-sg-terminal]{background-color:${termBg}!important}`
   );
