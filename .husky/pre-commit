@@ -23,5 +23,8 @@ pnpm run lint
 echo "--- [pre-commit] 6/7 TypeScript/Svelte check"
 pnpm run check
 
-echo "--- [pre-commit] 7/7 Playwright E2E tests"
-pnpm run test:e2e:full
+echo "--- [pre-commit] 7/8 Playwright E2E build"
+pnpm run test:e2e:build
+
+echo "--- [pre-commit] 8/8 Playwright E2E tests"
+SPROUTGIT_E2E_SKIP_BUILD=1 pnpm run test:e2e
