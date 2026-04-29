@@ -410,8 +410,9 @@
     <button
       onclick={() =>
         goto(workspacePath ? `/workspace?workspace=${encodeURIComponent(workspacePath)}` : '/')}
-      class="rounded px-2 py-0.5 text-xs text-(--sg-text-dim) hover:bg-(--sg-surface-raised) hover:text-(--sg-text)"
-      >&larr; Projects</button
+      class="group flex items-center gap-1 rounded-md px-2 py-1 text-xs text-(--sg-text-dim) transition-colors hover:bg-(--sg-surface-raised) hover:text-(--sg-text)"
+      ><span class="transition-transform group-hover:-translate-x-0.5">←</span>
+      <span>Projects</span></button
     >
     <div class="h-3 w-px bg-(--sg-border)"></div>
     <span class="sg-heading text-xs font-medium text-(--sg-text)">Settings</span>
@@ -427,9 +428,24 @@
 
   <div class="flex-1 overflow-auto p-6">
     <div class="mx-auto flex max-w-6xl flex-col gap-6">
-      <div class="flex items-center gap-2">
-        <Settings size={18} class="text-(--sg-primary)" />
-        <h1 class="sg-heading text-lg font-semibold text-(--sg-primary)">Settings</h1>
+      <div
+        class="relative flex items-center gap-3 rounded-lg bg-gradient-to-r from-(--sg-primary)/8 via-(--sg-primary)/4 to-transparent px-4 py-3"
+      >
+        <span
+          aria-hidden="true"
+          class="absolute top-3 bottom-3 left-0 w-[3px] rounded-r-full bg-(--sg-primary)"
+        ></span>
+        <span
+          class="flex h-9 w-9 items-center justify-center rounded-md bg-(--sg-primary)/12 text-(--sg-primary)"
+        >
+          <Settings size={18} />
+        </span>
+        <div>
+          <h1 class="sg-heading text-lg font-semibold text-(--sg-primary)">Settings</h1>
+          <p class="text-[11px] text-(--sg-text-faint)">
+            Configure SproutGit, integrations, and your default tools.
+          </p>
+        </div>
       </div>
 
       <section class="rounded-lg border border-(--sg-border) bg-(--sg-surface) p-5">

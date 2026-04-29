@@ -13,14 +13,14 @@
   --sg-text: #1e1e2e;
   --sg-text-dim: #555568;
   --sg-text-faint: #8888a0;
-  --sg-primary: #1a8a5c;
-  --sg-primary-hover: #15724d;
-  --sg-accent: #2563eb;
-  --sg-mint: #74c7a4;
+  --sg-primary: #036837;
+  --sg-primary-hover: #19ac5c;
+  --sg-accent: #6ac74c;
+  --sg-mint: #92ce36;
   --sg-font: 'Space Grotesk', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
 
   /* Lane colors — mirrors CommitGraph.svelte */
-  --lane-0: #74c7a4;
+  --lane-0: #19ac5c;
   --lane-1: #89b4fa;
   --lane-2: #cba6f7;
   --lane-3: #f9e2af;
@@ -42,10 +42,10 @@
     --sg-text: #e3e0f7;
     --sg-text-dim: #bdcabf;
     --sg-text-faint: #6c7086;
-    --sg-primary: #75daa5;
-    --sg-primary-hover: #8bd5b5;
-    --sg-accent: #89b4fa;
-    --sg-mint: #74c7a4;
+    --sg-primary: #19ac5c;
+    --sg-primary-hover: #6ac74c;
+    --sg-accent: #92ce36;
+    --sg-mint: #6ac74c;
   }
 }
 

@@ -377,21 +377,25 @@
 <div class="flex h-full flex-col overflow-hidden">
   <!-- Header -->
   <div
-    class="flex items-center justify-between border-b border-[var(--sg-border-subtle)] bg-[var(--sg-surface)] px-4 py-2"
+    class="relative flex items-center justify-between border-b border-[var(--sg-border-subtle)] bg-gradient-to-b from-[var(--sg-primary)]/6 to-[var(--sg-surface)] px-4 py-2"
   >
+    <span
+      aria-hidden="true"
+      class="absolute top-1.5 bottom-1.5 left-0 w-[2px] rounded-r-full bg-[var(--sg-primary)]"
+    ></span>
     <div class="flex items-center gap-2">
-      <p class="text-[10px] font-semibold uppercase tracking-wider text-[var(--sg-text-faint)]">
+      <p class="text-[10px] font-semibold uppercase tracking-[0.14em] text-[var(--sg-text-dim)]">
         Changes
       </p>
       {#if branch}
-        <span class="text-[10px] text-[var(--sg-primary)]">{branch}</span>
+        <span class="font-mono text-[10px] text-[var(--sg-primary)]">{branch}</span>
       {/if}
       {#if !loading}
-        <span class="text-[10px] text-[var(--sg-text-faint)]">
-          {statusFiles.length === 0
+        <span class="text-[10px] text-[var(--sg-text-faint)]"
+          >· {statusFiles.length === 0
             ? 'Clean'
-            : `${statusFiles.length} file${statusFiles.length !== 1 ? 's' : ''}`}
-        </span>
+            : `${statusFiles.length} file${statusFiles.length !== 1 ? 's' : ''}`}</span
+        >
       {/if}
     </div>
     <div class="flex items-center gap-1">

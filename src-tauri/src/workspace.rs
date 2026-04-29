@@ -356,8 +356,14 @@ pub async fn create_sproutgit_workspace(
     ensure_directory(&metadata_path)?;
 
     initialize_workspace_db(&workspace).await?;
-    write_workspace_meta(&state_db_path, &workspace, &root_path, &worktrees_path, &state_db_path)
-        .await?;
+    write_workspace_meta(
+        &state_db_path,
+        &workspace,
+        &root_path,
+        &worktrees_path,
+        &state_db_path,
+    )
+    .await?;
 
     let repo_url = repo_url
         .as_deref()
@@ -552,8 +558,14 @@ pub async fn import_git_repo_workspace_with_mode(
     import_repo_with_mode(&workspace, &source_repo, mode, &app_handle)?;
 
     initialize_workspace_db(&workspace).await?;
-    write_workspace_meta(&state_db_path, &workspace, &root_path, &worktrees_path, &state_db_path)
-        .await?;
+    write_workspace_meta(
+        &state_db_path,
+        &workspace,
+        &root_path,
+        &worktrees_path,
+        &state_db_path,
+    )
+    .await?;
 
     let result = finalize_workspace(
         &workspace,

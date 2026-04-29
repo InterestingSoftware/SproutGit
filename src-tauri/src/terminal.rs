@@ -7,7 +7,9 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use portable_pty::{native_pty_system, CommandBuilder, MasterPty, PtySize};
 use tauri::{AppHandle, Emitter};
 
-use crate::git::helpers::{command_exists, shell_candidates_for_current_os, validate_no_control_chars};
+use crate::git::helpers::{
+    command_exists, shell_candidates_for_current_os, validate_no_control_chars,
+};
 
 // ── Shell detection ──────────────────────────────────────────────────────────
 
@@ -176,9 +178,8 @@ pub async fn spawn_terminal(
                 Ok(n) => {
                     // Convert bytes to a UTF-8 string (lossy) for the frontend
                     let text = String::from_utf8_lossy(&buf[..n]).into_owned();
-                    let _ =
-                        app_handle.emit(&format!("terminal-output-{}", pty_id_clone), &text);
-                }
+                    let _ = app_handle.emit(&format!("terminal-output-{}", pty_id_clone), &text);
+                },
             }
         }
 

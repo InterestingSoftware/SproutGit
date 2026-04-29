@@ -7,6 +7,7 @@
         action: () => void;
         icon?: string;
         danger?: boolean;
+        disabled?: boolean;
         separator?: false;
       }
     | {
@@ -39,6 +40,9 @@
 
   function handleAction(item: MenuItem) {
     if (!('separator' in item && item.separator)) {
+      if (item.disabled) {
+        return;
+      }
       item.action();
     }
     onclose();
@@ -78,10 +82,13 @@
       <div class="my-1 border-t border-[var(--sg-border-subtle)]"></div>
     {:else}
       <button
-        class="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs hover:bg-[var(--sg-surface-raised)] {item.danger
+        class="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs {item.disabled
+          ? 'cursor-not-allowed opacity-45'
+          : 'hover:bg-[var(--sg-surface-raised)]'} {item.danger
           ? 'text-[var(--sg-danger)]'
           : 'text-[var(--sg-text)]'}"
         onclick={() => handleAction(item)}
+        disabled={item.disabled}
       >
         {#if item.icon}
           <span class="w-4 text-center text-[10px]">{item.icon}</span>

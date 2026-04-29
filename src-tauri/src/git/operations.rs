@@ -147,6 +147,36 @@ fn workspace_from_worktree_path(worktree_path: &Path) -> Option<PathBuf> {
     None
 }
 
+fn clear_branch_upstream(root_repo: &Path, branch: &str) -> Result<(), String> {
+    let path = root_repo.to_string_lossy();
+
+    // Clear upstream tracking by unsetting the two config keys that define it.
+    // `git config --unset-all` returns exit code 5 when the key is not present;
+    // that is expected for branches without any upstream configured.
+    for key in &[
+        format!("branch.{branch}.remote"),
+        format!("branch.{branch}.merge"),
+    ] {
+        let output = run_git(
+            GitAction::BranchUnsetUpstream,
+            &["-C", &path, "config", "--unset-all", key],
+        )?;
+
+        if !output.status.success() {
+            // Exit code 5 means the key was not found — no upstream to clear.
+            if output.status.code() == Some(5) {
+                continue;
+            }
+            let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+            return Err(format!(
+                "Failed to clear upstream tracking for branch '{branch}': {stderr}"
+            ));
+        }
+    }
+
+    Ok(())
+}
+
 // ── Commands ──
 
 #[tauri::command]
@@ -424,6 +454,7 @@ pub async fn create_managed_worktree(
     )?;
 
     ensure_git_success(output, "Failed to create managed worktree")?;
+    clear_branch_upstream(&root_repo, &branch)?;
 
     if let Some(workspace_path) = workspace_from_root_repo(&root_repo) {
         let _ = execute_workspace_hooks_for_trigger(
@@ -709,15 +740,7 @@ pub async fn create_feature_worktree(
     let feature = validate_non_option_value(&feature_name, "Feature name")?;
 
     // Use existing create_managed_worktree under the hood
-    create_managed_worktree(
-        app_handle,
-        root_path,
-        worktrees_path,
-        source,
-        feature,
-        None,
-    )
-    .await
+    create_managed_worktree(app_handle, root_path, worktrees_path, source, feature, None).await
 }
 
 /// Checkout a worktree to a target ref with automatic stash.
@@ -840,7 +863,14 @@ mod tests {
     #[test]
     fn parses_commit_with_no_parents() {
         let line = make_line(&[
-            "abc123", "abc1", "", "Bob", "bob@example.com", "3 hours ago", "initial commit", "",
+            "abc123",
+            "abc1",
+            "",
+            "Bob",
+            "bob@example.com",
+            "3 hours ago",
+            "initial commit",
+            "",
         ]);
         let entry = parse_commit_line(&line, SEP).unwrap_or_else(|| panic!("should parse"));
         assert!(entry.parents.is_empty());
@@ -850,7 +880,13 @@ mod tests {
     #[test]
     fn parses_commit_with_single_parent() {
         let line = make_line(&[
-            "def456", "def4", "abc123", "Carol", "carol@x.com", "1 day ago", "feat: add login",
+            "def456",
+            "def4",
+            "abc123",
+            "Carol",
+            "carol@x.com",
+            "1 day ago",
+            "feat: add login",
             "tag: v1.0",
         ]);
         let entry = parse_commit_line(&line, SEP).unwrap_or_else(|| panic!("should parse"));
@@ -872,9 +908,18 @@ mod tests {
     #[test]
     fn handles_extra_fields_gracefully() {
         let line = make_line(&[
-            "abc", "ab", "", "Name", "e@x.com", "now", "msg", "HEAD", "extra-field",
+            "abc",
+            "ab",
+            "",
+            "Name",
+            "e@x.com",
+            "now",
+            "msg",
+            "HEAD",
+            "extra-field",
         ]);
-        let entry = parse_commit_line(&line, SEP).unwrap_or_else(|| panic!("extra fields should not break parsing"));
+        let entry = parse_commit_line(&line, SEP)
+            .unwrap_or_else(|| panic!("extra fields should not break parsing"));
         assert_eq!(entry.hash, "abc");
         assert_eq!(entry.refs, vec!["HEAD"]);
     }

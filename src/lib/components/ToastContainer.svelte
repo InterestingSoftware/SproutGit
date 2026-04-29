@@ -26,9 +26,14 @@
     <div
       data-testid="toast-item"
       data-toast-type={t.type}
-      class="pointer-events-auto flex max-w-xs items-start gap-2 rounded-lg border border-[var(--sg-border)] bg-[var(--sg-surface)] px-3 py-2.5 shadow-lg"
+      class="pointer-events-auto relative flex max-w-xs items-start gap-2 overflow-hidden rounded-lg border border-[var(--sg-border-subtle)] bg-[var(--sg-surface)] py-2.5 pr-3 pl-3.5 shadow-lg backdrop-blur-sm"
       style="animation: {t.removing ? 'sg-toast-out' : 'sg-toast-in'} 0.2s ease-out forwards"
     >
+      <span
+        aria-hidden="true"
+        class="absolute top-2 bottom-2 left-0 w-[3px] rounded-r-full"
+        style:background={colorMap[t.type]}
+      ></span>
       <svg
         class="mt-0.5 h-4 w-4 shrink-0"
         fill="none"

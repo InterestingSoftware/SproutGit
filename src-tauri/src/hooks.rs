@@ -12,8 +12,8 @@ use tokio::time::timeout;
 
 use crate::db::connect_workspace_db;
 use crate::git::helpers::{
-    command_exists, now_epoch_seconds, path_to_frontend, run_git, strip_win_prefix, system_command,
-    validate_no_control_chars, shell_candidates_for_current_os, GitAction, SystemAction,
+    command_exists, now_epoch_seconds, path_to_frontend, run_git, shell_candidates_for_current_os,
+    strip_win_prefix, system_command, validate_no_control_chars, GitAction, SystemAction,
 };
 
 #[derive(Serialize, FromQueryResult)]
@@ -244,9 +244,7 @@ fn validate_scope(scope: &str) -> Result<String, String> {
 fn validate_execution_target(execution_target: &str) -> Result<String, String> {
     let execution_target = normalize_non_empty(execution_target, "Execution target")?;
     if !ALLOWED_EXECUTION_TARGETS.contains(&execution_target.as_str()) {
-        return Err(format!(
-            "Unsupported execution target: {execution_target}"
-        ));
+        return Err(format!("Unsupported execution target: {execution_target}"));
     }
     Ok(execution_target)
 }
@@ -287,14 +285,11 @@ fn validate_execution_preferences(
     if execution_mode == "terminal_tab" {
         if execution_target == "workspace" {
             return Err(
-                "Terminal tab execution requires a worktree target, not the workspace"
-                    .to_string(),
+                "Terminal tab execution requires a worktree target, not the workspace".to_string(),
             );
         }
         if !trigger_supports_terminal_tab(trigger) {
-            return Err(format!(
-                "Trigger '{trigger}' cannot run in a terminal tab"
-            ));
+            return Err(format!("Trigger '{trigger}' cannot run in a terminal tab"));
         }
     }
 
@@ -544,7 +539,12 @@ fn build_hook_environment(
         ),
         (
             "SPROUTGIT_WORKTREE_DETACHED".to_string(),
-            if worktree_context.detached { "true" } else { "false" }.to_string(),
+            if worktree_context.detached {
+                "true"
+            } else {
+                "false"
+            }
+            .to_string(),
         ),
         (
             "SPROUTGIT_TRIGGER_WORKTREE_PATH".to_string(),
@@ -1009,8 +1009,7 @@ async fn execute_hook(
                     status: "failed".to_string(),
                     success: false,
                     error_message: Some(
-                        "Terminal tab execution requires a worktree working directory"
-                            .to_string(),
+                        "Terminal tab execution requires a worktree working directory".to_string(),
                     ),
                 },
                 None,
@@ -1028,8 +1027,7 @@ async fn execute_hook(
                     status: "failed".to_string(),
                     success: false,
                     error_message: Some(
-                        "Terminal tab execution requires an active app handle"
-                            .to_string(),
+                        "Terminal tab execution requires an active app handle".to_string(),
                     ),
                 },
                 None,
@@ -1073,9 +1071,7 @@ async fn execute_hook(
                     keep_open_on_completion: hook.keep_open_on_completion,
                     status: "failed".to_string(),
                     success: false,
-                    error_message: Some(format!(
-                        "Failed to launch worktree terminal tab: {err}"
-                    )),
+                    error_message: Some(format!("Failed to launch worktree terminal tab: {err}")),
                 },
                 None,
                 None,
@@ -1446,7 +1442,11 @@ async fn execute_loaded_hooks(
                 },
             );
 
-            joins.spawn(execute_hook(hook, context.clone(), app_handle_owned.clone()));
+            joins.spawn(execute_hook(
+                hook,
+                context.clone(),
+                app_handle_owned.clone(),
+            ));
         }
 
         while let Some(join_result) = joins.join_next().await {
@@ -1637,15 +1637,7 @@ pub async fn execute_workspace_hooks_for_trigger(
         return Ok(HookExecutionSummary::default());
     }
 
-    execute_loaded_hooks(
-        &conn,
-        &trigger,
-        hooks,
-        dependency_map,
-        &context,
-        app_handle,
-    )
-    .await
+    execute_loaded_hooks(&conn, &trigger, hooks, dependency_map, &context, app_handle).await
 }
 
 #[tauri::command]

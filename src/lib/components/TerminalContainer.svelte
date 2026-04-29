@@ -357,6 +357,12 @@
           onpointerup={onTabPointerUp}
           oncontextmenu={e => openCtxMenu(e, session.id)}
         >
+          {#if isActive}
+            <span
+              aria-hidden="true"
+              class="pointer-events-none absolute right-1 bottom-0 left-1 h-[2px] rounded-t-full bg-[var(--sg-primary)] shadow-[0_0_6px_var(--sg-primary)]"
+            ></span>
+          {/if}
           <!-- Drop indicator: left edge -->
           {#if isDragTarget && dragToSide === 'before'}
             <span

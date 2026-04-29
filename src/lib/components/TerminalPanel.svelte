@@ -75,9 +75,9 @@
   const DARK_THEME = {
     background: '#1e1e2e',
     foreground: '#cdd6f4',
-    cursor: '#74c7a4',
+    cursor: '#19ac5c',
     cursorAccent: '#1e1e2e',
-    selectionBackground: 'rgba(116,199,164,0.25)',
+    selectionBackground: 'rgba(25,172,92,0.25)',
     black: '#45475a',
     red: '#f38ba8',
     green: '#a6e3a1',

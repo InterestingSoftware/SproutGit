@@ -50,18 +50,18 @@ export async function resizeWindowForScreenshot(
 const LIGHT_CSS_VARS =
   '--sg-bg:#f5f5f5;--sg-surface:#ffffff;--sg-surface-raised:#eaeaef;' +
   '--sg-border:#d4d4dc;--sg-border-subtle:#e0e0e8;--sg-text:#1e1e2e;' +
-  '--sg-text-dim:#555568;--sg-text-faint:#8888a0;--sg-primary:#1a8a5c;' +
-  '--sg-primary-hover:#15724d;--sg-danger:#c4314b;--sg-warning:#9a6700;' +
-  '--sg-accent:#2563eb;--sg-avatar-bg:#dbe9e2;--sg-avatar-text:#3c4a45;' +
-  '--sg-input-bg:#ffffff;--sg-input-border:#d4d4dc;--sg-input-focus:#1a8a5c';
+  '--sg-text-dim:#555568;--sg-text-faint:#8888a0;--sg-primary:#036837;' +
+  '--sg-primary-hover:#19ac5c;--sg-danger:#c4314b;--sg-warning:#9a6700;' +
+  '--sg-accent:#6ac74c;--sg-avatar-bg:#dff0c4;--sg-avatar-text:#036837;' +
+  '--sg-input-bg:#ffffff;--sg-input-border:#d4d4dc;--sg-input-focus:#036837';
 
 const DARK_CSS_VARS =
   '--sg-bg:#1e1e2e;--sg-surface:#262637;--sg-surface-raised:#2e2e42;' +
   '--sg-border:#3a3a52;--sg-border-subtle:#32324a;--sg-text:#cdd6f4;' +
-  '--sg-text-dim:#8b8fad;--sg-text-faint:#6c7086;--sg-primary:#74c7a4;' +
-  '--sg-primary-hover:#8bd5b5;--sg-danger:#f38ba8;--sg-warning:#f9e2af;' +
-  '--sg-accent:#89b4fa;--sg-avatar-bg:#2b3b35;--sg-avatar-text:#d3ddd8;' +
-  '--sg-input-bg:#1a1a2a;--sg-input-border:#3a3a52;--sg-input-focus:#74c7a4';
+  '--sg-text-dim:#8b8fad;--sg-text-faint:#6c7086;--sg-primary:#19ac5c;' +
+  '--sg-primary-hover:#6ac74c;--sg-danger:#f38ba8;--sg-warning:#f9e2af;' +
+  '--sg-accent:#92ce36;--sg-avatar-bg:#2b3b35;--sg-avatar-text:#dff0c4;' +
+  '--sg-input-bg:#1a1a2a;--sg-input-border:#3a3a52;--sg-input-focus:#19ac5c';
 
 // Catppuccin Latte (light) and Catppuccin Mocha (dark) xterm canvas themes.
 // Must match the palette used in TerminalPanel.svelte.
@@ -92,9 +92,9 @@ const LIGHT_XTERM_THEME = {
 const DARK_XTERM_THEME = {
   background: '#1e1e2e',
   foreground: '#cdd6f4',
-  cursor: '#74c7a4',
+  cursor: '#19ac5c',
   cursorAccent: '#1e1e2e',
-  selectionBackground: 'rgba(116,199,164,0.25)',
+  selectionBackground: 'rgba(25,172,92,0.25)',
   black: '#45475a',
   red: '#f38ba8',
   green: '#a6e3a1',

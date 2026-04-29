@@ -10,6 +10,7 @@
   import Spinner from '$lib/components/Spinner.svelte';
   import TerminalContainer from '$lib/components/TerminalContainer.svelte';
   import WorkspaceHooksModal from '$lib/components/WorkspaceHooksModal.svelte';
+  import ResizableSidebar from '$lib/components/ResizableSidebar.svelte';
   import {
     checkoutWorktree,
     createManagedWorktree,
@@ -52,10 +53,24 @@
   } from '$lib/sproutgit';
   import { toast } from '$lib/toast.svelte';
   import { tildify } from '$lib/paths.svelte';
-  import { findPath, normalizePathSeparators, pathsEqual } from '$lib/path-utils';
+  import { findPath, normalizePathSeparators, pathStartsWith, pathsEqual } from '$lib/path-utils';
   import { validateBranchName, validateSourceRef } from '$lib/validation';
   import { openPath } from '@tauri-apps/plugin-opener';
-  import { FolderOpen, Play, Trash2, SquareTerminal, ShieldAlert, Settings } from 'lucide-svelte';
+  import {
+    FolderOpen,
+    Play,
+    Trash2,
+    SquareTerminal,
+    ShieldAlert,
+    Settings,
+    Plus,
+    Sliders,
+    Download,
+    ArrowDownToLine,
+    ArrowUpFromLine,
+    GitBranch,
+    X,
+  } from 'lucide-svelte';
   import WindowControls from '$lib/components/WindowControls.svelte';
   import UpdateBadge from '$lib/components/UpdateBadge.svelte';
 
@@ -90,6 +105,7 @@
   let confirmDialog = $state<ConfirmState>(null);
   let actionRef = $state('');
   let formTouched = $state({ branch: false, ref: false });
+  let createBranchType = $state<'managed' | 'persistent'>('managed');
 
   // Diff viewer state
   let selectedCommits = $state<CommitEntry[]>([]);
@@ -101,6 +117,7 @@
   // Worktree context menu
   let worktreeContextMenu = $state<{ x: number; y: number; items: MenuItem[] } | null>(null);
   let hooksModalOpen = $state(false);
+  let createModalOpen = $state(false);
   let operationStatus = $state<{ title: string; detail: string } | null>(null);
   let operationError = $state<string | null>(null);
   let activeHookName = $state<string | null>(null);
@@ -545,6 +562,121 @@
     worktrees.filter(item => !pathsEqual(item.path, workspace?.rootPath))
   );
 
+  function isPersistentBranchName(branch: string | null | undefined): boolean {
+    if (!branch) return false;
+    return (
+      branch === 'main' ||
+      branch === 'master' ||
+      branch === 'develop' ||
+      branch.startsWith('release/')
+    );
+  }
+
+  const managedWorktrees = $derived.by(() => {
+    const currentWorkspace = workspace;
+    if (!currentWorkspace) return [];
+    return nonRootWorktrees.filter(item =>
+      pathStartsWith(currentWorkspace.worktreesPath, item.path)
+    );
+  });
+
+  const externalWorktrees = $derived.by(() => {
+    const currentWorkspace = workspace;
+    if (!currentWorkspace) return [];
+    return nonRootWorktrees.filter(
+      item => !pathStartsWith(currentWorkspace.worktreesPath, item.path)
+    );
+  });
+
+  const persistentWorktrees = $derived(
+    managedWorktrees.filter(item => isPersistentBranchName(item.branch))
+  );
+
+  const taskWorktrees = $derived(
+    managedWorktrees.filter(item => !isPersistentBranchName(item.branch))
+  );
+
+  const pinnedWorktrees = $derived.by(() => {
+    const pinned: WorktreeInfo[] = [];
+    const seen = new Set<string>();
+
+    const add = (item: WorktreeInfo | null | undefined) => {
+      if (!item) return;
+      if (seen.has(item.path)) return;
+      seen.add(item.path);
+      pinned.push(item);
+    };
+
+    add(taskWorktrees.find(item => pathsEqual(item.path, activeWorktreePath)));
+    for (const item of persistentWorktrees) add(item);
+    return pinned;
+  });
+
+  const cleanupCandidates = $derived(
+    taskWorktrees.filter(
+      item =>
+        !pathsEqual(item.path, activeWorktreePath) && (worktreeChangeCounts[item.path] ?? 0) === 0
+    )
+  );
+
+  type InventoryEntry = {
+    wt: WorktreeInfo;
+    section: 'managed' | 'persistent' | 'external';
+    typeLabel: 'Managed' | 'Persistent' | 'External';
+    ownership: string;
+    policyHint: string;
+  };
+
+  const inventoryWorktrees = $derived.by(() => {
+    const rows: InventoryEntry[] = [];
+    for (const wt of taskWorktrees) {
+      rows.push({
+        wt,
+        section: 'managed',
+        typeLabel: 'Managed',
+        ownership: 'Owned branch',
+        policyHint:
+          (worktreeChangeCounts[wt.path] ?? 0) === 0 ? 'Cleanup candidate' : 'Branch-bound',
+      });
+    }
+    for (const wt of persistentWorktrees) {
+      rows.push({
+        wt,
+        section: 'persistent',
+        typeLabel: 'Persistent',
+        ownership: 'Owned branch',
+        policyHint: 'Never auto-delete branch',
+      });
+    }
+    for (const wt of externalWorktrees) {
+      rows.push({
+        wt,
+        section: 'external',
+        typeLabel: 'External',
+        ownership: 'External context',
+        policyHint: 'Conservative actions',
+      });
+    }
+
+    // Stable order: group by section (managed → persistent → external as pushed),
+    // then sort alphabetically within each section. Active selection must NOT
+    // reorder rows — that confuses users tracking position.
+    const sectionRank: Record<InventoryEntry['section'], number> = {
+      managed: 0,
+      persistent: 1,
+      external: 2,
+    };
+    rows.sort((a, b) => {
+      const s = sectionRank[a.section] - sectionRank[b.section];
+      if (s !== 0) return s;
+      return (a.wt.branch ?? a.wt.path).localeCompare(b.wt.branch ?? b.wt.path);
+    });
+
+    return rows;
+  });
+
+  const branchRefs = $derived(refs.filter(ref => ref.kind === 'branch'));
+
   const selectedWorktree = $derived(
     worktrees.find(item => pathsEqual(item.path, activeWorktreePath)) ?? null
   );
@@ -983,7 +1115,11 @@
       const matchedSavedWt = savedWtRaw
         ? findPath(worktreeData.worktrees, wt => wt.path, savedWtRaw)
         : null;
-      activeWorktreePath = matchedSavedWt?.path ?? worktreeData.worktrees[0]?.path ?? null;
+      activeWorktreePath =
+        matchedSavedWt?.path ??
+        worktreeData.worktrees.find(wt => !pathsEqual(wt.path, status.rootPath))?.path ??
+        worktreeData.worktrees[0]?.path ??
+        null;
       // (activeTab is already initialised from sessionStorage at declaration time.)
 
       // Load available shells and the user's default shell preference
@@ -1124,9 +1260,10 @@
   function handleCreateWorktreeFromGraph(fromRef: string) {
     selectedRef = fromRef;
     newBranch = '';
-    // Focus the new branch input after state update
+    createModalOpen = true;
+    // Focus the new branch input after the modal mounts
     requestAnimationFrame(() => {
-      document.getElementById('new-branch')?.focus();
+      document.getElementById('modal-new-branch')?.focus();
     });
   }
 
@@ -1504,14 +1641,40 @@
   });
 
   // ── Worktree list context menu ──
-  function handleWorktreeContextMenu(wt: WorktreeInfo, e: MouseEvent) {
+  function handleWorktreeContextMenu(
+    wt: WorktreeInfo,
+    e: MouseEvent,
+    section: 'managed' | 'persistent' | 'external' | 'cleanup' = 'managed'
+  ) {
     e.preventDefault();
     const label = wt.branch ?? wt.path.split('/').pop() ?? 'worktree';
+    const branchName = wt.branch ?? '';
+    const targetRef = branchName || 'HEAD';
+    const allowCheckout = Boolean(wt.branch && !wt.detached);
+    const isActive = pathsEqual(activeWorktreePath, wt.path);
     const items: MenuItem[] = [
+      {
+        label: 'Switch here',
+        icon: '⇄',
+        action: () => {
+          activeWorktreePath = wt.path;
+        },
+        disabled: isActive,
+      },
       { label: 'Open folder', icon: '📂', action: () => handleRevealWorktree(wt.path) },
+      { label: 'Open in editor', icon: '⌨', action: () => handleOpenInEditor(wt.path) },
+      {
+        label: 'Copy path',
+        icon: '⧉',
+        action: () => {
+          void navigator.clipboard.writeText(wt.path);
+          toast.success('Copied worktree path');
+        },
+      },
       { separator: true },
     ];
-    if (wt.branch && !wt.detached) {
+
+    if (allowCheckout) {
       items.push({
         label: 'Checkout…',
         icon: '⎋',
@@ -1522,13 +1685,127 @@
           requestAnimationFrame(() => document.getElementById('action-ref')?.focus());
         },
       });
+    } else {
+      items.push({
+        label: 'Checkout unavailable (detached)',
+        icon: '⎋',
+        action: () => {},
+        disabled: true,
+      });
     }
+
     items.push({ separator: true });
     items.push({
-      label: `Delete "${label}"`,
-      danger: true,
-      action: () => handleDeleteWorktree(wt),
+      label: 'Run hooks…',
+      icon: '▶',
+      action: () => {
+        activeWorktreePath = wt.path;
+        hooksModalOpen = true;
+      },
     });
+    items.push({
+      label: 'Rename branch (coming soon)',
+      icon: '✎',
+      action: () => {},
+      disabled: true,
+    });
+
+    if (section === 'managed') {
+      items.push({
+        label: 'Branch actions (managed policy)',
+        icon: '⎇',
+        action: () => {},
+        disabled: true,
+      });
+    }
+    if (section === 'persistent') {
+      items.push({
+        label: 'Branch actions (persistent policy)',
+        icon: '⎇',
+        action: () => {},
+        disabled: true,
+      });
+    }
+    if (section === 'external') {
+      items.push({
+        label: 'Branch actions (external policy)',
+        icon: '⎇',
+        action: () => {},
+        disabled: true,
+      });
+    }
+
+    if (section === 'persistent') {
+      items.push({ separator: true });
+      items.push({
+        label: 'Pull (coming soon)',
+        icon: '↓',
+        action: () => {},
+        disabled: true,
+      });
+      items.push({
+        label: 'Push (coming soon)',
+        icon: '↑',
+        action: () => {},
+        disabled: true,
+      });
+      items.push({ separator: true });
+      items.push({
+        label: `Remove worktree "${label}"`,
+        danger: true,
+        action: () => handleDeleteWorktree(wt),
+      });
+    } else {
+      items.push({ separator: true });
+      items.push({
+        label: section === 'cleanup' ? `Cleanup "${label}"` : `Delete "${label}"`,
+        danger: true,
+        action: () => handleDeleteWorktree(wt),
+      });
+    }
+
+    if (targetRef) {
+      items.push({ separator: true });
+      items.push({
+        label: 'Create worktree from branch',
+        icon: '+',
+        action: () => handleCreateWorktreeFromGraph(targetRef),
+      });
+    }
+
+    worktreeContextMenu = { x: e.clientX, y: e.clientY, items };
+  }
+
+  function openWorktreeActionsMenu(
+    wt: WorktreeInfo,
+    section: 'managed' | 'persistent' | 'external',
+    anchor: HTMLElement
+  ) {
+    const rect = anchor.getBoundingClientRect();
+    handleWorktreeContextMenu(
+      wt,
+      new MouseEvent('contextmenu', { clientX: rect.right, clientY: rect.bottom }),
+      section
+    );
+  }
+
+  function handleBranchRefContextMenu(refName: string, e: MouseEvent) {
+    e.preventDefault();
+    const items: MenuItem[] = [
+      {
+        label: 'Create worktree from branch',
+        icon: '+',
+        action: () => handleCreateWorktreeFromGraph(refName),
+      },
+      {
+        label: 'Copy branch name',
+        icon: '⧉',
+        action: () => {
+          void navigator.clipboard.writeText(refName);
+          toast.success('Copied branch name');
+        },
+      },
+    ];
     worktreeContextMenu = { x: e.clientX, y: e.clientY, items };
   }
 </script>
@@ -1580,16 +1857,26 @@
     <button
       onclick={() => goto('/')}
       data-testid="btn-back-projects"
-      class="rounded px-2 py-0.5 text-xs text-[var(--sg-text-dim)] hover:bg-[var(--sg-surface-raised)] hover:text-[var(--sg-text)]"
+      class="group flex items-center gap-1 rounded-md px-2 py-1 text-xs text-[var(--sg-text-dim)] transition-colors hover:bg-[var(--sg-surface-raised)] hover:text-[var(--sg-text)]"
     >
-      &larr; Projects
+      <span class="transition-transform group-hover:-translate-x-0.5">←</span>
+      <span>Projects</span>
     </button>
     <div class="h-3 w-px bg-[var(--sg-border)]"></div>
-    <span class="text-xs text-[var(--sg-text)]"
+    <span class="text-xs font-medium text-[var(--sg-text)]"
       >{workspace?.workspacePath.split('/').pop() ?? '...'}</span
     >
-    <span class="text-xs text-[var(--sg-text-faint)]">&rsaquo;</span>
-    <span class="text-xs text-[var(--sg-primary)]">
+    <svg
+      class="h-3 w-3 text-[var(--sg-text-faint)]"
+      viewBox="0 0 16 16"
+      fill="none"
+      stroke="currentColor"
+      stroke-width="2"
+      stroke-linecap="round"
+      stroke-linejoin="round"><polyline points="6 4 10 8 6 12" /></svg
+    >
+    <span class="flex items-center gap-1 font-mono text-xs text-[var(--sg-primary)]">
+      <GitBranch class="h-3 w-3" />
       {selectedWorktree?.branch ?? (selectedWorktree?.detached ? 'detached' : '—')}
     </span>
     <div class="ml-auto flex h-full items-center">
@@ -1650,299 +1937,277 @@
       class="flex min-h-0 flex-1"
       style="view-transition-name: sg-page-content; animation: sg-fade-in 0.3s ease-out"
     >
-      <!-- Left sidebar -->
-      <aside
-        class="flex w-[260px] shrink-0 flex-col border-r border-[var(--sg-border)] bg-[var(--sg-surface)]"
-      >
-        <!-- Root info -->
-        <div class="border-b border-[var(--sg-border-subtle)] px-3 py-2">
-          <div class="flex items-center gap-1.5">
-            <p
-              class="text-[10px] font-semibold uppercase tracking-wider text-[var(--sg-text-faint)]"
-            >
-              Root
-            </p>
-            {#if rootWorktree}
-              <span
-                class="inline-flex items-center gap-0.5 rounded-full bg-[var(--sg-warning)]/15 px-1.5 py-px text-[9px] font-medium text-[var(--sg-warning)] cursor-help"
-                title="The root checkout is managed by SproutGit. Do not make changes or work directly in it — use worktrees instead."
-              >
-                <ShieldAlert class="h-2.5 w-2.5" />
-                Protected
-              </span>
-            {/if}
-          </div>
-          <p class="mt-0.5 truncate text-xs text-[var(--sg-text-dim)]">
-            {workspace ? tildify(workspace.rootPath) : '—'}
-          </p>
-        </div>
-
-        <!-- Create worktree form -->
-        <form
-          onsubmit={createFirstWorktree}
-          class="border-b border-[var(--sg-border-subtle)] px-3 py-3"
+      <!-- Sidebar: icon toolbar, active worktree summary, inventory list -->
+      <ResizableSidebar storageKey="workspace" defaultWidth={320} minWidth={260} maxWidth={520}>
+        <aside
+          class="flex h-full flex-col border-r border-[var(--sg-border)] bg-[var(--sg-surface)]"
         >
-          <p
-            class="mb-2 text-[10px] font-semibold uppercase tracking-wider text-[var(--sg-text-faint)]"
-          >
-            New worktree
-          </p>
-
-          <label for="source-ref" class="mb-0.5 block text-[10px] text-[var(--sg-text-faint)]"
-            >Source ref</label
-          >
-          <div>
-            <Autocomplete
-              items={refItems}
-              bind:value={selectedRef}
-              testId="input-source-ref"
-              placeholder="Type to search branches…"
-              id="source-ref"
-              onselect={() => (formTouched.ref = true)}
-            />
-          </div>
-          {#if formTouched.ref && refError}
-            <p class="mt-0.5 text-[10px] text-[var(--sg-danger)]">{refError}</p>
-          {/if}
-          <div class="mb-2"></div>
-
-          <label for="new-branch" class="mb-0.5 block text-[10px] text-[var(--sg-text-faint)]"
-            >New branch</label
-          >
-          <input
-            id="new-branch"
-            bind:value={newBranch}
-            oninput={() => (formTouched.branch = true)}
-            data-testid="input-new-branch"
-            class="w-full rounded border bg-[var(--sg-input-bg)] px-2 py-1 text-xs text-[var(--sg-text)] placeholder-[var(--sg-text-faint)] outline-none {formTouched.branch &&
-            branchError
-              ? 'border-[var(--sg-danger)] focus:border-[var(--sg-danger)]'
-              : 'border-[var(--sg-input-border)] focus:border-[var(--sg-input-focus)]'}"
-            placeholder="feature/my-task"
-          />
-          {#if formTouched.branch && branchError}
-            <p class="mt-0.5 text-[10px] text-[var(--sg-danger)]">{branchError}</p>
-          {/if}
-          <div class="mb-2"></div>
-
-          <button
-            type="submit"
-            disabled={creating || !formValid}
-            data-testid="btn-create-worktree"
-            class="flex w-full items-center justify-center gap-2 rounded bg-[var(--sg-primary)] px-2.5 py-1 text-xs font-semibold text-[var(--sg-bg)] hover:bg-[var(--sg-primary-hover)] disabled:cursor-not-allowed disabled:opacity-40"
-          >
-            {#if creating}
-              <Spinner size="sm" />
-              Creating…
-            {:else}
-              Create worktree
-            {/if}
-          </button>
-        </form>
-
-        <!-- Worktree list -->
-        <div class="flex min-h-0 flex-1 flex-col">
-          <div class="flex items-center justify-between px-3 py-2">
-            <p
-              class="text-[10px] font-semibold uppercase tracking-wider text-[var(--sg-text-faint)]"
-            >
-              Worktrees
-            </p>
+          <!-- Icon toolbar -->
+          <div class="flex items-center gap-1 border-b border-[var(--sg-border-subtle)] px-3 py-2">
             <button
+              type="button"
               onclick={() => {
-                hooksModalOpen = true;
+                createModalOpen = true;
+                formTouched = { branch: false, ref: false };
               }}
-              class="rounded p-1 text-[var(--sg-text-faint)] hover:bg-[var(--sg-surface-raised)] hover:text-[var(--sg-text)]"
-              title="Manage workspace hooks"
-              aria-label="Manage workspace hooks"
+              class="flex items-center gap-1 rounded-lg bg-[var(--sg-primary)] px-2.5 py-1.5 text-xs font-semibold text-[var(--sg-bg)] hover:bg-[var(--sg-primary-hover)]"
+              title="Create worktree"
+              aria-label="Create worktree"
+              data-testid="btn-open-create-worktree"
             >
-              <Settings class="h-3.5 w-3.5" />
+              <Plus class="h-3.5 w-3.5" />
+              <span>New</span>
+            </button>
+            <div class="mx-1 h-5 w-px bg-[var(--sg-border)]"></div>
+            <button
+              type="button"
+              onclick={() => (hooksModalOpen = true)}
+              class="rounded-md p-1.5 text-[var(--sg-text-dim)] hover:bg-[var(--sg-surface-raised)] hover:text-[var(--sg-text)]"
+              title="Workspace settings (hooks)"
+              aria-label="Workspace settings"
+              data-testid="btn-workspace-settings"
+            >
+              <Sliders class="h-4 w-4" />
+            </button>
+            <button
+              type="button"
+              disabled
+              class="rounded-md p-1.5 text-[var(--sg-text-faint)] opacity-50"
+              title="Fetch (coming soon)"
+              aria-label="Fetch"
+            >
+              <Download class="h-4 w-4" />
+            </button>
+            <button
+              type="button"
+              disabled
+              class="rounded-md p-1.5 text-[var(--sg-text-faint)] opacity-50"
+              title="Pull active worktree branch (coming soon)"
+              aria-label="Pull"
+            >
+              <ArrowDownToLine class="h-4 w-4" />
+            </button>
+            <button
+              type="button"
+              disabled
+              class="rounded-md p-1.5 text-[var(--sg-text-faint)] opacity-50"
+              title="Push active worktree branch (coming soon)"
+              aria-label="Push"
+            >
+              <ArrowUpFromLine class="h-4 w-4" />
             </button>
           </div>
-          <div class="flex-1 overflow-auto px-2" data-testid="worktree-list">
-            {#if nonRootWorktrees.length === 0}
-              <p class="px-1 text-xs text-[var(--sg-text-faint)]">No managed worktrees yet.</p>
-            {:else}
-              {#each nonRootWorktrees as wt}
-                <!-- svelte-ignore a11y_no_static_element_interactions -->
-                <!-- svelte-ignore a11y_click_events_have_key_events -->
-                <div
-                  class="group mb-0.5 flex w-full cursor-pointer items-center gap-2 rounded px-2 py-1.5 text-left text-xs {activeWorktreePath ===
-                  wt.path
-                    ? 'bg-[var(--sg-surface-raised)] text-[var(--sg-primary)]'
-                    : 'text-[var(--sg-text-dim)] hover:bg-[var(--sg-surface-raised)]'}"
-                  data-testid="worktree-item"
-                  data-branch={wt.branch}
-                  data-path={wt.path}
-                  data-active={activeWorktreePath === wt.path ? 'true' : 'false'}
-                  onclick={() => {
-                    activeWorktreePath = activeWorktreePath === wt.path ? null : wt.path;
-                  }}
-                  oncontextmenu={e => handleWorktreeContextMenu(wt, e)}
-                >
-                  <span
-                    class="h-1.5 w-1.5 shrink-0 rounded-full {activeWorktreePath === wt.path
-                      ? 'bg-[var(--sg-primary)]'
-                      : 'bg-[var(--sg-border)]'}"
-                  ></span>
-                  <span class="min-w-0 flex-1 truncate"
-                    >{wt.branch ?? (wt.detached ? 'detached' : 'unknown')}</span
-                  >
-                  {#if (worktreeChangeCounts[wt.path] ?? 0) > 0}
-                    <span
-                      class="shrink-0 rounded-full bg-[var(--sg-warning)]/20 px-1.5 py-0.5 font-mono text-[9px] font-bold text-[var(--sg-warning)] group-hover:hidden"
-                    >
-                      {worktreeChangeCounts[wt.path]}
-                    </span>
-                  {/if}
-                  <!-- svelte-ignore a11y_no_static_element_interactions -->
-                  <!-- svelte-ignore a11y_click_events_have_key_events -->
-                  <div
-                    class="hidden shrink-0 items-center gap-0.5 group-hover:flex"
-                    role="none"
-                    onclick={e => e.stopPropagation()}
-                  >
-                    <button
-                      onclick={event => openRunHookMenu(wt, event.currentTarget as HTMLElement)}
-                      class="rounded p-0.5 text-[var(--sg-text-faint)] hover:bg-[var(--sg-surface)] hover:text-[var(--sg-text)]"
-                      title="Run hook"
-                    >
-                      <Play class="h-3 w-3" />
-                    </button>
-                    <button
-                      onclick={() => handleOpenInEditor(wt.path)}
-                      class="rounded p-0.5 text-[var(--sg-text-faint)] hover:bg-[var(--sg-surface)] hover:text-[var(--sg-text)]"
-                      title="Open in editor"
-                    >
-                      <SquareTerminal class="h-3 w-3" />
-                    </button>
-                    <button
-                      onclick={() => handleRevealWorktree(wt.path)}
-                      class="rounded p-0.5 text-[var(--sg-text-faint)] hover:bg-[var(--sg-surface)] hover:text-[var(--sg-text)]"
-                      title="Open folder"
-                    >
-                      <FolderOpen class="h-3 w-3" />
-                    </button>
-                    <button
-                      onclick={() => handleDeleteWorktree(wt)}
-                      disabled={deleting === wt.path}
-                      data-testid="btn-delete-worktree"
-                      class="rounded p-0.5 text-[var(--sg-text-faint)] hover:bg-[var(--sg-surface)] hover:text-[var(--sg-danger)] disabled:opacity-40"
-                      title="Delete worktree"
-                    >
-                      {#if deleting === wt.path}
-                        <Spinner size="sm" />
-                      {:else}
-                        <Trash2 class="h-3 w-3" />
-                      {/if}
-                    </button>
-                  </div>
-                </div>
-              {/each}
-            {/if}
-          </div>
-        </div>
 
-        <!-- Active worktree actions (simplified: one ref field) -->
-        {#if selectedWorktree && !activeIsRoot}
-          <div
-            class="border-t border-[var(--sg-border-subtle)] px-3 py-2"
-            style="animation: sg-fade-in 0.15s ease-out"
-          >
-            <p
-              class="mb-1 text-[10px] font-semibold uppercase tracking-wider text-[var(--sg-text-faint)]"
-            >
-              Worktree actions
-            </p>
+          <!-- Active worktree summary (compact, in sidebar) -->
+          {#if selectedWorktree && !activeIsRoot}
+            {@const dirty = worktreeChangeCounts[selectedWorktree.path] ?? 0}
+            {@const isPersistent = isPersistentBranchName(selectedWorktree.branch)}
             <div
-              class="mb-1.5 rounded border border-[var(--sg-border-subtle)] bg-[var(--sg-surface)] px-2 py-1"
+              class="relative border-b border-[var(--sg-border-subtle)] bg-gradient-to-b from-[var(--sg-primary)]/8 to-transparent px-3 py-2.5"
+              style="animation: sg-fade-in 0.2s ease-out"
             >
-              <span class="text-[9px] text-[var(--sg-text-faint)]">Branch</span>
-              <p class="truncate font-mono text-[11px] font-medium text-[var(--sg-text)]">
-                {selectedWorktree.branch ?? 'detached HEAD'}
-              </p>
-              {#if selectedWorktree.head}
-                <span class="font-mono text-[9px] text-[var(--sg-text-faint)]"
-                  >{selectedWorktree.head.slice(0, 8)}</span
+              <!-- Left accent rail -->
+              <span
+                aria-hidden="true"
+                class="absolute top-2.5 bottom-2.5 left-0 w-[3px] rounded-r-full bg-[var(--sg-primary)]"
+              ></span>
+
+              <div class="flex items-center gap-1.5">
+                <span
+                  class="flex items-center gap-1 text-[9px] font-semibold uppercase tracking-[0.12em] text-[var(--sg-primary)]"
                 >
-              {/if}
-            </div>
-            <label for="action-ref" class="mb-0.5 block text-[10px] text-[var(--sg-text-faint)]"
-              >Target ref</label
-            >
-            <div class="mb-1.5">
-              <Autocomplete
-                items={refItems}
-                bind:value={actionRef}
-                placeholder="Branch, tag, or commit…"
-                id="action-ref"
-              />
-            </div>
-            <div class="flex gap-1">
-              <button
-                onclick={() => {
-                  if (selectedWorktree && actionRef)
-                    handleCheckoutWorktree(selectedWorktree, actionRef);
-                }}
-                disabled={!actionRef}
-                class="flex-1 rounded bg-[var(--sg-primary)] px-2 py-1 text-[10px] font-semibold text-[var(--sg-bg)] hover:bg-[var(--sg-primary-hover)] disabled:cursor-not-allowed disabled:opacity-40"
-                title="Checkout: switch this worktree to the target ref (auto-stashes uncommitted changes)"
+                  <span class="relative flex h-1.5 w-1.5">
+                    <span
+                      class="absolute inline-flex h-full w-full animate-ping rounded-full bg-[var(--sg-primary)] opacity-60"
+                    ></span>
+                    <span
+                      class="relative inline-flex h-1.5 w-1.5 rounded-full bg-[var(--sg-primary)]"
+                    ></span>
+                  </span>
+                  Active
+                </span>
+                <span
+                  class="text-[9px] font-medium uppercase tracking-wider text-[var(--sg-text-faint)]"
+                  >· {isPersistent ? 'Persistent' : 'Managed'}</span
+                >
+                <span
+                  class="ml-auto text-[9px] font-medium {dirty > 0
+                    ? 'text-[var(--sg-warning)]'
+                    : 'text-[var(--sg-text-faint)]'}"
+                >
+                  {dirty > 0 ? `${dirty} change${dirty === 1 ? '' : 's'}` : 'Clean'}
+                </span>
+              </div>
+
+              <div class="mt-1.5 flex items-center gap-1.5">
+                <GitBranch class="h-3.5 w-3.5 shrink-0 text-[var(--sg-primary)]" />
+                <p
+                  class="truncate font-mono text-[13px] font-semibold text-[var(--sg-text)]"
+                  title={selectedWorktree.branch ?? ''}
+                >
+                  {selectedWorktree.branch ?? 'detached HEAD'}
+                </p>
+              </div>
+              <p
+                class="mt-0.5 truncate pl-5 text-[10px] text-[var(--sg-text-dim)]"
+                title={selectedWorktree.path}
               >
-                Checkout
-              </button>
-              <button
-                onclick={() => {
-                  if (selectedWorktree && actionRef)
-                    handleResetWorktree(selectedWorktree, actionRef, 'mixed');
-                }}
-                disabled={!actionRef}
-                class="rounded border border-[var(--sg-border)] px-2 py-1 text-[10px] text-[var(--sg-text-dim)] hover:bg-[var(--sg-surface-raised)] hover:text-[var(--sg-text)] disabled:cursor-not-allowed disabled:opacity-40"
-                title="Reset --mixed: move branch pointer to target ref, keep changes as unstaged"
-              >
-                Reset
-              </button>
-              <button
-                onclick={() => {
-                  if (selectedWorktree && actionRef)
-                    handleResetWorktree(selectedWorktree, actionRef, 'hard');
-                }}
-                disabled={!actionRef}
-                class="rounded border border-[var(--sg-danger)]/30 px-2 py-1 text-[10px] text-[var(--sg-danger)] hover:bg-[var(--sg-danger)]/10 disabled:cursor-not-allowed disabled:opacity-40"
-                title="Reset --hard: move branch pointer to target ref and DISCARD all changes"
-              >
-                Hard reset
-              </button>
+                {tildify(selectedWorktree.path)}
+              </p>
             </div>
-            <p class="mt-1 text-[9px] text-[var(--sg-text-faint)]">
-              Right-click a commit in the graph for quick actions
-            </p>
+          {/if}
+
+          <!-- Worktree list (table-style: dividers, faux radio) -->
+          <div
+            class="min-h-0 flex-1 overflow-auto"
+            data-testid="worktree-list"
+            role="radiogroup"
+            aria-label="Worktrees"
+          >
+            {#if inventoryWorktrees.length === 0}
+              <p class="px-3 py-3 text-xs text-[var(--sg-text-dim)]">
+                No worktrees yet. Use <span class="font-semibold text-[var(--sg-text)]">New</span> to
+                create one.
+              </p>
+            {/if}
+            {#each inventoryWorktrees as row, idx}
+              {@const isActive = pathsEqual(activeWorktreePath, row.wt.path)}
+              <!-- svelte-ignore a11y_no_static_element_interactions -->
+              <!-- svelte-ignore a11y_click_events_have_key_events -->
+              <div
+                class="group flex cursor-pointer items-center gap-2 px-3 py-2 transition-colors hover:bg-[var(--sg-surface-raised)] {idx >
+                0
+                  ? 'border-t border-[var(--sg-border-subtle)]'
+                  : ''}"
+                data-testid="worktree-item"
+                data-branch={row.wt.branch}
+                data-path={row.wt.path}
+                data-active={isActive ? 'true' : 'false'}
+                role="radio"
+                aria-checked={isActive}
+                tabindex={isActive ? 0 : -1}
+                onclick={() => {
+                  activeWorktreePath = row.wt.path;
+                }}
+                oncontextmenu={e => handleWorktreeContextMenu(row.wt, e, row.section)}
+              >
+                <!-- Faux radio indicator -->
+                <span
+                  aria-hidden="true"
+                  class="mt-0.5 flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded-full border transition-colors {isActive
+                    ? 'border-[var(--sg-primary)]'
+                    : 'border-[var(--sg-border)] group-hover:border-[var(--sg-primary)]/60'}"
+                >
+                  {#if isActive}
+                    <span class="h-1.5 w-1.5 rounded-full bg-[var(--sg-primary)]"></span>
+                  {/if}
+                </span>
+
+                <div class="min-w-0 flex-1">
+                  <div class="flex items-center gap-1.5">
+                    <p
+                      class="truncate text-xs font-semibold {isActive
+                        ? 'text-[var(--sg-primary)]'
+                        : 'text-[var(--sg-text)]'}"
+                    >
+                      {row.wt.branch ??
+                        (row.wt.detached ? 'detached' : row.wt.path.split('/').pop())}
+                    </p>
+                    <span
+                      class="shrink-0 rounded-full border border-[var(--sg-border)] px-1.5 py-0 text-[9px] leading-4 text-[var(--sg-text-dim)]"
+                      >{row.typeLabel}</span
+                    >
+                    {#if (worktreeChangeCounts[row.wt.path] ?? 0) > 0}
+                      <span
+                        class="shrink-0 rounded-full bg-[var(--sg-warning)]/20 px-1.5 py-0 text-[9px] leading-4 font-semibold text-[var(--sg-warning)]"
+                        >{worktreeChangeCounts[row.wt.path]}</span
+                      >
+                    {/if}
+                  </div>
+                  <p class="truncate text-[10px] text-[var(--sg-text-dim)]">
+                    {tildify(row.wt.path)}
+                  </p>
+                </div>
+                <div
+                  class="flex shrink-0 items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100 {isActive
+                    ? 'opacity-100'
+                    : ''}"
+                >
+                  <button
+                    type="button"
+                    onclick={event => {
+                      event.stopPropagation();
+                      openWorktreeActionsMenu(
+                        row.wt,
+                        row.section,
+                        event.currentTarget as HTMLElement
+                      );
+                    }}
+                    class="rounded p-1 text-[var(--sg-text-dim)] hover:bg-[var(--sg-surface)] hover:text-[var(--sg-text)]"
+                    title="Worktree actions"
+                    aria-label="Worktree actions"
+                  >
+                    <svg class="h-3.5 w-3.5" viewBox="0 0 16 16" fill="currentColor"
+                      ><circle cx="3" cy="8" r="1.5" /><circle cx="8" cy="8" r="1.5" /><circle
+                        cx="13"
+                        cy="8"
+                        r="1.5"
+                      /></svg
+                    >
+                  </button>
+                  <button
+                    onclick={event => {
+                      event.stopPropagation();
+                      void handleDeleteWorktree(row.wt);
+                    }}
+                    disabled={deleting === row.wt.path}
+                    data-testid="btn-delete-worktree"
+                    class="rounded p-1 text-[var(--sg-text-dim)] hover:bg-[var(--sg-surface)] hover:text-[var(--sg-danger)] disabled:opacity-40"
+                    title="Delete worktree"
+                    aria-label="Delete worktree"
+                  >
+                    {#if deleting === row.wt.path}
+                      <Spinner size="sm" />
+                    {:else}
+                      <Trash2 class="h-3 w-3" />
+                    {/if}
+                  </button>
+                </div>
+              </div>
+            {/each}
           </div>
-        {/if}
-      </aside>
+        </aside>
+      </ResizableSidebar>
 
       <!-- Main content area -->
-      <section class="flex min-w-0 flex-1 flex-col overflow-hidden">
+      <section class="flex min-w-0 flex-1 flex-col overflow-hidden bg-[var(--sg-bg)]">
         <!-- View toggles (history / changes / terminal) -->
         {#if selectedWorktree && !activeIsRoot}
           <div
-            class="flex items-center gap-1 border-b border-[var(--sg-border)] bg-[var(--sg-surface)] px-4"
+            class="flex items-center gap-0.5 border-b border-[var(--sg-border)] bg-[var(--sg-surface)] px-3"
           >
             <button
               onclick={() => (activeTab = 'history')}
               data-testid="tab-history"
-              class="border-b-2 px-3 py-2 text-xs font-medium transition {activeTab === 'history'
-                ? 'border-[var(--sg-primary)] text-[var(--sg-primary)]'
-                : 'border-transparent text-[var(--sg-text-dim)] hover:text-[var(--sg-text)]'}"
+              class="relative px-3 py-2 text-xs font-medium transition-colors {activeTab ===
+              'history'
+                ? 'text-[var(--sg-primary)]'
+                : 'text-[var(--sg-text-dim)] hover:text-[var(--sg-text)]'}"
             >
               History
+              {#if activeTab === 'history'}
+                <span
+                  class="absolute right-2 bottom-0 left-2 h-[2px] rounded-t-full bg-[var(--sg-primary)] shadow-[0_0_8px_var(--sg-primary)]"
+                ></span>
+              {/if}
             </button>
             <button
               onclick={() => (activeTab = 'changes')}
               data-testid="tab-changes"
-              class="flex items-center gap-1.5 border-b-2 px-3 py-2 text-xs font-medium transition {activeTab ===
+              class="relative flex items-center gap-1.5 px-3 py-2 text-xs font-medium transition-colors {activeTab ===
               'changes'
-                ? 'border-[var(--sg-primary)] text-[var(--sg-primary)]'
-                : 'border-transparent text-[var(--sg-text-dim)] hover:text-[var(--sg-text)]'}"
+                ? 'text-[var(--sg-primary)]'
+                : 'text-[var(--sg-text-dim)] hover:text-[var(--sg-text)]'}"
             >
               Changes
               {#if worktreeStatus.length > 0}
@@ -1952,15 +2217,26 @@
                   {worktreeStatus.length}
                 </span>
               {/if}
+              {#if activeTab === 'changes'}
+                <span
+                  class="absolute right-2 bottom-0 left-2 h-[2px] rounded-t-full bg-[var(--sg-primary)] shadow-[0_0_8px_var(--sg-primary)]"
+                ></span>
+              {/if}
             </button>
             <button
               onclick={() => (activeTab = 'terminal')}
               data-testid="tab-terminal"
-              class="border-b-2 px-3 py-2 text-xs font-medium transition {activeTab === 'terminal'
-                ? 'border-[var(--sg-primary)] text-[var(--sg-primary)]'
-                : 'border-transparent text-[var(--sg-text-dim)] hover:text-[var(--sg-text)]'}"
+              class="relative px-3 py-2 text-xs font-medium transition-colors {activeTab ===
+              'terminal'
+                ? 'text-[var(--sg-primary)]'
+                : 'text-[var(--sg-text-dim)] hover:text-[var(--sg-text)]'}"
             >
               Terminal
+              {#if activeTab === 'terminal'}
+                <span
+                  class="absolute right-2 bottom-0 left-2 h-[2px] rounded-t-full bg-[var(--sg-primary)] shadow-[0_0_8px_var(--sg-primary)]"
+                ></span>
+              {/if}
             </button>
           </div>
         {/if}
@@ -2557,6 +2833,189 @@
     hooksModalOpen = false;
   }}
 />
+
+<!-- Create worktree modal -->
+{#if createModalOpen}
+  <!-- svelte-ignore a11y_click_events_have_key_events -->
+  <!-- svelte-ignore a11y_no_static_element_interactions -->
+  <div
+    class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 px-4"
+    onclick={() => {
+      if (!creating) createModalOpen = false;
+    }}
+    style="animation: sg-fade-in 0.15s ease-out"
+  >
+    <!-- svelte-ignore a11y_click_events_have_key_events -->
+    <!-- svelte-ignore a11y_no_static_element_interactions -->
+    <div
+      onclick={e => e.stopPropagation()}
+      class="w-full max-w-md rounded-xl border border-[var(--sg-border)] bg-[var(--sg-surface)] shadow-2xl"
+      style="animation: sg-slide-up 0.2s ease-out"
+    >
+      <div
+        class="relative flex items-center gap-2 border-b border-[var(--sg-border-subtle)] bg-gradient-to-b from-[var(--sg-primary)]/8 to-transparent px-4 py-3"
+      >
+        <span
+          aria-hidden="true"
+          class="absolute top-3 bottom-3 left-0 w-[3px] rounded-r-full bg-[var(--sg-primary)]"
+        ></span>
+        <span
+          class="flex h-7 w-7 items-center justify-center rounded-md bg-[var(--sg-primary)]/12 text-[var(--sg-primary)]"
+        >
+          <GitBranch class="h-3.5 w-3.5" />
+        </span>
+        <div class="min-w-0 flex-1">
+          <p class="text-sm font-semibold text-[var(--sg-text)]">Create worktree</p>
+          <p class="text-[10px] text-[var(--sg-text-faint)]">
+            New branch · new directory · ready to code
+          </p>
+        </div>
+        <button
+          type="button"
+          onclick={() => {
+            if (!creating) createModalOpen = false;
+          }}
+          disabled={creating}
+          class="rounded p-1 text-[var(--sg-text-dim)] hover:bg-[var(--sg-surface-raised)] hover:text-[var(--sg-text)] disabled:opacity-40"
+          aria-label="Close"
+        >
+          <X class="h-4 w-4" />
+        </button>
+      </div>
+      <form
+        onsubmit={async e => {
+          await createFirstWorktree(e);
+          if (!error) createModalOpen = false;
+        }}
+        class="px-4 py-3"
+      >
+        <p
+          class="mb-1 text-[10px] font-semibold uppercase tracking-wider text-[var(--sg-text-faint)]"
+        >
+          Branch type
+        </p>
+        <div
+          class="inline-flex rounded-lg border border-[var(--sg-border)] bg-[var(--sg-surface-raised)] p-0.5 text-xs"
+        >
+          <button
+            type="button"
+            onclick={() => (createBranchType = 'managed')}
+            class="rounded px-2.5 py-1 {createBranchType === 'managed'
+              ? 'bg-[var(--sg-primary)] text-[var(--sg-bg)]'
+              : 'text-[var(--sg-text-dim)] hover:text-[var(--sg-text)]'}"
+          >
+            Managed
+          </button>
+          <button
+            type="button"
+            onclick={() => {
+              createBranchType = 'persistent';
+              if (!newBranch.trim()) newBranch = selectedRef || 'main';
+            }}
+            class="rounded px-2.5 py-1 {createBranchType === 'persistent'
+              ? 'bg-[var(--sg-primary)] text-[var(--sg-bg)]'
+              : 'text-[var(--sg-text-dim)] hover:text-[var(--sg-text)]'}"
+          >
+            Persistent
+          </button>
+        </div>
+
+        <!-- Contextual explainer for the selected branch type -->
+        <div
+          class="mt-2 rounded-md border border-[var(--sg-border-subtle)] bg-[var(--sg-surface-raised)] px-3 py-2 text-[11px] leading-relaxed text-[var(--sg-text-dim)]"
+        >
+          {#if createBranchType === 'managed'}
+            <p>
+              <span class="font-semibold text-[var(--sg-text)]">Managed</span> — a short-lived branch
+              for one task (feature, bugfix, spike). Bound 1:1 to this worktree and eligible for cleanup
+              once merged.
+            </p>
+            <p class="mt-1 text-[var(--sg-text-faint)]">
+              Examples:
+              <code class="mx-0.5 rounded bg-[var(--sg-surface)] px-1">feature/login-form</code>
+              <code class="mx-0.5 rounded bg-[var(--sg-surface)] px-1">bugfix/header-overflow</code>
+              <code class="mx-0.5 rounded bg-[var(--sg-surface)] px-1">spike/new-bundler</code>
+            </p>
+          {:else}
+            <p>
+              <span class="font-semibold text-[var(--sg-text)]">Persistent</span> — a long-lived branch
+              you keep checked out alongside others. Never auto-deleted.
+            </p>
+            <p class="mt-1 text-[var(--sg-text-faint)]">
+              Examples:
+              <code class="mx-0.5 rounded bg-[var(--sg-surface)] px-1">main</code>
+              <code class="mx-0.5 rounded bg-[var(--sg-surface)] px-1">develop</code>
+              <code class="mx-0.5 rounded bg-[var(--sg-surface)] px-1">release/2026-q2</code>
+            </p>
+          {/if}
+        </div>
+
+        <div class="mt-3">
+          <label
+            for="modal-source-ref"
+            class="mb-1 block text-[10px] font-semibold uppercase tracking-wider text-[var(--sg-text-faint)]"
+            >Source ref</label
+          >
+          <Autocomplete
+            items={refItems}
+            bind:value={selectedRef}
+            testId="input-source-ref"
+            placeholder="main"
+            id="modal-source-ref"
+            onselect={() => (formTouched.ref = true)}
+          />
+          {#if formTouched.ref && refError}
+            <p class="mt-1 text-[10px] text-[var(--sg-danger)]">{refError}</p>
+          {/if}
+        </div>
+
+        <div class="mt-3">
+          <label
+            for="modal-new-branch"
+            class="mb-1 block text-[10px] font-semibold uppercase tracking-wider text-[var(--sg-text-faint)]"
+            >Branch name</label
+          >
+          <input
+            id="modal-new-branch"
+            bind:value={newBranch}
+            oninput={() => (formTouched.branch = true)}
+            data-testid="input-new-branch"
+            class="w-full rounded border bg-[var(--sg-input-bg)] px-2 py-1.5 text-xs text-[var(--sg-text)] placeholder-[var(--sg-text-faint)] outline-none {formTouched.branch &&
+            branchError
+              ? 'border-[var(--sg-danger)] focus:border-[var(--sg-danger)]'
+              : 'border-[var(--sg-input-border)] focus:border-[var(--sg-input-focus)]'}"
+            placeholder={createBranchType === 'managed' ? 'feature/my-task' : 'main'}
+          />
+          {#if formTouched.branch && branchError}
+            <p class="mt-1 text-[10px] text-[var(--sg-danger)]">{branchError}</p>
+          {/if}
+        </div>
+
+        <div class="mt-4 flex items-center justify-end gap-2">
+          <button
+            type="button"
+            onclick={() => (createModalOpen = false)}
+            disabled={creating}
+            class="rounded border border-[var(--sg-border)] px-3 py-1.5 text-xs text-[var(--sg-text-dim)] hover:bg-[var(--sg-surface-raised)] hover:text-[var(--sg-text)] disabled:opacity-40"
+          >
+            Cancel
+          </button>
+          <button
+            type="submit"
+            disabled={creating || !formValid}
+            data-testid="btn-create-worktree"
+            class="flex items-center gap-2 rounded-lg bg-[var(--sg-primary)] px-3 py-1.5 text-xs font-semibold text-[var(--sg-bg)] hover:bg-[var(--sg-primary-hover)] disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            {#if creating}
+              <Spinner size="sm" />
+            {/if}
+            Create worktree
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+{/if}
 
 {#if worktreeContextMenu}
   <ContextMenu

@@ -3,6 +3,7 @@
   import Spinner from '$lib/components/Spinner.svelte';
   import ToastContainer from '$lib/components/ToastContainer.svelte';
   import { updateState } from '$lib/update.svelte';
+  import { isE2eBuild } from '$lib/sproutgit';
   import { onDestroy, onMount } from 'svelte';
   import { onNavigate } from '$app/navigation';
 
@@ -80,6 +81,10 @@
     if (!import.meta.env.DEV) {
       void (async () => {
         try {
+          // Skip update check in E2E builds so screenshots and tests don't
+          // capture a transient update badge.
+          const isE2E = await isE2eBuild().catch(() => false);
+          if (isE2E) return;
           const { check } = await import('@tauri-apps/plugin-updater');
           const update = await check();
           updateState.set(update);
@@ -89,7 +94,27 @@
       })();
     }
 
+    // Suppress the native browser context menu app-wide. Allow it inside
+    // editable form fields (input/textarea/contenteditable) so users can still
+    // use Copy/Paste menus on text input. Custom oncontextmenu handlers in
+    // components also call preventDefault and run before this listener.
+    const onContextMenu = (event: MouseEvent) => {
+      const target = event.target as HTMLElement | null;
+      if (!target) {
+        event.preventDefault();
+        return;
+      }
+      const editable = target.closest(
+        'input, textarea, [contenteditable=""], [contenteditable="true"]'
+      );
+      if (!editable) {
+        event.preventDefault();
+      }
+    };
+    window.addEventListener('contextmenu', onContextMenu);
+
     return () => {
+      window.removeEventListener('contextmenu', onContextMenu);
       unlistenWindowResize?.();
       unlistenWindowResize = undefined;
     };

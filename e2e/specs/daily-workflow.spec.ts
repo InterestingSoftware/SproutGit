@@ -200,6 +200,42 @@ test.describe('Daily developer workflow', () => {
     }
   });
 
+  test('creates a worktree from release branch without inheriting upstream', async ({
+    tauriPage,
+  }) => {
+    const repoPath = createTestRepo('daily-release-base', {
+      extraCommits: 2,
+      files: { 'src/release.ts': 'export const release = 1;\n' },
+    });
+
+    runGit(repoPath, ['checkout', '-b', 'release/1.0']);
+    writeRepoFile(repoPath, 'src/release.ts', 'export const release = 2;\n');
+    runGit(repoPath, ['add', 'src/release.ts']);
+    runGit(repoPath, ['commit', '-m', 'chore: prep release 1.0']);
+    runGit(repoPath, ['checkout', 'main']);
+
+    await importRepoViaUi(tauriPage, repoPath);
+
+    await createWorktreeViaUi(tauriPage, 'hotfix/1.0.1', 'release/1.0');
+
+    const hotfixItem = tauriPage.locator(
+      '[data-testid="worktree-item"][data-branch="hotfix/1.0.1"]'
+    );
+    const hotfixPath =
+      (await hotfixItem.getAttribute('data-path')) ??
+      (() => {
+        throw new Error('hotfix/1.0.1 worktree-item missing data-path');
+      })();
+    const gitRoot = join(dirname(dirname(hotfixPath)), 'root');
+
+    const releaseHead = runGit(gitRoot, ['rev-parse', 'refs/heads/release/1.0']);
+    const hotfixHead = runGit(gitRoot, ['rev-parse', 'refs/heads/hotfix/1.0.1']);
+    expect(hotfixHead).toBe(releaseHead);
+
+    const gitConfig = runGit(gitRoot, ['config', '--local', '--list']);
+    assertNoUpstreamConfig(gitConfig, 'hotfix/1.0.1');
+  });
+
   // ---------------------------------------------------------------------------
   // Story 2: Mid-day crunch — commit changes on each worktree independently
   // ---------------------------------------------------------------------------
