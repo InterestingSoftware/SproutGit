@@ -21,7 +21,7 @@ test.describe('Canary repositories @canary', () => {
       await importRepoViaUi(tauriPage, repoPath);
       await expect(tauriPage.getByTestId('btn-back-projects')).toBeVisible();
       await expect(tauriPage.getByTestId('worktree-list')).toBeVisible();
-      await expect(tauriPage.getByTestId('input-new-branch')).toBeVisible();
+      await expect(tauriPage.getByTestId('btn-open-create-worktree')).toBeVisible();
     });
   }
 });

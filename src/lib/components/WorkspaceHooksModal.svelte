@@ -1,6 +1,6 @@
 <script lang="ts">
   import { fade, scale } from 'svelte/transition';
-  import { CornerDownRight } from 'lucide-svelte';
+  import { CornerDownRight, Sliders } from 'lucide-svelte';
   import Checkbox from '$lib/components/Checkbox.svelte';
   import Select from '$lib/components/Select.svelte';
   import MonacoEditor from '$lib/components/MonacoEditor.svelte';
@@ -613,27 +613,41 @@
   <div
     class="fixed inset-0 z-40 bg-black/40"
     transition:fade={{ duration: 180 }}
-    onclick={onClose}
   ></div>
 
-  <div class="fixed inset-0 z-50 flex items-center justify-center p-4">
+  <!-- svelte-ignore a11y_no_static_element_interactions -->
+  <!-- svelte-ignore a11y_click_events_have_key_events -->
+  <div
+    class="fixed inset-0 z-50 flex items-center justify-center p-4"
+    onclick={onClose}
+  >
+    <!-- svelte-ignore a11y_no_static_element_interactions -->
+    <!-- svelte-ignore a11y_click_events_have_key_events -->
     <div
+      onclick={e => e.stopPropagation()}
       class="flex h-[min(78vh,760px)] w-[min(900px,96vw)] flex-col overflow-hidden rounded-xl border border-[var(--sg-border)] bg-[var(--sg-surface)] shadow-xl"
       transition:scale={{ duration: 220, start: 0.97 }}
     >
       <div
-        class="flex items-center justify-between border-b border-[var(--sg-border-subtle)] px-4 py-3"
+        class="relative flex items-center gap-2 border-b border-[var(--sg-border-subtle)] bg-gradient-to-b from-[var(--sg-primary)]/8 to-transparent px-4 py-3"
       >
-        <div>
+        <span
+          aria-hidden="true"
+          class="absolute top-3 bottom-3 left-0 w-[3px] rounded-r-full bg-[var(--sg-primary)]"
+        ></span>
+        <span class="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-[var(--sg-primary)]/12 text-[var(--sg-primary)]">
+          <Sliders class="h-3.5 w-3.5" />
+        </span>
+        <div class="min-w-0 flex-1">
           <p class="text-sm font-semibold text-[var(--sg-text)]">Workspace Hooks</p>
-          <p class="text-xs text-[var(--sg-text-faint)]">
-            Manage lifecycle hooks for this workspace.
+          <p class="text-[10px] text-[var(--sg-text-faint)]">
+            Lifecycle hooks run automatically when worktrees are created, switched, or deleted.
           </p>
         </div>
-        <div class="flex items-center gap-2">
+        <div class="flex shrink-0 items-center gap-2">
           <button
             onclick={openNewModal}
-            class="inline-flex items-center gap-1.5 rounded bg-[var(--sg-primary)] px-3 py-1.5 text-xs font-semibold text-[var(--sg-bg)] hover:bg-[var(--sg-primary-hover)]"
+            class="inline-flex items-center gap-1.5 rounded-md bg-[var(--sg-primary)] px-3 py-1.5 text-xs font-semibold text-[var(--sg-bg)] hover:bg-[var(--sg-primary-hover)]"
           >
             <svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor">
               <path d="M12 5v14M5 12h14" stroke-width="2" stroke-linecap="round" />
@@ -806,11 +820,18 @@
   <div
     class="fixed inset-0 z-[60] bg-black/45"
     transition:fade={{ duration: 180 }}
-    onclick={() => (editorOpen = false)}
   ></div>
 
-  <div class="fixed inset-0 z-[70] flex items-center justify-center p-4">
+  <!-- svelte-ignore a11y_no_static_element_interactions -->
+  <!-- svelte-ignore a11y_click_events_have_key_events -->
+  <div
+    class="fixed inset-0 z-[70] flex items-center justify-center p-4"
+    onclick={() => (editorOpen = false)}
+  >
+    <!-- svelte-ignore a11y_no_static_element_interactions -->
+    <!-- svelte-ignore a11y_click_events_have_key_events -->
     <div
+      onclick={e => e.stopPropagation()}
       class="flex h-[min(86vh,860px)] w-[min(980px,96vw)] flex-col overflow-hidden rounded-xl border border-[var(--sg-border)] bg-[var(--sg-surface)] shadow-2xl"
       transition:scale={{ duration: 220, start: 0.97 }}
     >

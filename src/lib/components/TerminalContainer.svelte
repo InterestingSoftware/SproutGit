@@ -350,13 +350,19 @@
         <div
           data-session-id={session.id}
           class="relative flex shrink-0 items-stretch overflow-hidden rounded transition-colors
-            {isActive ? 'bg-[var(--sg-surface-raised)]' : 'hover:bg-[var(--sg-surface)]'}
+            {isActive ? 'bg-[var(--sg-surface-raised)] shadow-[inset_0_0_0_1px_var(--sg-primary)]/0' : 'hover:bg-[var(--sg-surface)]'}
             {dragFromId === session.id ? 'opacity-50' : ''}"
           onpointerdown={e => onTabPointerDown(e, session.id)}
           onpointermove={onTabPointerMove}
           onpointerup={onTabPointerUp}
           oncontextmenu={e => openCtxMenu(e, session.id)}
         >
+          {#if isActive}
+            <span
+              aria-hidden="true"
+              class="pointer-events-none absolute right-1 bottom-0 left-1 h-[2px] rounded-t-full bg-[var(--sg-primary)] shadow-[0_0_6px_var(--sg-primary)]"
+            ></span>
+          {/if}
           <!-- Drop indicator: left edge -->
           {#if isDragTarget && dragToSide === 'before'}
             <span

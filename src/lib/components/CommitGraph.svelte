@@ -540,18 +540,26 @@
 </script>
 
 {#if laneData.rows.length === 0}
-  <div class="flex h-full items-center justify-center text-sm text-[var(--sg-text-faint)]">
-    No commits yet.
+  <div class="flex h-full items-center justify-center">
+    <div class="flex flex-col items-center gap-3 text-center" style="animation: sg-fade-in 0.3s ease-out">
+      <div class="flex h-12 w-12 items-center justify-center rounded-full bg-[var(--sg-primary)]/10 text-[var(--sg-primary)]">
+        <GitBranch class="h-5 w-5" />
+      </div>
+      <div>
+        <p class="text-sm font-medium text-[var(--sg-text)]">No commits yet</p>
+        <p class="mt-0.5 text-xs text-[var(--sg-text-faint)]">Make your first commit to see history here.</p>
+      </div>
+    </div>
   </div>
 {:else}
   <div class="relative flex h-full min-h-0 flex-1 flex-col overflow-hidden">
     <!-- Search bar -->
     {#if searchOpen}
       <div
-        class="flex shrink-0 items-center gap-2 border-b border-[var(--sg-border-subtle)] bg-[var(--sg-surface)] px-3 py-1.5"
+        class="flex shrink-0 items-center gap-2 border-b border-[var(--sg-border-subtle)] bg-gradient-to-b from-[var(--sg-primary)]/5 to-[var(--sg-surface)] px-3 py-1.5 focus-within:from-[var(--sg-primary)]/10"
         style="animation: sg-slide-down 0.15s ease-out"
       >
-        <Search class="h-3.5 w-3.5 shrink-0 text-[var(--sg-text-faint)]" />
+        <Search class="h-3.5 w-3.5 shrink-0 text-[var(--sg-primary)]" />
         <input
           bind:this={searchInput}
           bind:value={searchQuery}

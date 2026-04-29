@@ -6,6 +6,7 @@
   import { openUrl } from '@tauri-apps/plugin-opener';
   import { ArrowRight, Clock, Download, FolderInput, FolderOpen, Play, X } from 'lucide-svelte';
   import Spinner from '$lib/components/Spinner.svelte';
+  import ResizableSidebar from '$lib/components/ResizableSidebar.svelte';
   import Autocomplete from '$lib/components/Autocomplete.svelte';
   import {
     createWorkspace,
@@ -694,44 +695,54 @@
 
     <div class="flex min-h-0 flex-1" style="view-transition-name: sg-page-content">
       <!-- Left: Start sidebar -->
+      <ResizableSidebar storageKey="home" defaultWidth={256} minWidth={220} maxWidth={420}>
       <section
-        class="flex w-64 shrink-0 flex-col border-r border-[var(--sg-border)] bg-[var(--sg-surface)]"
+        class="flex h-full flex-col border-r border-[var(--sg-border)] bg-[var(--sg-surface)]"
       >
         <div class="border-b border-[var(--sg-border-subtle)] px-4 py-3">
           <h2
-            class="flex items-center gap-1.5 text-xs font-semibold uppercase leading-none tracking-wider text-[var(--sg-text-dim)]"
+            class="flex items-center gap-1.5 text-[10px] font-semibold uppercase leading-none tracking-[0.14em] text-[var(--sg-text-dim)]"
           >
-            <Play size={14} strokeWidth={2.5} />Start
+            <Play size={12} strokeWidth={2.5} class="text-[var(--sg-primary)]" />Start
           </h2>
         </div>
-        <div class="flex flex-col gap-2 p-4">
+        <div class="flex flex-col gap-1.5 p-3">
           <button
             type="button"
             onclick={openCloneModal}
             data-testid="btn-clone"
-            class="flex w-full cursor-pointer items-center gap-2.5 rounded-md border border-[var(--sg-border)] px-3.5 py-2.5 text-sm font-medium text-[var(--sg-text)] hover:border-[var(--sg-primary)]/40 hover:bg-[var(--sg-surface-raised)] disabled:cursor-not-allowed disabled:opacity-40"
+            class="group flex w-full cursor-pointer items-center gap-2.5 rounded-md border border-transparent bg-gradient-to-r from-transparent to-transparent px-3 py-2.5 text-sm font-medium text-[var(--sg-text)] transition-all hover:border-[var(--sg-primary)]/30 hover:from-[var(--sg-primary)]/8 hover:to-transparent disabled:cursor-not-allowed disabled:opacity-40"
           >
-            <Download size={16} strokeWidth={2} class="text-[var(--sg-primary)] shrink-0" />
-            Clone
+            <span class="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-[var(--sg-primary)]/12 text-[var(--sg-primary)] transition-colors group-hover:bg-[var(--sg-primary)]/20">
+              <Download size={14} strokeWidth={2} />
+            </span>
+            <span class="flex-1 text-left">Clone</span>
+            <ArrowRight size={14} class="shrink-0 text-[var(--sg-text-faint)] opacity-0 transition-opacity group-hover:opacity-100" />
           </button>
           <button
             type="button"
             onclick={openSproutGitWorkspaceDialog}
             disabled={opening}
             data-testid="btn-open"
-            class="flex w-full cursor-pointer items-center gap-2.5 rounded-md border border-[var(--sg-border)] px-3.5 py-2.5 text-sm font-medium text-[var(--sg-text)] hover:border-[var(--sg-primary)]/40 hover:bg-[var(--sg-surface-raised)] disabled:cursor-not-allowed disabled:opacity-40"
+            class="group flex w-full cursor-pointer items-center gap-2.5 rounded-md border border-transparent px-3 py-2.5 text-sm font-medium text-[var(--sg-text)] transition-all hover:border-[var(--sg-primary)]/30 hover:bg-gradient-to-r hover:from-[var(--sg-primary)]/8 hover:to-transparent disabled:cursor-not-allowed disabled:opacity-40"
           >
-            <FolderOpen size={16} strokeWidth={2} class="text-[var(--sg-primary)] shrink-0" />
-            {#if opening}Opening…{:else}Open{/if}
+            <span class="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-[var(--sg-primary)]/12 text-[var(--sg-primary)] transition-colors group-hover:bg-[var(--sg-primary)]/20">
+              <FolderOpen size={14} strokeWidth={2} />
+            </span>
+            <span class="flex-1 text-left">{#if opening}Opening…{:else}Open{/if}</span>
+            <ArrowRight size={14} class="shrink-0 text-[var(--sg-text-faint)] opacity-0 transition-opacity group-hover:opacity-100" />
           </button>
           <button
             type="button"
             onclick={openImportModal}
             data-testid="btn-import"
-            class="flex w-full cursor-pointer items-center gap-2.5 rounded-md border border-[var(--sg-border)] px-3.5 py-2.5 text-sm font-medium text-[var(--sg-text)] hover:border-[var(--sg-primary)]/40 hover:bg-[var(--sg-surface-raised)] disabled:cursor-not-allowed disabled:opacity-40"
+            class="group flex w-full cursor-pointer items-center gap-2.5 rounded-md border border-transparent px-3 py-2.5 text-sm font-medium text-[var(--sg-text)] transition-all hover:border-[var(--sg-primary)]/30 hover:bg-gradient-to-r hover:from-[var(--sg-primary)]/8 hover:to-transparent disabled:cursor-not-allowed disabled:opacity-40"
           >
-            <FolderInput size={16} strokeWidth={2} class="text-[var(--sg-primary)] shrink-0" />
-            Import Git Repo
+            <span class="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-[var(--sg-primary)]/12 text-[var(--sg-primary)] transition-colors group-hover:bg-[var(--sg-primary)]/20">
+              <FolderInput size={14} strokeWidth={2} />
+            </span>
+            <span class="flex-1 text-left">Import Git Repo</span>
+            <ArrowRight size={14} class="shrink-0 text-[var(--sg-text-faint)] opacity-0 transition-opacity group-hover:opacity-100" />
           </button>
         </div>
         {#if appVersion}
@@ -742,23 +753,32 @@
           </div>
         {/if}
       </section>
+      </ResizableSidebar>
 
       <!-- Right: Known projects list -->
       <section class="flex min-w-0 flex-1 flex-col">
         <div class="border-b border-[var(--sg-border-subtle)] bg-[var(--sg-surface)] px-4 py-3">
           <h2
-            class="flex items-center gap-1.5 text-xs font-semibold uppercase leading-none tracking-wider text-[var(--sg-text-dim)]"
+            class="flex items-center gap-1.5 text-[10px] font-semibold uppercase leading-none tracking-[0.14em] text-[var(--sg-text-dim)]"
           >
-            <Clock size={14} strokeWidth={2.5} />Recent projects
+            <Clock size={12} strokeWidth={2.5} class="text-[var(--sg-primary)]" />Recent projects
           </h2>
         </div>
 
         <div class="flex-1 overflow-auto p-4">
           {#if knownProjects.length === 0}
             <div class="flex h-full items-center justify-center">
-              <p class="text-sm text-[var(--sg-text-faint)]">
-                No projects yet. Clone a repo to get started.
-              </p>
+              <div class="flex flex-col items-center gap-3 text-center" style="animation: sg-fade-in 0.3s ease-out">
+                <div class="flex h-12 w-12 items-center justify-center rounded-full bg-[var(--sg-primary)]/10 text-[var(--sg-primary)]">
+                  <FolderOpen size={20} strokeWidth={2} />
+                </div>
+                <div>
+                  <p class="text-sm font-medium text-[var(--sg-text)]">No projects yet</p>
+                  <p class="mt-0.5 text-xs text-[var(--sg-text-faint)]">
+                    Clone a repo or open a folder to get started.
+                  </p>
+                </div>
+              </div>
             </div>
           {:else}
             <div class="space-y-1" data-testid="recent-projects">
@@ -854,11 +874,21 @@
         >
           <!-- Modal header -->
           <div
-            class="flex items-center justify-between border-b border-[var(--sg-border-subtle)] px-4 py-3"
+            class="relative flex items-center gap-2 border-b border-[var(--sg-border-subtle)] bg-gradient-to-b from-[var(--sg-primary)]/8 to-transparent px-4 py-3"
           >
-            <h2 id="clone-modal-title" class="text-sm font-semibold text-[var(--sg-text)]">
-              Clone Repository
-            </h2>
+            <span
+              aria-hidden="true"
+              class="absolute top-3 bottom-3 left-0 w-[3px] rounded-r-full bg-[var(--sg-primary)]"
+            ></span>
+            <span class="flex h-7 w-7 items-center justify-center rounded-md bg-[var(--sg-primary)]/12 text-[var(--sg-primary)]">
+              <Download size={14} strokeWidth={2} />
+            </span>
+            <div class="min-w-0 flex-1">
+              <h2 id="clone-modal-title" class="text-sm font-semibold text-[var(--sg-text)]">
+                Clone Repository
+              </h2>
+              <p class="text-[10px] text-[var(--sg-text-faint)]">Pull a remote into a fresh SproutGit workspace</p>
+            </div>
             <button
               onclick={() => void closeCloneModal()}
               class="rounded p-1 text-[var(--sg-text-faint)] hover:bg-[var(--sg-surface-raised)] hover:text-[var(--sg-text)]"
@@ -1030,11 +1060,21 @@
         >
           <!-- Modal header -->
           <div
-            class="flex items-center justify-between border-b border-[var(--sg-border-subtle)] px-4 py-3"
+            class="relative flex items-center gap-2 border-b border-[var(--sg-border-subtle)] bg-gradient-to-b from-[var(--sg-primary)]/8 to-transparent px-4 py-3"
           >
-            <h2 id="import-modal-title" class="text-sm font-semibold text-[var(--sg-text)]">
-              Import Git Repo
-            </h2>
+            <span
+              aria-hidden="true"
+              class="absolute top-3 bottom-3 left-0 w-[3px] rounded-r-full bg-[var(--sg-primary)]"
+            ></span>
+            <span class="flex h-7 w-7 items-center justify-center rounded-md bg-[var(--sg-primary)]/12 text-[var(--sg-primary)]">
+              <FolderInput size={14} strokeWidth={2} />
+            </span>
+            <div class="min-w-0 flex-1">
+              <h2 id="import-modal-title" class="text-sm font-semibold text-[var(--sg-text)]">
+                Import Git Repo
+              </h2>
+              <p class="text-[10px] text-[var(--sg-text-faint)]">Wrap an existing local repo as a SproutGit workspace</p>
+            </div>
             <button
               onclick={() => void closeImportModal()}
               class="rounded p-1 text-[var(--sg-text-faint)] hover:bg-[var(--sg-surface-raised)] hover:text-[var(--sg-text)]"

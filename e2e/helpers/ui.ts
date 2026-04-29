@@ -184,13 +184,16 @@ export async function importRepoViaUi(tauriPage: AdapterPage, repoPath: string) 
       const headerText = (await tauriPage.textContent('header')) ?? '';
       const backButtonVisible = await safeIsVisible(tauriPage, '[data-testid="btn-back-projects"]');
       const worktreeListVisible = await safeIsVisible(tauriPage, '[data-testid="worktree-list"]');
-      const newBranchVisible = await safeIsVisible(tauriPage, '[data-testid="input-new-branch"]');
+      const createButtonVisible = await safeIsVisible(
+        tauriPage,
+        '[data-testid="btn-open-create-worktree"]'
+      );
 
       if (
         headerText.includes(workspaceName) &&
         backButtonVisible &&
         worktreeListVisible &&
-        newBranchVisible
+        createButtonVisible
       ) {
         return true;
       }
@@ -271,6 +274,10 @@ export async function createWorktreeViaUi(
   branchName: string,
   sourceRef?: string
 ) {
+  // Open the create-worktree modal via the sidebar toolbar icon.
+  await tauriPage.getByTestId('btn-open-create-worktree').click();
+  await tauriPage.getByTestId('input-new-branch').waitFor(DEFAULT_UI_TIMEOUT);
+
   if (sourceRef) {
     await tauriPage.getByTestId('input-source-ref').fill(sourceRef);
   }
