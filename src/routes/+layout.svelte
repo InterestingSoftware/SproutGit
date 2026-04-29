@@ -1,14 +1,37 @@
 <script lang="ts">
   import '../app.css';
+  import Spinner from '$lib/components/Spinner.svelte';
   import ToastContainer from '$lib/components/ToastContainer.svelte';
   import { updateState } from '$lib/update.svelte';
   import { onDestroy, onMount } from 'svelte';
   import { onNavigate } from '$app/navigation';
 
+  type Props = {
+    children: import('svelte').Snippet;
+  };
+
+  let { children }: Props = $props();
+
   let unlistenWindowResize: (() => void) | undefined;
+  let isRouteNavigating = $state(false);
 
   onNavigate(navigation => {
-    if (!document.startViewTransition) return;
+    isRouteNavigating = true;
+
+    void navigation.complete.finally(() => {
+      isRouteNavigating = false;
+    });
+
+    const fromPath = navigation.from?.url.pathname ?? '';
+    const toPath = navigation.to?.url.pathname ?? '';
+    const skipViewTransition = fromPath.startsWith('/workspace') && toPath === '/';
+
+    // Rendering a snapshot of the full workspace can be expensive on very large repos.
+    // Skip view transitions on workspace -> home to keep navigation responsive.
+    if (skipViewTransition || !document.startViewTransition) {
+      return;
+    }
+
     return new Promise(resolve => {
       document.startViewTransition(async () => {
         resolve();
@@ -78,5 +101,15 @@
   });
 </script>
 
-<slot />
+{@render children()}
+{#if isRouteNavigating}
+  <div
+    class="pointer-events-none fixed inset-0 z-1000 flex items-center justify-center bg-(--sg-bg)/55 backdrop-blur-[1px]"
+    style="animation: sg-fade-in 0.12s ease-out"
+  >
+    <div class="rounded-lg border border-(--sg-border) bg-(--sg-surface) px-4 py-3 shadow-sm">
+      <Spinner size="md" label="Loading…" />
+    </div>
+  </div>
+{/if}
 <ToastContainer />
