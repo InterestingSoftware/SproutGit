@@ -1,11 +1,11 @@
 use std::collections::HashSet;
 use std::ffi::OsString;
 use std::fs;
+#[cfg(target_os = "windows")]
+use std::os::windows::process::CommandExt;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 use std::time::{SystemTime, UNIX_EPOCH};
-#[cfg(target_os = "windows")]
-use std::os::windows::process::CommandExt;
 
 /// Strip the `\\?\` extended-length path prefix that Windows `canonicalize()` adds.
 /// Git for Windows and many Windows tools (including PowerShell cmdlets) cannot handle
@@ -55,6 +55,7 @@ pub enum GitAction {
     ReadGitConfig,
     SetGitConfig,
     UnsetGitConfig,
+    BranchUnsetUpstream,
     StageFiles,
     UnstageFiles,
     CreateCommit,
@@ -62,7 +63,7 @@ pub enum GitAction {
 
 impl GitAction {
     #[cfg(test)]
-    pub const ALL: [GitAction; 25] = [
+    pub const ALL: [GitAction; 26] = [
         GitAction::GitInfo,
         GitAction::WorktreeList,
         GitAction::ListRefs,
@@ -85,6 +86,7 @@ impl GitAction {
         GitAction::ReadGitConfig,
         GitAction::SetGitConfig,
         GitAction::UnsetGitConfig,
+        GitAction::BranchUnsetUpstream,
         GitAction::StageFiles,
         GitAction::UnstageFiles,
         GitAction::CreateCommit,
@@ -114,6 +116,7 @@ impl GitAction {
             GitAction::ReadGitConfig => "read_git_config",
             GitAction::SetGitConfig => "set_git_config",
             GitAction::UnsetGitConfig => "unset_git_config",
+            GitAction::BranchUnsetUpstream => "branch_unset_upstream",
             GitAction::StageFiles => "stage_files",
             GitAction::UnstageFiles => "unstage_files",
             GitAction::CreateCommit => "create_commit",
@@ -129,10 +132,7 @@ pub enum SystemAction {
 
 impl SystemAction {
     #[cfg(test)]
-    pub const ALL: [SystemAction; 2] = [
-        SystemAction::OpenEditor,
-        SystemAction::HookExecute,
-    ];
+    pub const ALL: [SystemAction; 2] = [SystemAction::OpenEditor, SystemAction::HookExecute];
 
     pub fn label(self) -> &'static str {
         match self {
@@ -198,7 +198,10 @@ pub fn augmented_path() -> String {
 }
 
 pub fn validate_no_control_chars(value: &str, field_name: &str) -> Result<(), String> {
-    if value.chars().any(|ch| ch.is_control() && ch != '\n' && ch != '\r') {
+    if value
+        .chars()
+        .any(|ch| ch.is_control() && ch != '\n' && ch != '\r')
+    {
         return Err(format!(
             "{field_name} contains unsupported control characters"
         ));
@@ -516,9 +519,9 @@ impl GitCache {
 #[cfg(test)]
 mod tests {
     use super::{
-        validate_git_config_key, validate_no_control_chars, validate_non_option_value,
-        validate_repo_url, ensure_git_success, slugify_for_path, path_to_frontend,
-        CachedValue, GitAction, GitCache, SystemAction,
+        ensure_git_success, path_to_frontend, slugify_for_path, validate_git_config_key,
+        validate_no_control_chars, validate_non_option_value, validate_repo_url, CachedValue,
+        GitAction, GitCache, SystemAction,
     };
     use std::path::Path;
 
@@ -578,7 +581,10 @@ mod tests {
 
     #[test]
     fn slugify_collapses_consecutive_special_chars() {
-        assert_eq!(slugify_for_path("fix///multiple---slashes"), "fix-multiple---slashes");
+        assert_eq!(
+            slugify_for_path("fix///multiple---slashes"),
+            "fix-multiple---slashes"
+        );
     }
 
     #[test]
@@ -719,7 +725,10 @@ mod tests {
         // Simulate a Windows-style path (construct manually so tests pass on all platforms).
         let p = Path::new("C:\\Users\\user\\project\\root");
         let result = path_to_frontend(p);
-        assert!(!result.contains('\\'), "result still contains backslash: {result}");
+        assert!(
+            !result.contains('\\'),
+            "result still contains backslash: {result}"
+        );
         assert_eq!(result, "C:/Users/user/project/root");
     }
 
@@ -727,6 +736,9 @@ mod tests {
     fn path_to_frontend_mixed_separators_fully_normalized() {
         let p = Path::new("C:/Users\\user/project\\root");
         let result = path_to_frontend(p);
-        assert!(!result.contains('\\'), "result still contains backslash: {result}");
+        assert!(
+            !result.contains('\\'),
+            "result still contains backslash: {result}"
+        );
     }
 }

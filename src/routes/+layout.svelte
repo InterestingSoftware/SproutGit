@@ -3,6 +3,7 @@
   import Spinner from '$lib/components/Spinner.svelte';
   import ToastContainer from '$lib/components/ToastContainer.svelte';
   import { updateState } from '$lib/update.svelte';
+  import { isE2eBuild } from '$lib/sproutgit';
   import { onDestroy, onMount } from 'svelte';
   import { onNavigate } from '$app/navigation';
 
@@ -82,8 +83,7 @@
         try {
           // Skip update check in E2E builds so screenshots and tests don't
           // capture a transient update badge.
-          const { invoke } = await import('@tauri-apps/api/core');
-          const isE2E = await invoke<boolean>('is_e2e_build').catch(() => false);
+          const isE2E = await isE2eBuild().catch(() => false);
           if (isE2E) return;
           const { check } = await import('@tauri-apps/plugin-updater');
           const update = await check();

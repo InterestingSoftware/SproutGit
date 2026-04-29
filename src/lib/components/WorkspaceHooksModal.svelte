@@ -610,17 +610,11 @@
 {#if open}
   <!-- svelte-ignore a11y_no_static_element_interactions -->
   <!-- svelte-ignore a11y_click_events_have_key_events -->
-  <div
-    class="fixed inset-0 z-40 bg-black/40"
-    transition:fade={{ duration: 180 }}
-  ></div>
+  <div class="fixed inset-0 z-40 bg-black/40" transition:fade={{ duration: 180 }}></div>
 
   <!-- svelte-ignore a11y_no_static_element_interactions -->
   <!-- svelte-ignore a11y_click_events_have_key_events -->
-  <div
-    class="fixed inset-0 z-50 flex items-center justify-center p-4"
-    onclick={onClose}
-  >
+  <div class="fixed inset-0 z-50 flex items-center justify-center p-4" onclick={onClose}>
     <!-- svelte-ignore a11y_no_static_element_interactions -->
     <!-- svelte-ignore a11y_click_events_have_key_events -->
     <div
@@ -635,7 +629,9 @@
           aria-hidden="true"
           class="absolute top-3 bottom-3 left-0 w-[3px] rounded-r-full bg-[var(--sg-primary)]"
         ></span>
-        <span class="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-[var(--sg-primary)]/12 text-[var(--sg-primary)]">
+        <span
+          class="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-[var(--sg-primary)]/12 text-[var(--sg-primary)]"
+        >
           <Sliders class="h-3.5 w-3.5" />
         </span>
         <div class="min-w-0 flex-1">
@@ -817,10 +813,7 @@
 {#if editorOpen}
   <!-- svelte-ignore a11y_no_static_element_interactions -->
   <!-- svelte-ignore a11y_click_events_have_key_events -->
-  <div
-    class="fixed inset-0 z-[60] bg-black/45"
-    transition:fade={{ duration: 180 }}
-  ></div>
+  <div class="fixed inset-0 z-[60] bg-black/45" transition:fade={{ duration: 180 }}></div>
 
   <!-- svelte-ignore a11y_no_static_element_interactions -->
   <!-- svelte-ignore a11y_click_events_have_key_events -->

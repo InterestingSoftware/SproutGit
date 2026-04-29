@@ -575,7 +575,9 @@
   const managedWorktrees = $derived.by(() => {
     const currentWorkspace = workspace;
     if (!currentWorkspace) return [];
-    return nonRootWorktrees.filter(item => pathStartsWith(currentWorkspace.worktreesPath, item.path));
+    return nonRootWorktrees.filter(item =>
+      pathStartsWith(currentWorkspace.worktreesPath, item.path)
+    );
   });
 
   const externalWorktrees = $derived.by(() => {
@@ -612,7 +614,8 @@
 
   const cleanupCandidates = $derived(
     taskWorktrees.filter(
-      item => !pathsEqual(item.path, activeWorktreePath) && (worktreeChangeCounts[item.path] ?? 0) === 0
+      item =>
+        !pathsEqual(item.path, activeWorktreePath) && (worktreeChangeCounts[item.path] ?? 0) === 0
     )
   );
 
@@ -632,7 +635,8 @@
         section: 'managed',
         typeLabel: 'Managed',
         ownership: 'Owned branch',
-        policyHint: (worktreeChangeCounts[wt.path] ?? 0) === 0 ? 'Cleanup candidate' : 'Branch-bound',
+        policyHint:
+          (worktreeChangeCounts[wt.path] ?? 0) === 0 ? 'Cleanup candidate' : 'Branch-bound',
       });
     }
     for (const wt of persistentWorktrees) {
@@ -1862,7 +1866,15 @@
     <span class="text-xs font-medium text-[var(--sg-text)]"
       >{workspace?.workspacePath.split('/').pop() ?? '...'}</span
     >
-    <svg class="h-3 w-3 text-[var(--sg-text-faint)]" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 4 10 8 6 12" /></svg>
+    <svg
+      class="h-3 w-3 text-[var(--sg-text-faint)]"
+      viewBox="0 0 16 16"
+      fill="none"
+      stroke="currentColor"
+      stroke-width="2"
+      stroke-linecap="round"
+      stroke-linejoin="round"><polyline points="6 4 10 8 6 12" /></svg
+    >
     <span class="flex items-center gap-1 font-mono text-xs text-[var(--sg-primary)]">
       <GitBranch class="h-3 w-3" />
       {selectedWorktree?.branch ?? (selectedWorktree?.detached ? 'detached' : '—')}
@@ -1927,7 +1939,9 @@
     >
       <!-- Sidebar: icon toolbar, active worktree summary, inventory list -->
       <ResizableSidebar storageKey="workspace" defaultWidth={320} minWidth={260} maxWidth={520}>
-        <aside class="flex h-full flex-col border-r border-[var(--sg-border)] bg-[var(--sg-surface)]">
+        <aside
+          class="flex h-full flex-col border-r border-[var(--sg-border)] bg-[var(--sg-surface)]"
+        >
           <!-- Icon toolbar -->
           <div class="flex items-center gap-1 border-b border-[var(--sg-border-subtle)] px-3 py-2">
             <button
@@ -1999,15 +2013,28 @@
               ></span>
 
               <div class="flex items-center gap-1.5">
-                <span class="flex items-center gap-1 text-[9px] font-semibold uppercase tracking-[0.12em] text-[var(--sg-primary)]">
+                <span
+                  class="flex items-center gap-1 text-[9px] font-semibold uppercase tracking-[0.12em] text-[var(--sg-primary)]"
+                >
                   <span class="relative flex h-1.5 w-1.5">
-                    <span class="absolute inline-flex h-full w-full animate-ping rounded-full bg-[var(--sg-primary)] opacity-60"></span>
-                    <span class="relative inline-flex h-1.5 w-1.5 rounded-full bg-[var(--sg-primary)]"></span>
+                    <span
+                      class="absolute inline-flex h-full w-full animate-ping rounded-full bg-[var(--sg-primary)] opacity-60"
+                    ></span>
+                    <span
+                      class="relative inline-flex h-1.5 w-1.5 rounded-full bg-[var(--sg-primary)]"
+                    ></span>
                   </span>
                   Active
                 </span>
-                <span class="text-[9px] font-medium uppercase tracking-wider text-[var(--sg-text-faint)]">· {isPersistent ? 'Persistent' : 'Managed'}</span>
-                <span class="ml-auto text-[9px] font-medium {dirty > 0 ? 'text-[var(--sg-warning)]' : 'text-[var(--sg-text-faint)]'}">
+                <span
+                  class="text-[9px] font-medium uppercase tracking-wider text-[var(--sg-text-faint)]"
+                  >· {isPersistent ? 'Persistent' : 'Managed'}</span
+                >
+                <span
+                  class="ml-auto text-[9px] font-medium {dirty > 0
+                    ? 'text-[var(--sg-warning)]'
+                    : 'text-[var(--sg-text-faint)]'}"
+                >
                   {dirty > 0 ? `${dirty} change${dirty === 1 ? '' : 's'}` : 'Clean'}
                 </span>
               </div>
@@ -2017,26 +2044,39 @@
                 <p
                   class="truncate font-mono text-[13px] font-semibold text-[var(--sg-text)]"
                   title={selectedWorktree.branch ?? ''}
-                >{selectedWorktree.branch ?? 'detached HEAD'}</p>
+                >
+                  {selectedWorktree.branch ?? 'detached HEAD'}
+                </p>
               </div>
               <p
                 class="mt-0.5 truncate pl-5 text-[10px] text-[var(--sg-text-dim)]"
                 title={selectedWorktree.path}
-              >{tildify(selectedWorktree.path)}</p>
+              >
+                {tildify(selectedWorktree.path)}
+              </p>
             </div>
           {/if}
 
           <!-- Worktree list (table-style: dividers, faux radio) -->
-          <div class="min-h-0 flex-1 overflow-auto" data-testid="worktree-list" role="radiogroup" aria-label="Worktrees">
+          <div
+            class="min-h-0 flex-1 overflow-auto"
+            data-testid="worktree-list"
+            role="radiogroup"
+            aria-label="Worktrees"
+          >
             {#if inventoryWorktrees.length === 0}
-              <p class="px-3 py-3 text-xs text-[var(--sg-text-dim)]">No worktrees yet. Use <span class="font-semibold text-[var(--sg-text)]">New</span> to create one.</p>
+              <p class="px-3 py-3 text-xs text-[var(--sg-text-dim)]">
+                No worktrees yet. Use <span class="font-semibold text-[var(--sg-text)]">New</span> to
+                create one.
+              </p>
             {/if}
             {#each inventoryWorktrees as row, idx}
               {@const isActive = pathsEqual(activeWorktreePath, row.wt.path)}
               <!-- svelte-ignore a11y_no_static_element_interactions -->
               <!-- svelte-ignore a11y_click_events_have_key_events -->
               <div
-                class="group flex cursor-pointer items-center gap-2 px-3 py-2 transition-colors hover:bg-[var(--sg-surface-raised)] {idx > 0
+                class="group flex cursor-pointer items-center gap-2 px-3 py-2 transition-colors hover:bg-[var(--sg-surface-raised)] {idx >
+                0
                   ? 'border-t border-[var(--sg-border-subtle)]'
                   : ''}"
                 data-testid="worktree-item"
@@ -2065,26 +2105,55 @@
 
                 <div class="min-w-0 flex-1">
                   <div class="flex items-center gap-1.5">
-                    <p class="truncate text-xs font-semibold {isActive ? 'text-[var(--sg-primary)]' : 'text-[var(--sg-text)]'}">{row.wt.branch ?? (row.wt.detached ? 'detached' : row.wt.path.split('/').pop())}</p>
-                    <span class="shrink-0 rounded-full border border-[var(--sg-border)] px-1.5 py-0 text-[9px] leading-4 text-[var(--sg-text-dim)]">{row.typeLabel}</span>
+                    <p
+                      class="truncate text-xs font-semibold {isActive
+                        ? 'text-[var(--sg-primary)]'
+                        : 'text-[var(--sg-text)]'}"
+                    >
+                      {row.wt.branch ??
+                        (row.wt.detached ? 'detached' : row.wt.path.split('/').pop())}
+                    </p>
+                    <span
+                      class="shrink-0 rounded-full border border-[var(--sg-border)] px-1.5 py-0 text-[9px] leading-4 text-[var(--sg-text-dim)]"
+                      >{row.typeLabel}</span
+                    >
                     {#if (worktreeChangeCounts[row.wt.path] ?? 0) > 0}
-                      <span class="shrink-0 rounded-full bg-[var(--sg-warning)]/20 px-1.5 py-0 text-[9px] leading-4 font-semibold text-[var(--sg-warning)]">{worktreeChangeCounts[row.wt.path]}</span>
+                      <span
+                        class="shrink-0 rounded-full bg-[var(--sg-warning)]/20 px-1.5 py-0 text-[9px] leading-4 font-semibold text-[var(--sg-warning)]"
+                        >{worktreeChangeCounts[row.wt.path]}</span
+                      >
                     {/if}
                   </div>
-                  <p class="truncate text-[10px] text-[var(--sg-text-dim)]">{tildify(row.wt.path)}</p>
+                  <p class="truncate text-[10px] text-[var(--sg-text-dim)]">
+                    {tildify(row.wt.path)}
+                  </p>
                 </div>
-                <div class="flex shrink-0 items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100 {isActive ? 'opacity-100' : ''}">
+                <div
+                  class="flex shrink-0 items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100 {isActive
+                    ? 'opacity-100'
+                    : ''}"
+                >
                   <button
                     type="button"
                     onclick={event => {
                       event.stopPropagation();
-                      openWorktreeActionsMenu(row.wt, row.section, event.currentTarget as HTMLElement);
+                      openWorktreeActionsMenu(
+                        row.wt,
+                        row.section,
+                        event.currentTarget as HTMLElement
+                      );
                     }}
                     class="rounded p-1 text-[var(--sg-text-dim)] hover:bg-[var(--sg-surface)] hover:text-[var(--sg-text)]"
                     title="Worktree actions"
                     aria-label="Worktree actions"
                   >
-                    <svg class="h-3.5 w-3.5" viewBox="0 0 16 16" fill="currentColor"><circle cx="3" cy="8" r="1.5"/><circle cx="8" cy="8" r="1.5"/><circle cx="13" cy="8" r="1.5"/></svg>
+                    <svg class="h-3.5 w-3.5" viewBox="0 0 16 16" fill="currentColor"
+                      ><circle cx="3" cy="8" r="1.5" /><circle cx="8" cy="8" r="1.5" /><circle
+                        cx="13"
+                        cy="8"
+                        r="1.5"
+                      /></svg
+                    >
                   </button>
                   <button
                     onclick={event => {
@@ -2120,13 +2189,16 @@
             <button
               onclick={() => (activeTab = 'history')}
               data-testid="tab-history"
-              class="relative px-3 py-2 text-xs font-medium transition-colors {activeTab === 'history'
+              class="relative px-3 py-2 text-xs font-medium transition-colors {activeTab ===
+              'history'
                 ? 'text-[var(--sg-primary)]'
                 : 'text-[var(--sg-text-dim)] hover:text-[var(--sg-text)]'}"
             >
               History
               {#if activeTab === 'history'}
-                <span class="absolute right-2 bottom-0 left-2 h-[2px] rounded-t-full bg-[var(--sg-primary)] shadow-[0_0_8px_var(--sg-primary)]"></span>
+                <span
+                  class="absolute right-2 bottom-0 left-2 h-[2px] rounded-t-full bg-[var(--sg-primary)] shadow-[0_0_8px_var(--sg-primary)]"
+                ></span>
               {/if}
             </button>
             <button
@@ -2146,19 +2218,24 @@
                 </span>
               {/if}
               {#if activeTab === 'changes'}
-                <span class="absolute right-2 bottom-0 left-2 h-[2px] rounded-t-full bg-[var(--sg-primary)] shadow-[0_0_8px_var(--sg-primary)]"></span>
+                <span
+                  class="absolute right-2 bottom-0 left-2 h-[2px] rounded-t-full bg-[var(--sg-primary)] shadow-[0_0_8px_var(--sg-primary)]"
+                ></span>
               {/if}
             </button>
             <button
               onclick={() => (activeTab = 'terminal')}
               data-testid="tab-terminal"
-              class="relative px-3 py-2 text-xs font-medium transition-colors {activeTab === 'terminal'
+              class="relative px-3 py-2 text-xs font-medium transition-colors {activeTab ===
+              'terminal'
                 ? 'text-[var(--sg-primary)]'
                 : 'text-[var(--sg-text-dim)] hover:text-[var(--sg-text)]'}"
             >
               Terminal
               {#if activeTab === 'terminal'}
-                <span class="absolute right-2 bottom-0 left-2 h-[2px] rounded-t-full bg-[var(--sg-primary)] shadow-[0_0_8px_var(--sg-primary)]"></span>
+                <span
+                  class="absolute right-2 bottom-0 left-2 h-[2px] rounded-t-full bg-[var(--sg-primary)] shadow-[0_0_8px_var(--sg-primary)]"
+                ></span>
               {/if}
             </button>
           </div>
@@ -2775,17 +2852,23 @@
       class="w-full max-w-md rounded-xl border border-[var(--sg-border)] bg-[var(--sg-surface)] shadow-2xl"
       style="animation: sg-slide-up 0.2s ease-out"
     >
-      <div class="relative flex items-center gap-2 border-b border-[var(--sg-border-subtle)] bg-gradient-to-b from-[var(--sg-primary)]/8 to-transparent px-4 py-3">
+      <div
+        class="relative flex items-center gap-2 border-b border-[var(--sg-border-subtle)] bg-gradient-to-b from-[var(--sg-primary)]/8 to-transparent px-4 py-3"
+      >
         <span
           aria-hidden="true"
           class="absolute top-3 bottom-3 left-0 w-[3px] rounded-r-full bg-[var(--sg-primary)]"
         ></span>
-        <span class="flex h-7 w-7 items-center justify-center rounded-md bg-[var(--sg-primary)]/12 text-[var(--sg-primary)]">
+        <span
+          class="flex h-7 w-7 items-center justify-center rounded-md bg-[var(--sg-primary)]/12 text-[var(--sg-primary)]"
+        >
           <GitBranch class="h-3.5 w-3.5" />
         </span>
         <div class="min-w-0 flex-1">
           <p class="text-sm font-semibold text-[var(--sg-text)]">Create worktree</p>
-          <p class="text-[10px] text-[var(--sg-text-faint)]">New branch · new directory · ready to code</p>
+          <p class="text-[10px] text-[var(--sg-text-faint)]">
+            New branch · new directory · ready to code
+          </p>
         </div>
         <button
           type="button"
@@ -2806,8 +2889,14 @@
         }}
         class="px-4 py-3"
       >
-        <p class="mb-1 text-[10px] font-semibold uppercase tracking-wider text-[var(--sg-text-faint)]">Branch type</p>
-        <div class="inline-flex rounded-lg border border-[var(--sg-border)] bg-[var(--sg-surface-raised)] p-0.5 text-xs">
+        <p
+          class="mb-1 text-[10px] font-semibold uppercase tracking-wider text-[var(--sg-text-faint)]"
+        >
+          Branch type
+        </p>
+        <div
+          class="inline-flex rounded-lg border border-[var(--sg-border)] bg-[var(--sg-surface-raised)] p-0.5 text-xs"
+        >
           <button
             type="button"
             onclick={() => (createBranchType = 'managed')}
@@ -2838,8 +2927,8 @@
           {#if createBranchType === 'managed'}
             <p>
               <span class="font-semibold text-[var(--sg-text)]">Managed</span> — a short-lived branch
-              for one task (feature, bugfix, spike). Bound 1:1 to this worktree and eligible for
-              cleanup once merged.
+              for one task (feature, bugfix, spike). Bound 1:1 to this worktree and eligible for cleanup
+              once merged.
             </p>
             <p class="mt-1 text-[var(--sg-text-faint)]">
               Examples:
@@ -2849,8 +2938,8 @@
             </p>
           {:else}
             <p>
-              <span class="font-semibold text-[var(--sg-text)]">Persistent</span> — a long-lived
-              branch you keep checked out alongside others. Never auto-deleted.
+              <span class="font-semibold text-[var(--sg-text)]">Persistent</span> — a long-lived branch
+              you keep checked out alongside others. Never auto-deleted.
             </p>
             <p class="mt-1 text-[var(--sg-text-faint)]">
               Examples:
@@ -2862,7 +2951,11 @@
         </div>
 
         <div class="mt-3">
-          <label for="modal-source-ref" class="mb-1 block text-[10px] font-semibold uppercase tracking-wider text-[var(--sg-text-faint)]">Source ref</label>
+          <label
+            for="modal-source-ref"
+            class="mb-1 block text-[10px] font-semibold uppercase tracking-wider text-[var(--sg-text-faint)]"
+            >Source ref</label
+          >
           <Autocomplete
             items={refItems}
             bind:value={selectedRef}
@@ -2877,7 +2970,11 @@
         </div>
 
         <div class="mt-3">
-          <label for="modal-new-branch" class="mb-1 block text-[10px] font-semibold uppercase tracking-wider text-[var(--sg-text-faint)]">Branch name</label>
+          <label
+            for="modal-new-branch"
+            class="mb-1 block text-[10px] font-semibold uppercase tracking-wider text-[var(--sg-text-faint)]"
+            >Branch name</label
+          >
           <input
             id="modal-new-branch"
             bind:value={newBranch}

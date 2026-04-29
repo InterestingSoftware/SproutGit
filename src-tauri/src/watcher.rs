@@ -45,20 +45,20 @@ fn match_git_index_to_worktree(
     let comps: Vec<_> = rel.components().collect();
     match comps.as_slice() {
         // <git_dir>/index → root worktree
-        [single] if single.as_os_str() == OsStr::new("index") => {
-            git_dir.parent().and_then(|p| p.to_str()).map(|s| s.to_string())
-        }
+        [single] if single.as_os_str() == OsStr::new("index") => git_dir
+            .parent()
+            .and_then(|p| p.to_str())
+            .map(|s| s.to_string()),
         // <git_dir>/worktrees/<name>/index → linked worktree
         [a, name, b]
-            if a.as_os_str() == OsStr::new("worktrees")
-                && b.as_os_str() == OsStr::new("index") =>
+            if a.as_os_str() == OsStr::new("worktrees") && b.as_os_str() == OsStr::new("index") =>
         {
             let slug = name.as_os_str();
             worktree_paths
                 .iter()
                 .find(|p| Path::new(p).file_name() == Some(slug))
                 .cloned()
-        }
+        },
         _ => None,
     }
 }
@@ -106,8 +106,8 @@ pub async fn start_watching_worktrees(
     let validated_git_dir: Option<String> = if let Some(ref rp) = root_path {
         let trimmed = rp.trim();
         validate_no_control_chars(trimmed, "Root path")?;
-        let root = normalize_existing_path(trimmed)
-            .map_err(|e| format!("Invalid root path: {e}"))?;
+        let root =
+            normalize_existing_path(trimmed).map_err(|e| format!("Invalid root path: {e}"))?;
         let git_dir = root.join(".git");
         if git_dir.is_dir() {
             Some(git_dir.to_string_lossy().to_string())
@@ -137,9 +137,11 @@ pub async fn start_watching_worktrees(
                 if let Some(ref git_dir) = git_dir_for_closure {
                     let git_dir_path = Path::new(git_dir);
                     if event_path.starts_with(git_dir_path) {
-                        if let Some(wt) =
-                            match_git_index_to_worktree(event_path, git_dir_path, &paths_for_closure)
-                        {
+                        if let Some(wt) = match_git_index_to_worktree(
+                            event_path,
+                            git_dir_path,
+                            &paths_for_closure,
+                        ) {
                             // Only enqueue the path if the directory still exists;
                             // a concurrent worktree deletion could race with the
                             // index write that triggered this event.
@@ -190,7 +192,9 @@ pub async fn start_watching_worktrees(
         .0
         .lock()
         .map_err(|_| "Watcher state lock poisoned".to_string())?;
-    *guard = Some(WatcherHandle { _debouncer: debouncer });
+    *guard = Some(WatcherHandle {
+        _debouncer: debouncer,
+    });
 
     Ok(())
 }

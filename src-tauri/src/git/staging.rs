@@ -54,9 +54,7 @@ pub fn validate_commit_message(message: &str) -> Result<String, String> {
         .chars()
         .any(|c| c.is_control() && c != '\n' && c != '\r' && c != '\t')
     {
-        return Err(
-            "Commit message contains unsupported control characters".to_string(),
-        );
+        return Err("Commit message contains unsupported control characters".to_string());
     }
     if trimmed.len() > 10_000 {
         return Err("Commit message is too long (max 10,000 characters)".to_string());
@@ -96,15 +94,16 @@ pub fn parse_porcelain_status(stdout: &str) -> Vec<StatusFileEntry> {
         let rest = &line[3..]; // Skip "XY "
 
         // Handle renames: "R  old -> new" or "RM old -> new"
-        let (path, orig_path) = if (index_status == "R" || index_status == "C") && rest.contains(" -> ") {
-            // Destination is the new path; source is the original.
-            let mut parts = rest.splitn(2, " -> ");
-            let src = parts.next().unwrap_or("").to_string();
-            let dst = parts.next().unwrap_or(rest).to_string();
-            (dst, Some(src))
-        } else {
-            (rest.to_string(), None)
-        };
+        let (path, orig_path) =
+            if (index_status == "R" || index_status == "C") && rest.contains(" -> ") {
+                // Destination is the new path; source is the original.
+                let mut parts = rest.splitn(2, " -> ");
+                let src = parts.next().unwrap_or("").to_string();
+                let dst = parts.next().unwrap_or(rest).to_string();
+                (dst, Some(src))
+            } else {
+                (rest.to_string(), None)
+            };
 
         files.push(StatusFileEntry {
             path,
@@ -358,8 +357,8 @@ pub async fn get_working_diff(
 const MAX_PREVIEW_BYTES: u64 = 4 * 1024 * 1024; // 4 MB
 
 fn generate_fake_add_diff(rel_path: &str, full_path: &std::path::Path) -> Result<String, String> {
-    let meta = std::fs::metadata(full_path)
-        .map_err(|e| format!("Cannot stat '{rel_path}': {e}"))?;
+    let meta =
+        std::fs::metadata(full_path).map_err(|e| format!("Cannot stat '{rel_path}': {e}"))?;
 
     if meta.len() > MAX_PREVIEW_BYTES {
         return Ok(format!(
@@ -370,8 +369,7 @@ fn generate_fake_add_diff(rel_path: &str, full_path: &std::path::Path) -> Result
         ));
     }
 
-    let bytes =
-        std::fs::read(full_path).map_err(|e| format!("Cannot read '{rel_path}': {e}"))?;
+    let bytes = std::fs::read(full_path).map_err(|e| format!("Cannot read '{rel_path}': {e}"))?;
 
     if bytes.contains(&0u8) {
         return Ok(format!(

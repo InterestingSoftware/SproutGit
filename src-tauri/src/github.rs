@@ -129,7 +129,8 @@ fn create_clone_credential_file(token: &str) -> Result<PathBuf, String> {
     ));
 
     let content = format!("https://x-access-token:{token}@github.com\n");
-    fs::write(&file_path, content).map_err(|e| format!("Failed to prepare clone credentials: {e}"))?;
+    fs::write(&file_path, content)
+        .map_err(|e| format!("Failed to prepare clone credentials: {e}"))?;
 
     #[cfg(unix)]
     {
@@ -154,7 +155,10 @@ impl Drop for GitCloneAuthContext {
 }
 
 fn git_helper_value_for_file(path: &std::path::Path) -> String {
-    let normalized = path.to_string_lossy().replace('\\', "/").replace('"', "\\\"");
+    let normalized = path
+        .to_string_lossy()
+        .replace('\\', "/")
+        .replace('"', "\\\"");
     format!("store --file=\"{normalized}\"")
 }
 
@@ -614,7 +618,10 @@ pub async fn list_github_email_suggestions() -> Result<Vec<GitHubEmailSuggestion
         verified: bool,
     }
 
-    fn push_unique(suggestions: &mut Vec<GitHubEmailSuggestion>, suggestion: GitHubEmailSuggestion) {
+    fn push_unique(
+        suggestions: &mut Vec<GitHubEmailSuggestion>,
+        suggestion: GitHubEmailSuggestion,
+    ) {
         if !suggestions
             .iter()
             .any(|existing| existing.email.eq_ignore_ascii_case(&suggestion.email))

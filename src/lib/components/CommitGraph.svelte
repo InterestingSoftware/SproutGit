@@ -541,13 +541,20 @@
 
 {#if laneData.rows.length === 0}
   <div class="flex h-full items-center justify-center">
-    <div class="flex flex-col items-center gap-3 text-center" style="animation: sg-fade-in 0.3s ease-out">
-      <div class="flex h-12 w-12 items-center justify-center rounded-full bg-[var(--sg-primary)]/10 text-[var(--sg-primary)]">
+    <div
+      class="flex flex-col items-center gap-3 text-center"
+      style="animation: sg-fade-in 0.3s ease-out"
+    >
+      <div
+        class="flex h-12 w-12 items-center justify-center rounded-full bg-[var(--sg-primary)]/10 text-[var(--sg-primary)]"
+      >
         <GitBranch class="h-5 w-5" />
       </div>
       <div>
         <p class="text-sm font-medium text-[var(--sg-text)]">No commits yet</p>
-        <p class="mt-0.5 text-xs text-[var(--sg-text-faint)]">Make your first commit to see history here.</p>
+        <p class="mt-0.5 text-xs text-[var(--sg-text-faint)]">
+          Make your first commit to see history here.
+        </p>
       </div>
     </div>
   </div>

@@ -350,7 +350,7 @@
         <div
           data-session-id={session.id}
           class="relative flex shrink-0 items-stretch overflow-hidden rounded transition-colors
-            {isActive ? 'bg-[var(--sg-surface-raised)] shadow-[inset_0_0_0_1px_var(--sg-primary)]/0' : 'hover:bg-[var(--sg-surface)]'}
+            {isActive ? 'bg-[var(--sg-surface-raised)]' : 'hover:bg-[var(--sg-surface)]'}
             {dragFromId === session.id ? 'opacity-50' : ''}"
           onpointerdown={e => onTabPointerDown(e, session.id)}
           onpointermove={onTabPointerMove}

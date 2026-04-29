@@ -138,9 +138,7 @@ fn known_git_tools() -> Vec<GitToolCandidate> {
             id: "windsurf",
             name: "Windsurf",
             command: "windsurf",
-            mac_bundle_bin: Some(
-                "/Applications/Windsurf.app/Contents/Resources/app/bin/windsurf",
-            ),
+            mac_bundle_bin: Some("/Applications/Windsurf.app/Contents/Resources/app/bin/windsurf"),
             supports_diff: true,
             supports_merge: true,
         },
@@ -156,9 +154,7 @@ fn known_git_tools() -> Vec<GitToolCandidate> {
             id: "sublime",
             name: "Sublime Text",
             command: "subl",
-            mac_bundle_bin: Some(
-                "/Applications/Sublime Text.app/Contents/SharedSupport/bin/subl",
-            ),
+            mac_bundle_bin: Some("/Applications/Sublime Text.app/Contents/SharedSupport/bin/subl"),
             supports_diff: true,
             supports_merge: true,
         },
@@ -388,9 +384,7 @@ pub async fn detect_git_tools() -> Vec<GitToolInfo> {
                 GitToolInfo {
                     id: tool.id.to_string(),
                     name: tool.name.to_string(),
-                    command: resolved
-                        .clone()
-                        .unwrap_or_else(|| tool.command.to_string()),
+                    command: resolved.clone().unwrap_or_else(|| tool.command.to_string()),
                     installed: resolved.is_some(),
                     supports_diff: tool.supports_diff,
                     supports_merge: tool.supports_merge,

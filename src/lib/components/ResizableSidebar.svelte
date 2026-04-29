@@ -83,6 +83,27 @@
     width = defaultWidth;
     persist();
   }
+
+  function onKeyDown(event: KeyboardEvent) {
+    const step = event.shiftKey ? 48 : 8;
+    let next: number | undefined;
+
+    if (event.key === 'ArrowLeft') {
+      next = side === 'right' ? width - step : width + step;
+    } else if (event.key === 'ArrowRight') {
+      next = side === 'right' ? width + step : width - step;
+    } else if (event.key === 'Home') {
+      next = minWidth;
+    } else if (event.key === 'End') {
+      next = maxWidth;
+    } else {
+      return;
+    }
+
+    event.preventDefault();
+    width = Math.min(maxWidth, Math.max(minWidth, next));
+    persist();
+  }
 </script>
 
 <div
@@ -93,6 +114,8 @@
   {@render children()}
 
   <!-- svelte-ignore a11y_no_static_element_interactions -->
+  <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
+  <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
   <div
     class="group absolute top-0 bottom-0 z-20 flex w-2 cursor-col-resize items-stretch {side ===
     'right'
@@ -103,12 +126,14 @@
     onpointerup={onPointerUp}
     onpointercancel={onPointerUp}
     ondblclick={onDoubleClick}
-    title="Drag to resize · double-click to reset"
+    onkeydown={onKeyDown}
+    title="Drag to resize · double-click to reset · arrow keys to adjust"
     role="separator"
     aria-orientation="vertical"
     aria-valuenow={width}
     aria-valuemin={minWidth}
     aria-valuemax={maxWidth}
+    tabindex="0"
   >
     <div
       class="m-auto h-12 w-[2px] rounded-full transition-colors {dragging

@@ -68,14 +68,12 @@ pub fn run() {
             .filter(|value| *value > 0)
             .unwrap_or(6274);
 
-        builder = builder.plugin(
-            tauri_plugin_playwright::init_with_config(
-                tauri_plugin_playwright::PluginConfig::new()
-                    .socket_path(&socket_path)
-                    .tcp_port(tcp_port)
-                    .window_label("main"),
-            ),
-        );
+        builder = builder.plugin(tauri_plugin_playwright::init_with_config(
+            tauri_plugin_playwright::PluginConfig::new()
+                .socket_path(&socket_path)
+                .tcp_port(tcp_port)
+                .window_label("main"),
+        ));
     }
 
     builder

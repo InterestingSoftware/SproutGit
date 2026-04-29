@@ -526,3 +526,8 @@ export const onTerminalOutput = (
 
 export const onTerminalClosed = (ptyId: string, callback: () => void): Promise<UnlistenFn> =>
   listen<void>(`terminal-closed-${ptyId}`, () => callback());
+
+// ── Build info ──
+
+/** Returns true when the app was compiled with the `e2e-testing` Cargo feature. */
+export const isE2eBuild = () => invoke<boolean>('is_e2e_build');
