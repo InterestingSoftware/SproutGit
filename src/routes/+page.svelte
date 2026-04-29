@@ -642,7 +642,7 @@
     <!-- Title bar area -->
     <header
       data-tauri-drag-region
-      class="flex shrink-0 items-center justify-between border-b border-[var(--sg-border)] bg-[var(--sg-surface)] pt-1 pr-1 pb-1 pl-[var(--sg-titlebar-inset)]"
+      class="flex h-(--sg-titlebar-height) shrink-0 items-center justify-between border-b border-[var(--sg-border)] bg-[var(--sg-surface)] pr-1 pl-[var(--sg-titlebar-inset)]"
       style="view-transition-name: sg-app-header"
     >
       <span
@@ -651,7 +651,7 @@
         <img src="/logo.svg" alt="" class="h-5 w-5" />
         SproutGit
       </span>
-      <div class="flex items-center gap-3">
+      <div class="flex h-full items-center gap-3">
         {#if githubAuth?.authenticated}
           <span class="flex items-center gap-1.5 text-xs text-[var(--sg-text-dim)]">
             <svg

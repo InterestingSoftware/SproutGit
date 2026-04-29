@@ -19,7 +19,9 @@
   --sg-font-code:
     'Fira Code', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono',
     'Courier New', monospace;
-  --sg-titlebar-inset: 16px;
+  --sg-titlebar-inset-default: 16px;
+  --sg-titlebar-inset: var(--sg-titlebar-inset-default);
+  --sg-titlebar-height: 38px;
   --sg-bg: #f5f5f5;
   --sg-surface: #ffffff;
   --sg-surface-raised: #eaeaef;
@@ -42,7 +44,12 @@
 
 /* macOS: extra left inset for traffic light buttons */
 .platform-macos {
-  --sg-titlebar-inset: 76px;
+  --sg-titlebar-inset: 85px;
+}
+
+/* Native fullscreen: use baseline inset (Windows/default padding) on macOS. */
+.platform-macos.window-fullscreen {
+  --sg-titlebar-inset: var(--sg-titlebar-inset-default);
 }
 
 /* Dark mode */

@@ -1574,7 +1574,7 @@
   <!-- Context header -->
   <header
     data-tauri-drag-region
-    class="flex shrink-0 items-center gap-3 border-b border-[var(--sg-border)] bg-[var(--sg-surface)] pt-1 pr-1 pb-1 pl-[var(--sg-titlebar-inset)]"
+    class="flex h-(--sg-titlebar-height) shrink-0 items-center gap-3 border-b border-[var(--sg-border)] bg-[var(--sg-surface)] pr-1 pl-[var(--sg-titlebar-inset)]"
     style="view-transition-name: sg-app-header"
   >
     <button
@@ -1592,7 +1592,7 @@
     <span class="text-xs text-[var(--sg-primary)]">
       {selectedWorktree?.branch ?? (selectedWorktree?.detached ? 'detached' : '—')}
     </span>
-    <div class="ml-auto flex items-center">
+    <div class="ml-auto flex h-full items-center">
       <button
         onclick={() =>
           goto(

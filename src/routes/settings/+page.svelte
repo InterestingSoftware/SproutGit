@@ -405,7 +405,7 @@
 <main class="sg-body flex h-screen flex-col" data-testid="settings-page">
   <header
     data-tauri-drag-region
-    class="flex shrink-0 items-center gap-3 border-b border-(--sg-border) bg-(--sg-surface) pt-1 pr-1 pb-1 pl-(--sg-titlebar-inset)"
+    class="flex h-(--sg-titlebar-height) shrink-0 items-center gap-3 border-b border-(--sg-border) bg-(--sg-surface) pr-1 pl-(--sg-titlebar-inset)"
   >
     <button
       onclick={() =>
@@ -415,7 +415,7 @@
     >
     <div class="h-3 w-px bg-(--sg-border)"></div>
     <span class="sg-heading text-xs font-medium text-(--sg-text)">Settings</span>
-    <div class="ml-auto flex items-center gap-2">
+    <div class="ml-auto flex h-full items-center gap-2">
       <UpdateBadge
         href={workspacePath
           ? `/settings?workspace=${encodeURIComponent(workspacePath)}`

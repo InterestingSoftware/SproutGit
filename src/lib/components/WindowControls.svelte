@@ -42,14 +42,14 @@
 
 {#if isWindows}
   <div
-    class="-my-1 -mr-1 flex items-stretch self-stretch"
+    class="-mr-1 flex h-full items-center"
     role="toolbar"
     aria-label="Window controls"
     aria-orientation="horizontal"
   >
     <button
       onclick={minimize}
-      class="flex w-11 items-center justify-center text-[var(--sg-text-dim)] hover:bg-[var(--sg-surface-raised)] hover:text-[var(--sg-text)]"
+      class="flex h-full w-11 items-center justify-center text-[var(--sg-text-dim)] hover:bg-[var(--sg-surface-raised)] hover:text-[var(--sg-text)]"
       title="Minimize"
       aria-label="Minimize"
       data-tauri-drag-region-exclude
@@ -58,7 +58,7 @@
     </button>
     <button
       onclick={toggleMaximize}
-      class="flex w-11 items-center justify-center text-[var(--sg-text-dim)] hover:bg-[var(--sg-surface-raised)] hover:text-[var(--sg-text)]"
+      class="flex h-full w-11 items-center justify-center text-[var(--sg-text-dim)] hover:bg-[var(--sg-surface-raised)] hover:text-[var(--sg-text)]"
       title={isMaximized ? 'Restore' : 'Maximize'}
       aria-label={isMaximized ? 'Restore' : 'Maximize'}
       data-tauri-drag-region-exclude
@@ -71,7 +71,7 @@
     </button>
     <button
       onclick={close}
-      class="close-btn flex w-11 items-center justify-center text-[var(--sg-text-dim)] hover:text-white"
+      class="close-btn flex h-full w-11 items-center justify-center text-[var(--sg-text-dim)] hover:text-white"
       title="Close"
       aria-label="Close"
       data-tauri-drag-region-exclude
