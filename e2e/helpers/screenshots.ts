@@ -233,10 +233,6 @@ export async function captureNamedScreenshot(
   // ourselves so each run always replaces the previous screenshot.
   const png = await tauriPage.screenshot();
   writeFileSync(outputPath, png);
-  // Also write to the root screenshots/ folder so both locations stay in sync.
-  const rootOutputPath = join(ROOT, 'screenshots', filename);
-  mkdirSync(dirname(rootOutputPath), { recursive: true });
-  writeFileSync(rootOutputPath, png);
   await testInfo.attach(name, {
     body: png,
     contentType: 'image/png',

@@ -160,8 +160,8 @@ SproutGit builds this orchestration layer on top of native Git primitives so wor
 
 <p align="center">
   <picture>
-    <source media="(prefers-color-scheme: dark)"  srcset="docs/readme-screenshot-dark.png" />
-    <img src="docs/readme-screenshot-light.png" alt="SproutGit workspace — commit graph with worktree markers" width="800" />
+    <source media="(prefers-color-scheme: dark)" srcset="website/src/assets/screenshots/workspace/commit-graph-dark.png" />
+    <img src="website/src/assets/screenshots/workspace/commit-graph-light.png" alt="SproutGit workspace — commit graph with worktree markers" width="800" />
   </picture>
 </p>
 
