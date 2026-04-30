@@ -2,7 +2,7 @@
   import { goto } from '$app/navigation';
   import { getVersion } from '@tauri-apps/api/app';
   import { openUrl } from '@tauri-apps/plugin-opener';
-  import { updateState } from '$lib/update.svelte';
+  import { loadReleaseNotesBetween, updateState } from '$lib/update.svelte';
   import { GitBranch, Info, Pencil, Settings, SquareTerminal, User } from 'lucide-svelte';
   import Spinner from '$lib/components/Spinner.svelte';
   import UpdateBadge from '$lib/components/UpdateBadge.svelte';
@@ -69,6 +69,8 @@
   const updaterEnabled = !import.meta.env.DEV;
   let updateChecking = $state(false);
   let updateInstalling = $state(false);
+  let releaseNotes = $state<string | null>(null);
+  let releaseNotesLoading = $state(false);
 
   let editingAuthor = $state(false);
   let editingEditor = $state(false);
@@ -196,6 +198,27 @@
         })
         .catch(() => (githubAuth = { authenticated: false, username: null, provider: 'github' }));
     });
+
+  $effect(() => {
+    const availableUpdate = updateState.available;
+    if (!updaterEnabled || !availableUpdate || !appVersion || appVersion === 'unknown') {
+      releaseNotes = null;
+      releaseNotesLoading = false;
+      return;
+    }
+
+    releaseNotesLoading = true;
+    void loadReleaseNotesBetween(appVersion, availableUpdate.version)
+      .then(notes => {
+        releaseNotes = notes ?? availableUpdate.body;
+      })
+      .catch(() => {
+        releaseNotes = availableUpdate.body;
+      })
+      .finally(() => {
+        releaseNotesLoading = false;
+      });
+  });
 
   function matchesEditor(editor: EditorInfo, configured: string): boolean {
     const stripped = configured.replace(/^["']|["']$/g, '');
@@ -805,13 +828,18 @@
                 <p class="mb-2 text-xs font-medium text-(--sg-text)">
                   Update v{updateState.available.version} available
                 </p>
-                {#if updateState.available.body}
+                {#if releaseNotesLoading}
+                  <div class="mb-3 flex items-center gap-2 text-xs text-(--sg-text-faint)">
+                    <Spinner size="sm" /> Loading release notes...
+                  </div>
+                {:else if releaseNotes}
                   <div
                     class="mb-3 max-h-40 overflow-y-auto rounded border border-(--sg-border) bg-(--sg-bg) p-2"
                   >
                     <pre
-                      class="whitespace-pre-wrap text-xs leading-relaxed text-(--sg-text-dim)">{updateState
-                        .available.body}</pre>
+                      class="whitespace-pre-wrap text-xs leading-relaxed text-(--sg-text-dim)"
+                      >{releaseNotes}</pre
+                    >
                   </div>
                 {/if}
                 <button
@@ -840,6 +868,7 @@
                   onclick={async () => {
                     updateChecking = true;
                     try {
+                      releaseNotes = null;
                       const { check } = await import('@tauri-apps/plugin-updater');
                       updateState.set(await check());
                       if (!updateState.available) toast.info("You're on the latest version");

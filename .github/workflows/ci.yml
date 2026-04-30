@@ -556,15 +556,37 @@ jobs:
           except Exception:
             latest_tag = ''
 
-          commit_shas: list[str]
+          commit_entries: list[dict[str, str]]
           if latest_tag:
             compare = gh_api(f'repos/{repo}/compare/{latest_tag}...{head_sha}')
-            commit_shas = [c['sha'] for c in compare.get('commits', []) if c.get('sha')]
+            commit_entries = [
+              {
+                'sha': c.get('sha') or '',
+                'message': (c.get('commit') or {}).get('message') or '',
+              }
+              for c in compare.get('commits', [])
+              if c.get('sha')
+            ]
           elif before_sha and before_sha != head_sha and before_sha != ('0' * 40):
             compare = gh_api(f'repos/{repo}/compare/{before_sha}...{head_sha}')
-            commit_shas = [c['sha'] for c in compare.get('commits', []) if c.get('sha')]
+            commit_entries = [
+              {
+                'sha': c.get('sha') or '',
+                'message': (c.get('commit') or {}).get('message') or '',
+              }
+              for c in compare.get('commits', [])
+              if c.get('sha')
+            ]
           else:
-            commit_shas = [head_sha]
+            single = gh_api(f'repos/{repo}/commits/{head_sha}')
+            commit_entries = [
+              {
+                'sha': single.get('sha') or head_sha,
+                'message': (single.get('commit') or {}).get('message') or '',
+              }
+            ]
+
+          commit_shas = [entry['sha'] for entry in commit_entries if entry.get('sha')]
 
           pr_order: list[int] = []
           pr_seen: set[int] = set()
@@ -593,10 +615,23 @@ jobs:
             title = pr.get('title') or f'PR #{number}'
             sections.append(f'### PR #{number}: {title}\n\n{notes}')
 
+          commit_lines: list[str] = []
+          for entry in commit_entries:
+            sha = (entry.get('sha') or '').strip()
+            if not sha:
+              continue
+            message = (entry.get('message') or '').strip()
+            subject = message.splitlines()[0].strip() if message else '(no subject)'
+            commit_lines.append(f'- `{sha[:7]}` {subject}')
+
           if sections:
             print('\n\n'.join(sections), end='')
           else:
             print('No PR release notes were found for merged PRs in this release.', end='')
+
+          if commit_lines:
+            print('\n\n## Commits Included\n')
+            print('\n'.join(commit_lines), end='')
           PY
 
       - name: Create GitHub Release
