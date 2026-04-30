@@ -1,19 +1,15 @@
 use sea_orm::{ConnectionTrait, DbBackend, FromQueryResult, Statement};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::fs;
 use std::path::{Path, PathBuf};
-use std::process::{Output, Stdio};
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
-use tokio::io::{AsyncRead, AsyncReadExt};
-use tokio::process::Command as TokioCommand;
+use std::process::Output;
+use std::time::{SystemTime, UNIX_EPOCH};
 use tokio::task::JoinSet;
-use tokio::time::timeout;
 
 use crate::db::connect_workspace_db;
 use crate::git::helpers::{
     command_exists, now_epoch_seconds, path_to_frontend, run_git, shell_candidates_for_current_os,
-    strip_win_prefix, system_command, validate_no_control_chars, GitAction, SystemAction,
+    strip_win_prefix, validate_no_control_chars, GitAction,
 };
 
 #[derive(Serialize, FromQueryResult)]
@@ -62,7 +58,6 @@ pub struct HookUpsertInput {
     pub scope: String,
     pub trigger: String,
     pub execution_target: String,
-    pub execution_mode: String,
     pub shell: String,
     pub script: String,
     pub enabled: bool,
@@ -154,12 +149,9 @@ const ALLOWED_TRIGGERS: &[&str] = &[
     "after_worktree_switch",
     "manual",
 ];
-const MAX_HOOK_OUTPUT_BYTES: usize = 64 * 1024;
-
 const ALLOWED_SCOPES: &[&str] = &["worktree", "workspace"];
 const ALLOWED_EXECUTION_TARGETS: &[&str] =
     &["workspace", "trigger_worktree", "initiating_worktree"];
-const ALLOWED_EXECUTION_MODES: &[&str] = &["headless", "terminal_tab"];
 
 fn detect_available_hook_shells() -> Vec<String> {
     let detected: Vec<String> = shell_candidates_for_current_os()
@@ -250,14 +242,6 @@ fn validate_execution_target(execution_target: &str) -> Result<String, String> {
     Ok(execution_target)
 }
 
-fn validate_execution_mode(execution_mode: &str) -> Result<String, String> {
-    let execution_mode = normalize_non_empty(execution_mode, "Execution mode")?;
-    if !ALLOWED_EXECUTION_MODES.contains(&execution_mode.as_str()) {
-        return Err(format!("Unsupported execution mode: {execution_mode}"));
-    }
-    Ok(execution_mode)
-}
-
 fn trigger_supports_initiating_worktree(trigger: &str) -> bool {
     matches!(
         trigger,
@@ -268,14 +252,9 @@ fn trigger_supports_initiating_worktree(trigger: &str) -> bool {
     )
 }
 
-fn trigger_supports_terminal_tab(trigger: &str) -> bool {
-    trigger == "manual" || trigger.starts_with("after_")
-}
-
 fn validate_execution_preferences(
     trigger: &str,
     execution_target: &str,
-    execution_mode: &str,
 ) -> Result<(), String> {
     if execution_target == "initiating_worktree" && !trigger_supports_initiating_worktree(trigger) {
         return Err(format!(
@@ -283,15 +262,10 @@ fn validate_execution_preferences(
         ));
     }
 
-    if execution_mode == "terminal_tab" {
-        if execution_target == "workspace" {
-            return Err(
-                "Terminal tab execution requires a worktree target, not the workspace".to_string(),
-            );
-        }
-        if !trigger_supports_terminal_tab(trigger) {
-            return Err(format!("Trigger '{trigger}' cannot run in a terminal tab"));
-        }
+    if execution_target == "workspace" {
+        return Err(
+            "Terminal tab execution requires a worktree target, not the workspace".to_string(),
+        );
     }
 
     Ok(())
@@ -358,14 +332,6 @@ pub(crate) fn normalize_optional_existing_dir(
     };
 
     normalize_existing_dir(value, field_name).map(Some)
-}
-
-fn truncate_utf8(input: &[u8], max_bytes: usize) -> String {
-    let text = String::from_utf8_lossy(input).to_string();
-    if text.len() <= max_bytes {
-        return text;
-    }
-    text.chars().take(max_bytes).collect()
 }
 
 fn git_output_trimmed(output: Output) -> Option<String> {
@@ -610,60 +576,6 @@ fn compose_terminal_command(shell: &str, env: &[(String, String)], script: &str)
     } else {
         format!("{}\n{}\n", assignments.join("\n"), script)
     }
-}
-
-fn write_hook_script_file(script_path: &Path, script: &str) -> Result<(), String> {
-    #[cfg(unix)]
-    {
-        use std::io::Write;
-        use std::os::unix::fs::OpenOptionsExt;
-
-        let mut file = fs::OpenOptions::new()
-            .create(true)
-            .truncate(true)
-            .write(true)
-            .mode(0o600)
-            .open(script_path)
-            .map_err(|e| format!("Failed to prepare hook script: {e}"))?;
-
-        file.write_all(script.as_bytes())
-            .map_err(|e| format!("Failed to prepare hook script: {e}"))?;
-        Ok(())
-    }
-
-    #[cfg(not(unix))]
-    {
-        fs::write(script_path, script.as_bytes())
-            .map_err(|e| format!("Failed to prepare hook script: {e}"))
-    }
-}
-
-async fn read_limited_output<R>(reader: &mut R, max_bytes: usize) -> Vec<u8>
-where
-    R: AsyncRead + Unpin,
-{
-    let mut bytes = Vec::with_capacity(max_bytes.min(8192));
-    let mut buffer = [0_u8; 8192];
-
-    loop {
-        if bytes.len() >= max_bytes {
-            break;
-        }
-
-        match reader.read(&mut buffer).await {
-            Ok(0) => break,
-            Ok(read_count) => {
-                let remaining = max_bytes.saturating_sub(bytes.len());
-                if remaining > 0 {
-                    let to_copy = remaining.min(read_count);
-                    bytes.extend_from_slice(&buffer[..to_copy]);
-                }
-            },
-            Err(_) => break,
-        }
-    }
-
-    bytes
 }
 
 async fn load_dependencies(
@@ -944,39 +856,6 @@ async fn insert_hook_run(
     Ok(())
 }
 
-fn resolve_script_execution(
-    hook: &RuntimeHook,
-    script_path: &Path,
-) -> Result<(String, Vec<String>), String> {
-    let script = script_path.to_string_lossy().to_string();
-
-    match hook.shell.as_str() {
-        "bash" => Ok(("bash".to_string(), vec![script])),
-        "zsh" => Ok(("zsh".to_string(), vec![script])),
-        "powershell" => Ok((
-            "powershell".to_string(),
-            vec![
-                "-NoLogo".to_string(),
-                "-NoProfile".to_string(),
-                "-NonInteractive".to_string(),
-                "-File".to_string(),
-                script,
-            ],
-        )),
-        "pwsh" => Ok((
-            "pwsh".to_string(),
-            vec![
-                "-NoLogo".to_string(),
-                "-NoProfile".to_string(),
-                "-NonInteractive".to_string(),
-                "-File".to_string(),
-                script,
-            ],
-        )),
-        _ => Err(format!("Unsupported shell: {}", hook.shell)),
-    }
-}
-
 async fn execute_hook(
     hook: RuntimeHook,
     context: HookExecutionContext,
@@ -1084,202 +963,22 @@ async fn execute_hook(
         };
     }
 
-    let script_extension = hook_script_extension(&hook.shell);
-    let script_path = std::env::temp_dir().join(format!(
-        "sproutgit-hook-{}-{}.{}",
-        hook.id,
-        unique_suffix(),
-        script_extension
-    ));
-
-    if let Err(e) = write_hook_script_file(&script_path, &hook.script) {
-        return (
-            RuntimeHookResult {
-                hook_id: hook.id,
-                hook_name: hook.name,
-                critical: hook.critical,
-                keep_open_on_completion: hook.keep_open_on_completion,
-                status: "failed".to_string(),
-                success: false,
-                error_message: Some(e),
-            },
-            None,
-            None,
-        );
-    }
-
-    let execution = resolve_script_execution(&hook, &script_path);
-    let (program, args) = match execution {
-        Ok(value) => value,
-        Err(err) => {
-            let _ = fs::remove_file(&script_path);
-            return (
-                RuntimeHookResult {
-                    hook_id: hook.id,
-                    hook_name: hook.name,
-                    critical: hook.critical,
-                    keep_open_on_completion: hook.keep_open_on_completion,
-                    status: "failed".to_string(),
-                    success: false,
-                    error_message: Some(err),
-                },
-                None,
-                None,
-            );
+    (
+        RuntimeHookResult {
+            hook_id: hook.id,
+            hook_name: hook.name,
+            critical: hook.critical,
+            keep_open_on_completion: hook.keep_open_on_completion,
+            status: "failed".to_string(),
+            success: false,
+            error_message: Some(format!(
+                "Unsupported execution mode: {}",
+                hook.execution_mode
+            )),
         },
-    };
-
-    let arg_refs: Vec<&str> = args.iter().map(String::as_str).collect();
-    let mut base = system_command(SystemAction::HookExecute, &program, &arg_refs);
-    for (key, value) in &env {
-        base.env(key, value);
-    }
-    base.current_dir(
-        resolved_worktree_path
-            .as_deref()
-            .unwrap_or(context.workspace_path.as_path()),
-    );
-
-    let mut command = TokioCommand::from(base);
-    command.stdout(Stdio::piped());
-    command.stderr(Stdio::piped());
-
-    let mut child = match command.spawn() {
-        Ok(child) => child,
-        Err(e) => {
-            let _ = fs::remove_file(&script_path);
-            return (
-                RuntimeHookResult {
-                    hook_id: hook.id,
-                    hook_name: hook.name,
-                    critical: hook.critical,
-                    keep_open_on_completion: hook.keep_open_on_completion,
-                    status: "failed".to_string(),
-                    success: false,
-                    error_message: Some(format!("Failed to spawn hook process: {e}")),
-                },
-                None,
-                None,
-            );
-        },
-    };
-
-    let stdout_task = child.stdout.take().map(|mut out| {
-        tokio::spawn(async move { read_limited_output(&mut out, MAX_HOOK_OUTPUT_BYTES).await })
-    });
-
-    let stderr_task = child.stderr.take().map(|mut err| {
-        tokio::spawn(async move { read_limited_output(&mut err, MAX_HOOK_OUTPUT_BYTES).await })
-    });
-
-    let wait_outcome = timeout(
-        Duration::from_secs(hook.timeout_seconds as u64),
-        child.wait(),
+        None,
+        None,
     )
-    .await;
-
-    if wait_outcome.is_err() {
-        let _ = child.kill().await;
-        let _ = child.wait().await;
-    }
-
-    let stdout_bytes = match stdout_task {
-        Some(task) => task.await.unwrap_or_default(),
-        None => Vec::new(),
-    };
-    let stderr_bytes = match stderr_task {
-        Some(task) => task.await.unwrap_or_default(),
-        None => Vec::new(),
-    };
-
-    let stdout_snippet = if stdout_bytes.is_empty() {
-        None
-    } else {
-        Some(truncate_utf8(&stdout_bytes, MAX_HOOK_OUTPUT_BYTES))
-    };
-    let stderr_snippet = if stderr_bytes.is_empty() {
-        None
-    } else {
-        Some(truncate_utf8(&stderr_bytes, MAX_HOOK_OUTPUT_BYTES))
-    };
-
-    let _ = fs::remove_file(&script_path);
-
-    match wait_outcome {
-        Ok(Ok(status)) => {
-            if status.success() {
-                (
-                    RuntimeHookResult {
-                        hook_id: hook.id,
-                        hook_name: hook.name,
-                        critical: hook.critical,
-                        keep_open_on_completion: hook.keep_open_on_completion,
-                        status: "success".to_string(),
-                        success: true,
-                        error_message: None,
-                    },
-                    stdout_snippet,
-                    stderr_snippet,
-                )
-            } else {
-                let error_message = stderr_snippet
-                    .clone()
-                    .filter(|s| !s.trim().is_empty())
-                    .or_else(|| Some("Hook command failed".to_string()));
-
-                (
-                    RuntimeHookResult {
-                        hook_id: hook.id,
-                        hook_name: hook.name,
-                        critical: hook.critical,
-                        keep_open_on_completion: hook.keep_open_on_completion,
-                        status: "failed".to_string(),
-                        success: false,
-                        error_message,
-                    },
-                    stdout_snippet,
-                    stderr_snippet,
-                )
-            }
-        },
-        Ok(Err(e)) => (
-            RuntimeHookResult {
-                hook_id: hook.id,
-                hook_name: hook.name,
-                critical: hook.critical,
-                keep_open_on_completion: hook.keep_open_on_completion,
-                status: "failed".to_string(),
-                success: false,
-                error_message: Some(format!("Failed while waiting for hook process: {e}")),
-            },
-            stdout_snippet,
-            stderr_snippet,
-        ),
-        Err(_) => (
-            RuntimeHookResult {
-                hook_id: hook.id,
-                hook_name: hook.name,
-                critical: hook.critical,
-                keep_open_on_completion: hook.keep_open_on_completion,
-                status: "timed_out".to_string(),
-                success: false,
-                error_message: Some(format!(
-                    "Hook timed out after {} seconds",
-                    hook.timeout_seconds
-                )),
-            },
-            stdout_snippet,
-            stderr_snippet,
-        ),
-    }
-}
-
-fn hook_script_extension(shell: &str) -> &'static str {
-    if matches!(shell, "pwsh" | "powershell") {
-        "ps1"
-    } else {
-        "sh"
-    }
 }
 
 fn dependency_satisfied(
@@ -1722,8 +1421,8 @@ pub async fn create_workspace_hook(
     let scope = validate_scope(&input.scope)?;
     let trigger = validate_trigger(&input.trigger)?;
     let execution_target = validate_execution_target(&input.execution_target)?;
-    let execution_mode = validate_execution_mode(&input.execution_mode)?;
-    validate_execution_preferences(&trigger, &execution_target, &execution_mode)?;
+    let execution_mode = "terminal_tab".to_string();
+    validate_execution_preferences(&trigger, &execution_target)?;
     let shell = validate_shell(&input.shell)?;
     let script = normalize_hook_script(&input.script)?;
     let timeout_seconds = validate_timeout(input.timeout_seconds)? as i64;
@@ -1817,8 +1516,8 @@ pub async fn update_workspace_hook(
     let scope = validate_scope(&input.scope)?;
     let trigger = validate_trigger(&input.trigger)?;
     let execution_target = validate_execution_target(&input.execution_target)?;
-    let execution_mode = validate_execution_mode(&input.execution_mode)?;
-    validate_execution_preferences(&trigger, &execution_target, &execution_mode)?;
+    let execution_mode = "terminal_tab".to_string();
+    validate_execution_preferences(&trigger, &execution_target)?;
     let shell = validate_shell(&input.shell)?;
     let script = normalize_hook_script(&input.script)?;
     let timeout_seconds = validate_timeout(input.timeout_seconds)? as i64;
@@ -2020,12 +1719,8 @@ pub async fn run_workspace_hook(
 
 #[cfg(test)]
 mod tests {
-    use super::{
-        ensure_dependency_triggers_compatible, hook_script_extension, normalize_hook_script,
-        read_limited_output,
-    };
+    use super::{ensure_dependency_triggers_compatible, normalize_hook_script};
     use std::collections::HashMap;
-    use tokio::io::{duplex, AsyncWriteExt};
 
     #[test]
     fn normalize_hook_script_allows_multiline_scripts() {
@@ -2043,34 +1738,6 @@ mod tests {
             Ok(_) => panic!("NUL should be rejected"),
             Err(err) => assert!(err.contains("invalid control")),
         }
-    }
-
-    #[test]
-    fn read_limited_output_caps_bytes() {
-        let runtime = match tokio::runtime::Runtime::new() {
-            Ok(runtime) => runtime,
-            Err(err) => panic!("runtime should initialize: {err}"),
-        };
-        runtime.block_on(async {
-            let (mut writer, mut reader) = duplex(1024);
-            let payload = vec![b'a'; 200];
-            tokio::spawn(async move {
-                if let Err(err) = writer.write_all(&payload).await {
-                    panic!("write should succeed: {err}");
-                }
-            });
-
-            let bytes = read_limited_output(&mut reader, 64).await;
-            assert_eq!(bytes.len(), 64);
-        });
-    }
-
-    #[test]
-    fn powershell_family_uses_ps1_extension() {
-        assert_eq!(hook_script_extension("pwsh"), "ps1");
-        assert_eq!(hook_script_extension("powershell"), "ps1");
-        assert_eq!(hook_script_extension("bash"), "sh");
-        assert_eq!(hook_script_extension("zsh"), "sh");
     }
 
     #[test]

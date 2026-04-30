@@ -1,6 +1,14 @@
+import { dirname, join } from 'node:path';
+
 import { test } from '../fixtures';
 import { createHeroMediaRepo } from '../helpers/benchmark-repos';
-import { appendRepoFile, resetConfigDb, resetTestDirs, writeRepoFile } from '../helpers/fixtures';
+import {
+  appendRepoFile,
+  executeSqlite,
+  resetConfigDb,
+  resetTestDirs,
+  writeRepoFile,
+} from '../helpers/fixtures';
 import { captureScreenshotVariants, resizeWindowForScreenshot } from '../helpers/screenshots';
 import {
   createWorktreeViaUi,
@@ -10,6 +18,42 @@ import {
   openHistoryTab,
   reloadToHome,
 } from '../helpers/ui';
+
+function sqlStr(value: string) {
+  return `'${value.replaceAll("'", "''")}'`;
+}
+
+function seedHook(
+  dbPath: string,
+  id: string,
+  name: string,
+  trigger: string,
+  executionMode: 'terminal_tab',
+  critical: 0 | 1 = 0
+) {
+  const now = Math.floor(Date.now() / 1000);
+  executeSqlite(
+    dbPath,
+    [
+      'INSERT INTO hook_definitions (',
+      '  id, name, scope, trigger, execution_target, execution_mode, shell, script,',
+      '  enabled, critical, keep_open_on_completion, timeout_seconds, created_at, updated_at',
+      ') VALUES (',
+      `  ${sqlStr(id)}, ${sqlStr(name)}, 'workspace', ${sqlStr(trigger)},`,
+      `  'trigger_worktree', ${sqlStr(executionMode)}, 'bash',`,
+      `  'echo "Running ${name}"',`,
+      `  1, ${critical}, 0, 60, ${now}, ${now}`,
+      ');',
+    ].join('\n')
+  );
+}
+
+function seedHookDependency(dbPath: string, hookId: string, dependsOnId: string) {
+  executeSqlite(
+    dbPath,
+    `INSERT INTO hook_dependencies (hook_id, depends_on_hook_id) VALUES (${sqlStr(hookId)}, ${sqlStr(dependsOnId)});`
+  );
+}
 
 test.describe('Hero screenshots @screenshots', () => {
   test.skip(
@@ -208,5 +252,36 @@ test.describe('Hero screenshots @screenshots', () => {
     // Give terminals time to render their output.
     await new Promise(r => setTimeout(r, 2000));
     await captureScreenshotVariants(tauriPage, testInfo, 'terminal/grid-view');
+
+    // ── Shot 6: hooks/management — workspace hooks modal with seeded hooks ────
+    // Derive stateDbPath from settingsPath: worktree → worktrees → workspace → .sproutgit/state.db
+    const stateDbPath = join(dirname(dirname(settingsPath)), '.sproutgit', 'state.db');
+
+    // Seed three representative hooks so the modal looks rich.
+    const hookSetupId = 'hero-hook-setup';
+    const hookLintId = 'hero-hook-lint';
+    const hookCleanId = 'hero-hook-clean';
+    seedHook(stateDbPath, hookSetupId, 'Set up dev environment', 'after_worktree_create', 'terminal_tab', 1);
+    seedHook(stateDbPath, hookLintId, 'Run linter & type check', 'after_worktree_create', 'terminal_tab');
+    seedHook(stateDbPath, hookCleanId, 'Clean build cache', 'before_worktree_remove', 'terminal_tab');
+    // "Run linter" depends on "Set up dev environment" so it shows indentation.
+    seedHookDependency(stateDbPath, hookLintId, hookSetupId);
+
+    // Open the hooks modal via the workspace settings button.
+    await tauriPage.getByTestId('btn-workspace-settings').click();
+    await tauriPage.getByTestId('hooks-modal').waitFor(DEFAULT_UI_TIMEOUT);
+
+    // Wait until hook rows are rendered (hooks loaded from DB).
+    await tauriPage.waitForFunction(
+      `(() => document.querySelectorAll('[data-testid="hook-list-row"]').length >= 3)()`,
+      DEFAULT_UI_TIMEOUT
+    );
+    // Let entrance animations finish.
+    await new Promise(r => setTimeout(r, 400));
+
+    await captureScreenshotVariants(tauriPage, testInfo, 'hooks/management');
+
+    // Close the modal before the test ends.
+    await tauriPage.evaluate(`document.body.click()`);
   });
 });

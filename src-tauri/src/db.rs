@@ -44,6 +44,9 @@ static WORKSPACE_MIGRATIONS: LazyLock<Migrations<'static>> = LazyLock::new(|| {
         M::up(include_str!(
             "../migrations/workspace/004_worktree_provenance_and_nested_repo_rules.sql"
         )),
+        M::up(include_str!(
+            "../migrations/workspace/005_hooks_terminal_tab_only.sql"
+        )),
     ])
 });
 

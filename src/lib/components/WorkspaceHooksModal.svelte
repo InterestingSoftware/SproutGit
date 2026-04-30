@@ -12,7 +12,6 @@
     listWorkspaceHooks,
     toggleWorkspaceHook,
     updateWorkspaceHook,
-    type HookExecutionMode,
     type HookExecutionTarget,
     type HookUpsertInput,
     type WorkspaceHook,
@@ -256,29 +255,6 @@
     }
   }
 
-  function executionModeOptions(
-    trigger: WorkspaceHookTrigger,
-    executionTarget: HookExecutionTarget
-  ): SelectOption<HookExecutionMode>[] {
-    const options: SelectOption<HookExecutionMode>[] = [
-      {
-        value: 'headless',
-        label: 'Headless runner',
-        detail: 'Run the script in the background and capture its output in the hook dialog.',
-      },
-    ];
-
-    if ((trigger === 'manual' || trigger.startsWith('after_')) && executionTarget !== 'workspace') {
-      options.push({
-        value: 'terminal_tab',
-        label: 'New terminal tab',
-        detail: "Open a new session in that worktree's Terminal tab and run the command there.",
-      });
-    }
-
-    return options;
-  }
-
   function buildHookTreeRows(triggerHooks: WorkspaceHook[]): HookTreeRow[] {
     const sortedHooks = [...triggerHooks].sort((a, b) => a.name.localeCompare(b.name));
     const ids = new Set(sortedHooks.map(hook => hook.id));
@@ -349,15 +325,9 @@
   );
 
   const selectedExecutionTargetOptions = $derived.by(() => executionTargetOptions(form.trigger));
-  const selectedExecutionModeOptions = $derived.by(() =>
-    executionModeOptions(form.trigger, form.executionTarget)
-  );
   const selectedRunAgainstOption = $derived.by(
     () =>
       selectedExecutionTargetOptions.find(option => option.value === form.executionTarget) ?? null
-  );
-  const selectedExecutionModeOption = $derived.by(
-    () => selectedExecutionModeOptions.find(option => option.value === form.executionMode) ?? null
   );
 
   let form = $state<HookUpsertInput>({
@@ -365,7 +335,6 @@
     scope: 'worktree',
     trigger: 'before_worktree_create',
     executionTarget: 'trigger_worktree',
-    executionMode: 'headless',
     shell: 'bash',
     script: defaultScript(),
     enabled: true,
@@ -427,7 +396,6 @@
       scope: 'worktree',
       trigger: 'before_worktree_create',
       executionTarget: 'trigger_worktree',
-      executionMode: 'headless',
       shell: preferredShell(),
       script: defaultScript(),
       enabled: true,
@@ -443,34 +411,19 @@
     const nextExecutionTarget = targetOptions.some(option => option.value === form.executionTarget)
       ? form.executionTarget
       : (targetOptions[0]?.value ?? 'trigger_worktree');
-    const nextExecutionModeOptions = executionModeOptions(trigger, nextExecutionTarget);
-    const nextExecutionMode = nextExecutionModeOptions.some(
-      option => option.value === form.executionMode
-    )
-      ? form.executionMode
-      : (nextExecutionModeOptions[0]?.value ?? 'headless');
 
     form = {
       ...form,
       trigger,
       executionTarget: nextExecutionTarget,
-      executionMode: nextExecutionMode,
       scope: normalizeScopeForTarget(nextExecutionTarget),
     };
   }
 
   function applyExecutionTarget(executionTarget: HookExecutionTarget) {
-    const nextExecutionModeOptions = executionModeOptions(form.trigger, executionTarget);
-    const nextExecutionMode = nextExecutionModeOptions.some(
-      option => option.value === form.executionMode
-    )
-      ? form.executionMode
-      : (nextExecutionModeOptions[0]?.value ?? 'headless');
-
     form = {
       ...form,
       executionTarget,
-      executionMode: nextExecutionMode,
       scope: normalizeScopeForTarget(executionTarget),
     };
   }
@@ -487,7 +440,6 @@
       scope: hook.scope,
       trigger: hook.trigger,
       executionTarget: hook.executionTarget,
-      executionMode: hook.executionMode,
       shell: normalizeShell(hook.shell),
       script: hook.script,
       enabled: hook.enabled,
@@ -588,12 +540,6 @@
       return;
     }
 
-    const modeOptions = executionModeOptions(form.trigger, form.executionTarget);
-    if (!modeOptions.some(option => option.value === form.executionMode)) {
-      form = { ...form, executionMode: modeOptions[0]?.value ?? 'headless' };
-      return;
-    }
-
     const normalizedScope = normalizeScopeForTarget(form.executionTarget);
     if (form.scope !== normalizedScope) {
       form = { ...form, scope: normalizedScope };
@@ -621,6 +567,7 @@
       onclick={e => e.stopPropagation()}
       class="flex h-[min(78vh,760px)] w-[min(900px,96vw)] flex-col overflow-hidden rounded-xl border border-[var(--sg-border)] bg-[var(--sg-surface)] shadow-xl"
       transition:scale={{ duration: 220, start: 0.97 }}
+      data-testid="hooks-modal"
     >
       <div
         class="relative flex items-center gap-2 border-b border-[var(--sg-border-subtle)] bg-gradient-to-b from-[var(--sg-primary)]/8 to-transparent px-4 py-3"
@@ -706,6 +653,7 @@
                       class="relative rounded-lg border border-[var(--sg-border)] bg-[var(--sg-surface)] p-3"
                       style={`margin-left: ${row.depth * 18 + (row.depth > 0 ? 10 : 0)}px;`}
                       transition:fade={{ duration: 140 }}
+                      data-testid="hook-list-row"
                     >
                       {#if row.depth > 0}
                         <span
@@ -722,10 +670,7 @@
                             </p>
                           </div>
                           <p class="mt-1 text-xs text-[var(--sg-text-faint)]">
-                            {executionTargetLabel(row.hook)} • {row.hook.executionMode ===
-                            'terminal_tab'
-                              ? 'new terminal tab'
-                              : 'headless runner'} • {row.hook.timeoutSeconds}s • {row.hook.shell}
+                            {executionTargetLabel(row.hook)} • {row.hook.timeoutSeconds}s • {row.hook.shell}
                           </p>
                           <div class="mt-2 flex flex-wrap items-center gap-1.5">
                             <span
@@ -743,12 +688,6 @@
                               <span
                                 class="rounded border border-[var(--sg-accent)]/30 bg-[var(--sg-accent)]/10 px-1.5 py-0.5 text-[10px] font-medium text-[var(--sg-accent)]"
                                 >Keep run dialog open</span
-                              >
-                            {/if}
-                            {#if row.hook.executionMode === 'terminal_tab'}
-                              <span
-                                class="rounded border border-[var(--sg-primary)]/30 bg-[var(--sg-primary)]/10 px-1.5 py-0.5 text-[10px] font-medium text-[var(--sg-primary)]"
-                                >Terminal tab</span
                               >
                             {/if}
                             {#if row.hook.dependencyIds.length > 0}
@@ -986,24 +925,6 @@
                 />
               </label>
 
-              <label class="text-xs text-[var(--sg-text-faint)]">
-                Execution mode
-                <Select
-                  className="mt-1"
-                  value={form.executionMode}
-                  options={selectedExecutionModeOptions.map(option => ({
-                    value: option.value,
-                    label: option.label,
-                  }))}
-                  onChange={value => {
-                    form = { ...form, executionMode: value as HookExecutionMode };
-                  }}
-                />
-                <p class="mt-1 text-[10px] leading-relaxed text-[var(--sg-text-faint)]">
-                  {selectedExecutionModeOption?.detail}
-                </p>
-              </label>
-
               <div
                 class="cursor-pointer rounded border border-[var(--sg-border)] bg-[var(--sg-surface)] p-2.5"
                 role="button"
@@ -1086,12 +1007,9 @@
               <p class="mt-1 text-[11px] leading-relaxed text-[var(--sg-text-dim)]">
                 This hook runs on <span class="font-medium text-[var(--sg-text)]"
                   >{normalizeTriggerLabel(form.trigger)}</span
-                >, targets
+                > and targets
                 <span class="font-medium text-[var(--sg-text)]"
                   >{selectedRunAgainstOption?.label}</span
-                >, and executes through
-                <span class="font-medium text-[var(--sg-text)]"
-                  >{selectedExecutionModeOption?.label}</span
                 >.
               </p>
             </div>

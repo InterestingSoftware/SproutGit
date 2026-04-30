@@ -97,7 +97,7 @@ type HookSeedInput = {
   script: string;
   scope?: 'worktree' | 'workspace';
   executionTarget?: 'workspace' | 'trigger_worktree' | 'initiating_worktree';
-  executionMode?: 'headless' | 'terminal_tab';
+  executionMode?: 'terminal_tab';
   enabled?: 0 | 1;
   critical?: 0 | 1;
   keepOpenOnCompletion?: 0 | 1;
@@ -119,7 +119,7 @@ function insertHookDefinition(dbPath: string, input: HookSeedInput) {
       `  ${sqlString(input.scope ?? 'workspace')},`,
       `  ${sqlString(input.trigger)},`,
       `  ${sqlString(input.executionTarget ?? 'trigger_worktree')},`,
-      `  ${sqlString(input.executionMode ?? 'headless')},`,
+      `  ${sqlString(input.executionMode ?? 'terminal_tab')},`,
       `  ${sqlString(input.shell)},`,
       `  ${sqlString(input.script)},`,
       `  ${input.enabled ?? 1},`,
@@ -558,7 +558,7 @@ test.describe('Daily developer workflow', () => {
       stateDbPath,
       [
         'INSERT INTO hook_definitions (',
-        '  id, name, scope, trigger, shell, script, enabled, critical, timeout_seconds, created_at, updated_at',
+        '  id, name, scope, trigger, shell, script, execution_mode, enabled, critical, timeout_seconds, created_at, updated_at',
         ') VALUES (',
         `  ${sqlString(hookId)},`,
         `  ${sqlString('Daily after-create hook')},`,
@@ -566,6 +566,7 @@ test.describe('Daily developer workflow', () => {
         `  ${sqlString('after_worktree_create')},`,
         `  ${sqlString(shell)},`,
         `  ${sqlString(script)},`,
+        `  ${sqlString('terminal_tab')},`,
         '  1,',
         '  0,',
         '  60,',

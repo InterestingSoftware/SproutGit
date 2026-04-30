@@ -142,17 +142,15 @@ impl GitAction {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum SystemAction {
     OpenEditor,
-    HookExecute,
 }
 
 impl SystemAction {
     #[cfg(test)]
-    pub const ALL: [SystemAction; 2] = [SystemAction::OpenEditor, SystemAction::HookExecute];
+    pub const ALL: [SystemAction; 1] = [SystemAction::OpenEditor];
 
     pub fn label(self) -> &'static str {
         match self {
             SystemAction::OpenEditor => "open_editor",
-            SystemAction::HookExecute => "hook_execute",
         }
     }
 }

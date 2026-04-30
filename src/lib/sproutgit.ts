@@ -114,7 +114,7 @@ export type WorkspaceHookScope = 'worktree' | 'workspace';
 
 export type HookExecutionTarget = 'workspace' | 'trigger_worktree' | 'initiating_worktree';
 
-export type HookExecutionMode = 'headless' | 'terminal_tab';
+export type HookExecutionMode = 'terminal_tab';
 
 export type WorkspaceHookShell = 'bash' | 'zsh' | 'pwsh' | 'powershell';
 
@@ -141,7 +141,6 @@ export type HookUpsertInput = {
   scope: WorkspaceHookScope;
   trigger: WorkspaceHookTrigger;
   executionTarget: HookExecutionTarget;
-  executionMode: HookExecutionMode;
   shell: WorkspaceHookShell;
   script: string;
   enabled: boolean;
