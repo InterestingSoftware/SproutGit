@@ -569,10 +569,14 @@ fn compose_terminal_command(shell: &str, env: &[(String, String)], script: &str)
         .map(|(key, value)| shell_env_assignment(shell, key, value))
         .collect::<Vec<_>>();
 
-    // For PowerShell, use semicolons to separate statements since the entire command
-    // is sent as a single input to the PTY. For POSIX shells, use newlines.
+    // For PowerShell, use semicolons to separate env assignments and CR as the
+    // line terminator within the script body. The entire command is sent as a
+    // single PTY write, and Windows PowerShell treats CR (\r) as Enter in
+    // interactive mode — bare LF (\n) does not trigger line execution.
+    // For POSIX shells, use newlines throughout (LF is Enter in raw PTY mode).
     if matches!(shell, "pwsh" | "powershell") {
-        format!("{}; {}", assignments.join("; "), script)
+        let script_for_pty = script.replace('\n', "\r");
+        format!("{}; {}", assignments.join("; "), script_for_pty)
     } else {
         format!("{}\n{}\n", assignments.join("\n"), script)
     }

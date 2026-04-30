@@ -113,7 +113,9 @@ export function querySqlite(dbPath: string, sql: string): string[][] {
     stdio: 'pipe',
   }).trim();
   if (!output) return [];
-  return output.split('\n').map(row => row.split('\t'));
+  // Strip trailing \r from each row before splitting by \t to handle Windows
+  // CRLF output from the sqlite3 CLI (\n splits leave \r on intermediate rows).
+  return output.split('\n').map(row => row.replace(/\r$/, '').split('\t'));
 }
 
 export function executeSqlite(dbPath: string, sql: string) {
