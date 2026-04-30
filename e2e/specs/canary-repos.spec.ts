@@ -10,9 +10,9 @@ test.describe('Canary repositories @canary', () => {
   );
 
   test.beforeEach(async ({ tauriPage }) => {
+    await reloadToHome(tauriPage);
     resetTestDirs();
     resetConfigDb();
-    await reloadToHome(tauriPage);
   });
 
   for (const canary of CANARY_REPOS) {

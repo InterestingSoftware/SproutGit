@@ -7,7 +7,7 @@
  * underlying git / SQLite reality.
  */
 import { basename, dirname, join } from 'node:path';
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import { test, expect } from '../fixtures';
 import {
   CONFIG_DB_PATH,
@@ -551,7 +551,22 @@ test.describe('Daily developer workflow', () => {
     await importRepoViaUi(tauriPage, repoPath);
 
     const workspaceParent = dirname(dirname(repoPath));
-    const workspacePath = join(workspaceParent, `${basename(repoPath)}-workspace`);
+    const workspacePrefix = `${basename(repoPath)}-workspace`;
+    const matchingWorkspaces = readdirSync(workspaceParent, { withFileTypes: true })
+      .filter(entry => entry.isDirectory() && entry.name.startsWith(workspacePrefix))
+      .map(entry => join(workspaceParent, entry.name))
+      .filter(path => existsSync(join(path, '.sproutgit', 'state.db')))
+      .sort((a, b) => {
+        const aDb = join(a, '.sproutgit', 'state.db');
+        const bDb = join(b, '.sproutgit', 'state.db');
+        return statSync(bDb).mtimeMs - statSync(aDb).mtimeMs;
+      });
+
+    if (matchingWorkspaces.length === 0) {
+      throw new Error(`No imported workspace found for prefix: ${workspacePrefix}`);
+    }
+
+    const workspacePath = matchingWorkspaces[0]!;
     const stateDbPath = join(workspacePath, '.sproutgit', 'state.db');
     const outputPath = join(workspacePath, '.sproutgit', 'hook-output', 'after-create.txt');
     const hookId = 'hook-daily-after-create';

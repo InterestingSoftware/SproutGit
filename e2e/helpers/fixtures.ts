@@ -88,17 +88,17 @@ export function runGit(cwd: string, args: string[], extraEnv: Record<string, str
 export function cleanupTestDirs() {
   // On Windows the notify watcher (or git itself) can hold directory handles
   // briefly after the watcher is stopped. Retry a few times before giving up.
-  const maxAttempts = process.platform === 'win32' ? 5 : 1;
-  const retryDelayMs = 300;
+  const maxAttempts = process.platform === 'win32' ? 20 : 1;
+  const retryDelayMs = 250;
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     try {
       rmSync(TEST_DIR, { recursive: true, force: true });
       return;
     } catch (err: unknown) {
       const isLastAttempt = attempt === maxAttempts;
-      const isBusy =
-        err instanceof Error && 'code' in err && (err as NodeJS.ErrnoException).code === 'EBUSY';
-      if (isLastAttempt || !isBusy) throw err;
+      const code = err instanceof Error && 'code' in err ? (err as NodeJS.ErrnoException).code : '';
+      const isRetryable = code === 'EBUSY' || code === 'EPERM' || code === 'ENOTEMPTY';
+      if (isLastAttempt || !isRetryable) throw err;
       // Synchronous busy-wait: sleep between retries.
       Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, retryDelayMs);
     }
