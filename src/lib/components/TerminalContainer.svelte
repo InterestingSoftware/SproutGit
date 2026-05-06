@@ -8,6 +8,7 @@
     shell: string;
     label: string;
     initialCommand?: string;
+    autoCloseOnExit?: boolean;
   };
 
   type TerminalLaunchRequest = {
@@ -16,6 +17,7 @@
     shell: string;
     label: string;
     command: string;
+    keepOpenOnCompletion?: boolean;
   };
 
   type Layout = 'tabs' | 'split' | 'grid';
@@ -54,7 +56,9 @@
   // read inside this effect.
   let _autoSpawned = false;
   $effect(() => {
-    if (!_autoSpawned && defaultShell) {
+    const hasPendingLaunch =
+      cwd && launchRequest && launchRequest.cwd === cwd && launchRequest.id !== lastLaunchRequestId;
+    if (!_autoSpawned && defaultShell && !hasPendingLaunch) {
       _autoSpawned = true;
       addSession(defaultShell);
     }
@@ -93,12 +97,17 @@
     return `term-${Date.now()}-${++counter}`;
   }
 
-  function addSession(shell: string, labelOverride?: string, initialCommand?: string) {
+  function addSession(
+    shell: string,
+    labelOverride?: string,
+    initialCommand?: string,
+    autoCloseOnExit = false
+  ) {
     const count = sessions.filter(s => s.shell === shell).length;
     const fallbackLabel = count === 0 ? shell : `${shell} (${count + 1})`;
     const label = labelOverride?.trim() || fallbackLabel;
     const id = newId();
-    sessions = [...sessions, { id, shell, label, initialCommand }];
+    sessions = [...sessions, { id, shell, label, initialCommand, autoCloseOnExit }];
     activeId = id;
     showAddMenu = false;
   }
@@ -108,8 +117,14 @@
       return;
     }
 
+    _autoSpawned = true;
     lastLaunchRequestId = launchRequest.id;
-    addSession(launchRequest.shell, launchRequest.label, launchRequest.command);
+    addSession(
+      launchRequest.shell,
+      launchRequest.label,
+      launchRequest.command,
+      !launchRequest.keepOpenOnCompletion
+    );
   });
 
   $effect(() => {
@@ -665,6 +680,8 @@
             {cwd}
             initialCommand={session.initialCommand}
             locked={interactionLocked}
+            autoCloseOnExit={session.autoCloseOnExit}
+            onAutoClosed={() => closeSession(session.id)}
           />
         </div>
       {/each}

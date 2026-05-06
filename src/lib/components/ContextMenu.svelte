@@ -1,11 +1,12 @@
 <script lang="ts">
   import { onMount } from 'svelte';
+  import type { ComponentType } from 'svelte';
 
   export type MenuItem =
     | {
         label: string;
         action: () => void;
-        icon?: string;
+        icon?: string | ComponentType;
         danger?: boolean;
         disabled?: boolean;
         separator?: false;
@@ -91,7 +92,14 @@
         disabled={item.disabled}
       >
         {#if item.icon}
-          <span class="w-4 text-center text-[10px]">{item.icon}</span>
+          <span class="inline-flex w-4 items-center justify-center text-[10px]">
+            {#if typeof item.icon === 'string'}
+              {item.icon}
+            {:else}
+              {@const Icon = item.icon}
+              <Icon class="h-3.5 w-3.5" />
+            {/if}
+          </span>
         {/if}
         <span>{item.label}</span>
       </button>

@@ -3,7 +3,7 @@
   import ContextMenu, { type MenuItem } from '$lib/components/ContextMenu.svelte';
   import { toast } from '$lib/toast.svelte';
   import { onDestroy, onMount } from 'svelte';
-  import { Search, ChevronUp, ChevronDown, X, GitBranch } from 'lucide-svelte';
+  import { Search, ChevronUp, ChevronDown, X, GitBranch, TreePine, Tag } from 'lucide-svelte';
 
   type Props = {
     commits: CommitEntry[];
@@ -537,6 +537,15 @@
     if (worktreeBranches.has(ref)) return 'bg-[var(--sg-accent)]/20 text-[var(--sg-accent)]';
     return 'bg-[var(--sg-primary)]/20 text-[var(--sg-primary)]';
   }
+
+  function isTagRef(ref: string): boolean {
+    return ref.startsWith('tag:');
+  }
+
+  function displayRefLabel(ref: string): string {
+    if (!isTagRef(ref)) return ref;
+    return ref.slice(4).trim();
+  }
 </script>
 
 {#if laneData.rows.length === 0}
@@ -745,24 +754,19 @@
                     oncontextmenu={e => refContextMenu(ref, e)}
                     title="Click to copy, right-click for more"
                   >
-                    {#if worktreeBranches.has(ref)}
+                    {#if isTagRef(ref)}
+                      <Tag class="mr-0.5 inline h-2.5 w-2.5" />
+                    {:else}
                       <GitBranch class="mr-0.5 inline h-2.5 w-2.5" />
                     {/if}
-                    {ref}
+                    {#if worktreeBranches.has(ref)}
+                      <TreePine class="mr-0.5 inline h-2.5 w-2.5" />
+                    {/if}
+                    {displayRefLabel(ref)}
                   </button>
                 {/each}
                 <span class="text-xs text-[var(--sg-text)]">{row.subject}</span>
               </div>
-
-              <!-- Worktree indicator -->
-              {#if row.worktreeBranch}
-                <span
-                  class="shrink-0 rounded bg-[var(--sg-accent)]/15 px-1.5 py-px text-[9px] font-medium text-[var(--sg-accent)]"
-                  title="Worktree: {branchToWorktreePath.get(row.worktreeBranch) ?? ''}"
-                >
-                  WT
-                </span>
-              {/if}
 
               {#if row.offGraphParentCount > 0}
                 <span

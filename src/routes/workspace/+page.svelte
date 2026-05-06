@@ -74,6 +74,9 @@
     ArrowDownToLine,
     ArrowUpFromLine,
     GitBranch,
+    Copy,
+    Repeat,
+    Pencil,
     X,
   } from 'lucide-svelte';
   import WindowControls from '$lib/components/WindowControls.svelte';
@@ -154,6 +157,7 @@
     cwd: string;
     label: string;
     running: boolean;
+    keepOpenOnCompletion: boolean;
   };
 
   let hookTerminalRuns = $state<HookTerminalRun[]>([]);
@@ -777,6 +781,7 @@
     shell: string;
     label: string;
     command: string;
+    keepOpenOnCompletion: boolean;
   };
   let hookTerminalLaunchRequest = $state<HookTerminalLaunchRequest | null>(null);
   // Paths whose terminal panel has been initialized at least once.
@@ -1326,6 +1331,8 @@
       ? 'workspace'
       : matchedWorktree?.branch ?? cwd.split('/').pop() ?? 'worktree';
     const sessionLabel = `${event.hookName} (${locationLabel})`;
+    const keepOpenOnCompletion =
+      operationHooks.find(hook => hook.id === event.hookId)?.keepOpenOnCompletion ?? false;
 
     if (matchedWorktree) {
       activeWorktreePath = matchedWorktree.path;
@@ -1345,6 +1352,7 @@
               cwd,
               label: sessionLabel,
               running: true,
+              keepOpenOnCompletion,
             }
           : run
       );
@@ -1358,6 +1366,7 @@
           cwd,
           label: sessionLabel,
           running: true,
+          keepOpenOnCompletion,
         },
       ];
     }
@@ -1374,6 +1383,7 @@
       shell: event.shell,
       label: sessionLabel,
       command: event.command,
+      keepOpenOnCompletion,
     };
     appendOperationLog(
       `Opened ${event.hookName} in ${locationLabel} terminal.`
@@ -1435,7 +1445,7 @@
       for (const hook of manualHooks) {
         items.push({
           label: hook.name,
-          icon: '▶',
+          icon: Play,
           action: () => void handleRunHook(wt, hook, availableHooks),
         });
       }
@@ -1447,7 +1457,7 @@
       for (const hook of lifecycleHooks) {
         items.push({
           label: `${hook.name} (${formatHookTrigger(hook.trigger)})`,
-          icon: '▶',
+          icon: Play,
           action: () => void handleRunHook(wt, hook, availableHooks),
         });
       }
@@ -1850,18 +1860,22 @@
     const items: MenuItem[] = [
       {
         label: 'Switch here',
-        icon: '⇄',
+        icon: Repeat,
         action: () => {
           activeWorktreePath = wt.path;
           activeTerminalPath = wt.path;
         },
         disabled: isActive,
       },
-      { label: 'Open folder', icon: '📂', action: () => handleRevealWorktree(wt.path) },
-      { label: 'Open in editor', icon: '⌨', action: () => handleOpenInEditor(wt.path) },
+      { label: 'Open folder', icon: FolderOpen, action: () => handleRevealWorktree(wt.path) },
+      {
+        label: 'Open in editor',
+        icon: SquareTerminal,
+        action: () => handleOpenInEditor(wt.path),
+      },
       {
         label: 'Copy path',
-        icon: '⧉',
+        icon: Copy,
         action: () => {
           void navigator.clipboard.writeText(wt.path);
           toast.success('Copied worktree path');
@@ -1873,7 +1887,7 @@
     if (allowCheckout) {
       items.push({
         label: 'Checkout…',
-        icon: '⎋',
+        icon: GitBranch,
         action: () => {
           activeWorktreePath = wt.path;
           activeTerminalPath = wt.path;
@@ -1885,7 +1899,7 @@
     } else {
       items.push({
         label: 'Checkout unavailable (detached)',
-        icon: '⎋',
+        icon: GitBranch,
         action: () => {},
         disabled: true,
       });
@@ -1894,7 +1908,7 @@
     items.push({ separator: true });
     items.push({
       label: 'Run hooks…',
-      icon: '▶',
+      icon: Play,
       action: () => {
         activeWorktreePath = wt.path;
         activeTerminalPath = wt.path;
@@ -1903,7 +1917,7 @@
     });
     items.push({
       label: 'Rename branch (coming soon)',
-      icon: '✎',
+      icon: Pencil,
       action: () => {},
       disabled: true,
     });
@@ -1911,7 +1925,7 @@
     if (section === 'managed') {
       items.push({
         label: 'Branch actions (managed policy)',
-        icon: '⎇',
+        icon: ShieldAlert,
         action: () => {},
         disabled: true,
       });
@@ -1919,7 +1933,7 @@
     if (section === 'persistent') {
       items.push({
         label: 'Branch actions (persistent policy)',
-        icon: '⎇',
+        icon: ShieldAlert,
         action: () => {},
         disabled: true,
       });
@@ -1927,7 +1941,7 @@
     if (section === 'external') {
       items.push({
         label: 'Branch actions (external policy)',
-        icon: '⎇',
+        icon: ShieldAlert,
         action: () => {},
         disabled: true,
       });
@@ -1937,13 +1951,13 @@
       items.push({ separator: true });
       items.push({
         label: 'Pull (coming soon)',
-        icon: '↓',
+        icon: ArrowDownToLine,
         action: () => {},
         disabled: true,
       });
       items.push({
         label: 'Push (coming soon)',
-        icon: '↑',
+        icon: ArrowUpFromLine,
         action: () => {},
         disabled: true,
       });
@@ -1966,7 +1980,7 @@
       items.push({ separator: true });
       items.push({
         label: 'Create worktree from branch',
-        icon: '+',
+        icon: Plus,
         action: () => handleCreateWorktreeFromGraph(targetRef),
       });
     }
@@ -1992,12 +2006,12 @@
     const items: MenuItem[] = [
       {
         label: 'Create worktree from branch',
-        icon: '+',
+        icon: Plus,
         action: () => handleCreateWorktreeFromGraph(refName),
       },
       {
         label: 'Copy branch name',
-        icon: '⧉',
+        icon: Copy,
         action: () => {
           void navigator.clipboard.writeText(refName);
           toast.success('Copied branch name');

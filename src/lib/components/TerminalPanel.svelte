@@ -23,9 +23,20 @@
     initialCommand?: string;
     /** When true, terminal input is disabled and the panel is read-only. */
     locked?: boolean;
+    /** When true, close the terminal tab automatically after process exit. */
+    autoCloseOnExit?: boolean;
+    /** Callback invoked when auto-close is requested after process exit. */
+    onAutoClosed?: () => void;
   };
 
-  const { shell, cwd, initialCommand = '', locked = false }: Props = $props();
+  const {
+    shell,
+    cwd,
+    initialCommand = '',
+    locked = false,
+    autoCloseOnExit = false,
+    onAutoClosed,
+  }: Props = $props();
   const isWindows = typeof navigator !== 'undefined' && /windows/i.test(navigator.userAgent);
 
   // ── DOM & xterm refs ──────────────────────────────────────────────────────
@@ -191,6 +202,9 @@
       unlistenClosed = await onTerminalClosed(id, () => {
         closed = true;
         term?.write('\r\n\x1b[2m[process exited]\x1b[0m\r\n');
+        if (autoCloseOnExit) {
+          onAutoClosed?.();
+        }
       });
     } catch (err) {
       error = String(err);

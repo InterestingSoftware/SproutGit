@@ -727,7 +727,9 @@ test.describe('Daily developer workflow', () => {
 
     const terminalPanels = tauriPage.locator('[data-sg-terminal] [data-pty-id]');
     const panelCount = await terminalPanels.count();
-    expect(panelCount).toBeGreaterThanOrEqual(3);
+    // Two hook sessions are launched; the auto-spawn blank session is suppressed when
+    // hook launches are pending, so the minimum is 2 (one per hook).
+    expect(panelCount).toBeGreaterThanOrEqual(2);
 
     const hookRows = querySqlite(
       stateDbPath,

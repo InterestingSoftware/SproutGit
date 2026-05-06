@@ -255,6 +255,10 @@
     }
   }
 
+  function preferredExecutionTarget(trigger: WorkspaceHookTrigger): HookExecutionTarget {
+    return executionTargetOptions(trigger)[0]?.value ?? 'trigger_worktree';
+  }
+
   function buildHookTreeRows(triggerHooks: WorkspaceHook[]): HookTreeRow[] {
     const sortedHooks = [...triggerHooks].sort((a, b) => a.name.localeCompare(b.name));
     const ids = new Set(sortedHooks.map(hook => hook.id));
@@ -333,7 +337,7 @@
   let form = $state<HookUpsertInput>({
     name: '',
     scope: 'worktree',
-    trigger: 'before_worktree_create',
+    trigger: 'after_worktree_create',
     executionTarget: 'trigger_worktree',
     shell: 'bash',
     script: defaultScript(),
@@ -391,11 +395,13 @@
 
   function resetForm() {
     editingHookId = null;
+    const trigger: WorkspaceHookTrigger = 'after_worktree_create';
+    const executionTarget = preferredExecutionTarget(trigger);
     form = {
       name: '',
-      scope: 'worktree',
-      trigger: 'before_worktree_create',
-      executionTarget: 'trigger_worktree',
+      scope: normalizeScopeForTarget(executionTarget),
+      trigger,
+      executionTarget,
       shell: preferredShell(),
       script: defaultScript(),
       enabled: true,
@@ -407,10 +413,7 @@
   }
 
   function applyTrigger(trigger: WorkspaceHookTrigger) {
-    const targetOptions = executionTargetOptions(trigger);
-    const nextExecutionTarget = targetOptions.some(option => option.value === form.executionTarget)
-      ? form.executionTarget
-      : (targetOptions[0]?.value ?? 'trigger_worktree');
+    const nextExecutionTarget = preferredExecutionTarget(trigger);
 
     form = {
       ...form,
@@ -616,10 +619,15 @@
             Loading hooks…
           </div>
         {:else if hooks.length === 0}
-          <div
-            class="rounded-lg border border-[var(--sg-border)] bg-[var(--sg-surface-raised)] px-3 py-2 text-xs text-[var(--sg-text-dim)]"
-          >
-            No hooks defined yet. Create one to automate workspace setup or cleanup.
+          <div class="px-4 py-5">
+            <div
+              class="rounded-xl border border-dashed border-[var(--sg-border)] bg-[var(--sg-surface-raised)] px-4 py-5 text-center"
+            >
+              <p class="text-sm font-medium text-[var(--sg-text)]">No hooks defined</p>
+              <p class="mt-1 text-xs text-[var(--sg-text-dim)]">
+                Create a hook to automate setup, cleanup, or branch workflow tasks.
+              </p>
+            </div>
           </div>
         {:else}
           <div
@@ -798,68 +806,20 @@
               <p
                 class="text-xs font-semibold uppercase tracking-[0.16em] text-[var(--sg-text-faint)]"
               >
-                Basics
+                Hook Identity
               </p>
               <p class="mt-1 text-[11px] text-[var(--sg-text-dim)]">
-                Name the hook, choose timeout, and control whether it is currently active.
+                Give this automation a clear, action-oriented name.
               </p>
             </div>
 
-            <div class="grid grid-cols-1 gap-3 lg:grid-cols-2">
-              <label class="text-xs text-[var(--sg-text-faint)] lg:col-span-2">
+            <div class="grid grid-cols-1 gap-3">
+              <label class="text-xs text-[var(--sg-text-faint)]">
                 Hook name
                 <input
                   bind:value={form.name}
                   class="mt-1 w-full rounded border border-[var(--sg-input-border)] bg-[var(--sg-input-bg)] px-2.5 py-1.5 text-xs text-[var(--sg-text)] outline-none focus:border-[var(--sg-input-focus)]"
                   placeholder="Prepare dependencies"
-                />
-              </label>
-
-              <div
-                class="cursor-pointer rounded border border-[var(--sg-border)] bg-[var(--sg-surface)] p-2.5"
-                role="button"
-                tabindex="0"
-                onclick={e => {
-                  const input = (e.currentTarget as HTMLElement).querySelector(
-                    'input[type="checkbox"]'
-                  );
-                  if (input) (input as HTMLInputElement).click();
-                }}
-                onkeydown={e => {
-                  if (e.key === 'Enter' || e.key === ' ') {
-                    e.preventDefault();
-                    const input = (e.currentTarget as HTMLElement).querySelector(
-                      'input[type="checkbox"]'
-                    );
-                    if (input) (input as HTMLInputElement).click();
-                  }
-                }}
-              >
-                <div class="pointer-events-none">
-                  <Checkbox
-                    checked={form.enabled}
-                    onChange={next => {
-                      form = { ...form, enabled: next };
-                    }}
-                  >
-                    <span>
-                      <span class="block text-xs text-[var(--sg-text)]">Enabled</span>
-                      <span class="block text-[10px] text-[var(--sg-text-faint)]"
-                        >Disable to keep without running.</span
-                      >
-                    </span>
-                  </Checkbox>
-                </div>
-              </div>
-
-              <label class="text-xs text-[var(--sg-text-faint)]">
-                Timeout seconds
-                <input
-                  type="number"
-                  min="1"
-                  max="86400"
-                  bind:value={form.timeoutSeconds}
-                  class="mt-1 w-full rounded border border-[var(--sg-input-border)] bg-[var(--sg-input-bg)] px-2.5 py-1.5 text-xs text-[var(--sg-text)] outline-none focus:border-[var(--sg-input-focus)]"
                 />
               </label>
             </div>
@@ -872,10 +832,10 @@
               <p
                 class="text-xs font-semibold uppercase tracking-[0.16em] text-[var(--sg-text-faint)]"
               >
-                Execution
+                When And Where
               </p>
               <p class="mt-1 text-[11px] text-[var(--sg-text-dim)]">
-                Choose when and where the hook runs, plus execution behavior.
+                Choose the lifecycle event and the target context for this hook.
               </p>
             </div>
 
@@ -925,6 +885,85 @@
                 />
               </label>
 
+              <label class="text-xs text-[var(--sg-text-faint)]">
+                Timeout seconds
+                <input
+                  type="number"
+                  min="1"
+                  max="86400"
+                  bind:value={form.timeoutSeconds}
+                  class="mt-1 w-full rounded border border-[var(--sg-input-border)] bg-[var(--sg-input-bg)] px-2.5 py-1.5 text-xs text-[var(--sg-text)] outline-none focus:border-[var(--sg-input-focus)]"
+                />
+              </label>
+            </div>
+
+            <div
+              class="mt-3 rounded-lg border border-[var(--sg-border)] bg-[var(--sg-surface)] p-3"
+            >
+              <p class="text-xs font-medium text-[var(--sg-text)]">Run summary</p>
+              <p class="mt-1 text-[11px] leading-relaxed text-[var(--sg-text-dim)]">
+                This hook runs on <span class="font-medium text-[var(--sg-text)]"
+                  >{normalizeTriggerLabel(form.trigger)}</span
+                > and targets
+                <span class="font-medium text-[var(--sg-text)]"
+                  >{selectedRunAgainstOption?.label}</span
+                >.
+              </p>
+            </div>
+          </section>
+
+          <section
+            class="rounded-xl border border-[var(--sg-border-subtle)] bg-[var(--sg-surface-raised)] p-4"
+          >
+            <div class="mb-3">
+              <p
+                class="text-xs font-semibold uppercase tracking-[0.16em] text-[var(--sg-text-faint)]"
+              >
+                Behavior
+              </p>
+              <p class="mt-1 text-[11px] text-[var(--sg-text-dim)]">
+                Control lifecycle gating and terminal visibility after script completion.
+              </p>
+            </div>
+
+            <div class="grid grid-cols-1 gap-3 lg:grid-cols-2">
+              <div
+                class="cursor-pointer rounded border border-[var(--sg-border)] bg-[var(--sg-surface)] p-2.5"
+                role="button"
+                tabindex="0"
+                onclick={e => {
+                  const input = (e.currentTarget as HTMLElement).querySelector(
+                    'input[type="checkbox"]'
+                  );
+                  if (input) (input as HTMLInputElement).click();
+                }}
+                onkeydown={e => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    const input = (e.currentTarget as HTMLElement).querySelector(
+                      'input[type="checkbox"]'
+                    );
+                    if (input) (input as HTMLInputElement).click();
+                  }
+                }}
+              >
+                <div class="pointer-events-none">
+                  <Checkbox
+                    checked={form.enabled}
+                    onChange={next => {
+                      form = { ...form, enabled: next };
+                    }}
+                  >
+                    <span>
+                      <span class="block text-xs text-[var(--sg-text)]">Enabled</span>
+                      <span class="block text-[10px] text-[var(--sg-text-faint)]"
+                        >Disable to keep this hook configured without running it.</span
+                      >
+                    </span>
+                  </Checkbox>
+                </div>
+              </div>
+
               <div
                 class="cursor-pointer rounded border border-[var(--sg-border)] bg-[var(--sg-surface)] p-2.5"
                 role="button"
@@ -955,7 +994,7 @@
                     <span>
                       <span class="block text-xs text-[var(--sg-text)]">Critical</span>
                       <span class="block text-[10px] text-[var(--sg-text-faint)]"
-                        >If this fails in a before_* trigger, the worktree operation is blocked.</span
+                        >If this fails in a before_* trigger, the worktree action is blocked.</span
                       >
                     </span>
                   </Checkbox>
@@ -992,26 +1031,13 @@
                     <span>
                       <span class="block text-xs text-[var(--sg-text)]">Keep run dialog open</span>
                       <span class="block text-[10px] text-[var(--sg-text-faint)]"
-                        >Leave the operation dialog open after completion so output remains visible.</span
+                        >Keep the launched terminal tab open after the script exits.
+                        When off, hook-run terminal tabs auto-close on exit.</span
                       >
                     </span>
                   </Checkbox>
                 </div>
               </div>
-            </div>
-
-            <div
-              class="mt-3 rounded-lg border border-[var(--sg-border)] bg-[var(--sg-surface)] p-3"
-            >
-              <p class="text-xs font-medium text-[var(--sg-text)]">Run summary</p>
-              <p class="mt-1 text-[11px] leading-relaxed text-[var(--sg-text-dim)]">
-                This hook runs on <span class="font-medium text-[var(--sg-text)]"
-                  >{normalizeTriggerLabel(form.trigger)}</span
-                > and targets
-                <span class="font-medium text-[var(--sg-text)]"
-                  >{selectedRunAgainstOption?.label}</span
-                >.
-              </p>
             </div>
           </section>
 
