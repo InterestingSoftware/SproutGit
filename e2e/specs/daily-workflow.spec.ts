@@ -740,4 +740,82 @@ test.describe('Daily developer workflow', () => {
     expect(hookRows.map(row => row[1])).toEqual(['success', 'success']);
     expect(hookRows.map(row => row[2])).toEqual(['after_worktree_create', 'after_worktree_create']);
   });
+
+  test('auto-closes terminal session when keepOpenOnCompletion is false', async ({
+    tauriPage,
+  }) => {
+    const repoPath = createTestRepo('daily-autoclose-hooks', { extraCommits: 1 });
+
+    await importRepoViaUi(tauriPage, repoPath);
+
+    const workspaceParent = dirname(dirname(repoPath));
+    const workspacePath = join(workspaceParent, `${basename(repoPath)}-workspace`);
+    const stateDbPath = join(workspacePath, '.sproutgit', 'state.db');
+
+    const autoCloseHookId = 'hook-daily-autoclose-0';
+    const keepOpenHookId = 'hook-daily-keepopen-1';
+    const autoCloseHookName = 'Daily auto-close hook';
+    const keepOpenHookName = 'Daily keep-open hook';
+
+    const hookOne = dailyAfterCreateTerminalHook('AUTO_CLOSE');
+    const hookTwo = dailyAfterCreateTerminalHook('KEEP_OPEN');
+
+    // Hook with keepOpenOnCompletion: 0 — terminal session should disappear after exit
+    insertHookDefinition(stateDbPath, {
+      id: autoCloseHookId,
+      name: autoCloseHookName,
+      trigger: 'after_worktree_create',
+      shell: hookOne.shell,
+      script: hookOne.script,
+      scope: 'workspace',
+      executionTarget: 'trigger_worktree',
+      executionMode: 'terminal_tab',
+      keepOpenOnCompletion: 0,
+      timeoutSeconds: 90,
+    });
+
+    // Hook with keepOpenOnCompletion: 1 — terminal session should remain visible after exit
+    insertHookDefinition(stateDbPath, {
+      id: keepOpenHookId,
+      name: keepOpenHookName,
+      trigger: 'after_worktree_create',
+      shell: hookTwo.shell,
+      script: hookTwo.script,
+      scope: 'workspace',
+      executionTarget: 'trigger_worktree',
+      executionMode: 'terminal_tab',
+      keepOpenOnCompletion: 1,
+      timeoutSeconds: 90,
+    });
+
+    const targetBranch = 'feature/autoclose-hooks';
+    await createWorktreeViaUi(tauriPage, targetBranch);
+
+    const autoCloseSessionTab = tauriPage.locator(
+      `[data-testid="terminal-session-tab"][data-session-label^="${autoCloseHookName} ("]`
+    );
+    const keepOpenSessionTab = tauriPage.locator(
+      `[data-testid="terminal-session-tab"][data-session-label^="${keepOpenHookName} ("]`
+    );
+
+    // Both tabs should initially appear while their hooks are running.
+    await autoCloseSessionTab.waitFor(DEFAULT_UI_TIMEOUT);
+    await keepOpenSessionTab.waitFor(DEFAULT_UI_TIMEOUT);
+    await expect(autoCloseSessionTab).toBeVisible();
+    await expect(keepOpenSessionTab).toBeVisible();
+
+    // The auto-close session should disappear after the process exits.
+    const autoCloseDeadline = Date.now() + DEFAULT_UI_TIMEOUT;
+    while (Date.now() < autoCloseDeadline) {
+      const visible = await tauriPage.isVisible(
+        `[data-testid="terminal-session-tab"][data-session-label^="${autoCloseHookName} ("]`
+      );
+      if (!visible) break;
+      await new Promise(resolve => setTimeout(resolve, 150));
+    }
+    await expect(autoCloseSessionTab).not.toBeVisible();
+
+    // The keep-open session should still be visible.
+    await expect(keepOpenSessionTab).toBeVisible();
+  });
 });

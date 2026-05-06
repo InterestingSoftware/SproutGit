@@ -1331,8 +1331,7 @@
       ? 'workspace'
       : matchedWorktree?.branch ?? cwd.split('/').pop() ?? 'worktree';
     const sessionLabel = `${event.hookName} (${locationLabel})`;
-    const keepOpenOnCompletion =
-      operationHooks.find(hook => hook.id === event.hookId)?.keepOpenOnCompletion ?? false;
+    const keepOpenOnCompletion = event.keepOpenOnCompletion;
 
     if (matchedWorktree) {
       activeWorktreePath = matchedWorktree.path;

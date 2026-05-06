@@ -211,6 +211,7 @@ export type HookTerminalLaunchEvent = {
   shell: WorkspaceHookShell;
   cwd: string;
   command: string;
+  keepOpenOnCompletion: boolean;
 };
 
 export type DeviceCodeResponse = {

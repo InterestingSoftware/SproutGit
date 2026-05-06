@@ -131,6 +131,7 @@ struct HookTerminalLaunchEvent {
     shell: String,
     cwd: String,
     command: String,
+    keep_open_on_completion: bool,
 }
 
 fn emit_hook_progress(app_handle: Option<&tauri::AppHandle>, event: HookProgressEvent) {
@@ -934,6 +935,7 @@ async fn execute_hook(
                 shell: hook.shell.clone(),
                 cwd: path_to_frontend(worktree_path),
                 command,
+                keep_open_on_completion: hook.keep_open_on_completion,
             },
         );
 
