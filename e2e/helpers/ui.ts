@@ -130,24 +130,32 @@ async function waitForOptionalToastMessage(
   }
 }
 
-async function performVerifiedReload(tauriPage: AdapterPage) {
-  await waitForMainWindow(tauriPage, STARTUP_UI_TIMEOUT);
-  await tauriPage.evaluate('window.location.reload()');
-  // Use the full STARTUP_UI_TIMEOUT here (not a shorter hardcoded value).
-  // On Windows CI the Tauri webview re-initialises from scratch after a reload
-  // and can take 20-40 s to reach document.readyState === "complete".  The
-  // previously hardcoded 15 s budget was marginal on slower runners and caused
-  // spurious beforeEach timeouts after c3453d1 increased the binary size.
-  await waitForMainWindow(tauriPage, STARTUP_UI_TIMEOUT);
-}
-
 export async function reloadToHome(tauriPage: AdapterPage) {
+  // reloadToHome has a strict budget: the entire beforeEach (including this
+  // function) must complete within the 90 s per-test timeout.  Every await
+  // below can burn up to STARTUP_UI_TIMEOUT (45 s), so keeping the chain
+  // short is critical.
+  //
+  // Sequence rationale:
+  //  1. waitForMainWindow  — ensure the window is alive before touching it
+  //  2. ensureHome         — navigate to the home screen; on return the window
+  //                         is known-responsive (no extra waitForMainWindow needed)
+  //  3. clearCachedWorkspaceHint — fast localStorage clear
+  //  4. reload             — trigger a full webview reload
+  //  5. waitForHomeReady   — polls until document.readyState === "complete" AND
+  //                         the home-screen import button is visible; subsumes a
+  //                         separate post-reload waitForMainWindow call
+  //
+  // Previously steps 4 wrapped a waitForMainWindow before AND after the reload
+  // (inside performVerifiedReload).  Those two extra 45 s waits were redundant
+  // (the pre-reload wait duplicates ensureHome; the post-reload wait is subsumed
+  // by waitForHomeReady) and pushed the worst-case budget past 90 s on slow CI.
   for (let attempt = 0; attempt < 2; attempt += 1) {
     try {
       await waitForMainWindow(tauriPage, STARTUP_UI_TIMEOUT);
       await ensureHome(tauriPage);
       await clearCachedWorkspaceHint(tauriPage);
-      await performVerifiedReload(tauriPage);
+      await tauriPage.evaluate('window.location.reload()');
       await waitForHomeReady(tauriPage, STARTUP_UI_TIMEOUT);
       return;
     } catch (error) {
