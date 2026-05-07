@@ -8,7 +8,8 @@ const GITHUB_KEYCHAIN_SERVICE: &str = "dev.sproutgit.github";
 const GITHUB_KEYCHAIN_ACCOUNT: &str = "oauth-token";
 
 // ── Auth Storage ──
-// Token is stored in OS keychain when available, with file fallback.
+// Token is stored in ~/.sproutgit/auth.json (file-primary) with the OS keychain
+// used as a best-effort secondary copy. File is never cleared; reads prefer file.
 // Username is stored in ~/.sproutgit/auth.json with 0600 permissions.
 
 #[derive(Serialize, Deserialize, Default)]
@@ -163,11 +164,13 @@ fn git_helper_value_for_file(path: &std::path::Path) -> String {
 }
 
 pub fn get_stored_token() -> Option<String> {
-    if let Some(token) = read_token_from_keychain() {
+    // File is the authoritative store (always written first in store_token).
+    // Fall back to keychain for users who authenticated before the storage model
+    // changed and whose file copy may not exist yet.
+    if let Some(token) = read_auth_data().token {
         return Some(token);
     }
-
-    read_auth_data().token
+    read_token_from_keychain()
 }
 
 fn store_token(token: &str) -> Result<(), String> {
@@ -307,7 +310,8 @@ fn migrate_legacy_token_to_keychain() -> GitHubAuthStorageMigration {
     // File is now always the primary token store (keychain is best-effort).
     // This migration is kept for backwards compatibility but does not clear
     // the file copy even when a keychain entry is successfully written.
-    let had_legacy_file_token = read_auth_data().token.is_some();
+    let auth_data = read_auth_data();
+    let had_legacy_file_token = auth_data.token.is_some();
 
     if read_token_from_keychain().is_some() {
         return GitHubAuthStorageMigration {
@@ -318,7 +322,7 @@ fn migrate_legacy_token_to_keychain() -> GitHubAuthStorageMigration {
         };
     }
 
-    let Some(token) = read_auth_data().token else {
+    let Some(token) = auth_data.token else {
         return GitHubAuthStorageMigration {
             migrated: false,
             storage_backend: if had_legacy_file_token { "file" } else { "none" }.to_string(),

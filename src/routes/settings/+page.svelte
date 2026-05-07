@@ -270,7 +270,7 @@
     try {
       const dc = await githubDeviceFlowStart();
       deviceCode = dc;
-      void navigator.clipboard.writeText(dc.userCode);
+      navigator.clipboard.writeText(dc.userCode).catch(() => {});
       await openUrl(dc.verificationUri);
       setTimeout(async function poll() {
         try {
@@ -523,9 +523,13 @@
               >
               <button
                 class="rounded border border-(--sg-border) px-3 py-1.5 text-xs text-(--sg-text-dim) hover:bg-(--sg-surface-raised) hover:text-(--sg-text)"
-                onclick={() => {
-                  void navigator.clipboard.writeText(deviceCode!.userCode);
-                  toast.success('Code copied');
+                onclick={async () => {
+                  try {
+                    await navigator.clipboard.writeText(deviceCode!.userCode);
+                    toast.success('Code copied');
+                  } catch {
+                    toast.error('Could not copy to clipboard');
+                  }
                 }}>Copy</button
               >
             </div>

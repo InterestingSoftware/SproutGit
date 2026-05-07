@@ -1,6 +1,7 @@
 use std::collections::HashSet;
 use std::ffi::OsStr;
 use std::path::Path;
+use std::process::Stdio;
 use std::sync::Mutex;
 use std::time::Duration;
 
@@ -8,7 +9,7 @@ use notify_debouncer_mini::notify::RecursiveMode;
 use notify_debouncer_mini::{new_debouncer, Debouncer};
 use tauri::{AppHandle, Emitter, State};
 
-use crate::git::helpers::{normalize_existing_path, validate_no_control_chars};
+use crate::git::helpers::{git_command, normalize_existing_path, validate_no_control_chars, GitAction};
 
 // ── State ──
 
@@ -63,7 +64,31 @@ fn match_git_index_to_worktree(
     }
 }
 
-// ── Commands ──
+/// Returns `true` if `path` matches a gitignore rule inside `worktree_path`.
+/// Uses `git check-ignore -q -- <path>` (exit 0 = ignored, 1 = not ignored).
+/// Falls back to `false` (treat as real change) on any error so that a git
+/// failure never silently suppresses a legitimate filesystem event.
+///
+/// Tracks files that are *already committed* are not reported as ignored by
+/// git even if a gitignore pattern would match them, so this correctly passes
+/// tracked-file changes through.
+fn is_gitignored_path(worktree_path: &str, path: &Path) -> bool {
+    let Some(path_str) = path.to_str() else {
+        return false;
+    };
+
+    git_command(
+        GitAction::CheckIgnore,
+        &["-C", worktree_path, "check-ignore", "-q", "--", path_str],
+    )
+    .stdout(Stdio::null())
+    .stderr(Stdio::null())
+    .stdin(Stdio::null())
+    .output()
+    .map(|o| o.status.code() == Some(0))
+    .unwrap_or(false)
+}
+
 
 /// Start watching one or more worktree directories for filesystem changes.
 /// Emits a `worktree-changed` Tauri event (payload: the worktree path) when any
@@ -160,7 +185,13 @@ pub async fn start_watching_worktrees(
                 }
                 for wt_path in &paths_for_closure {
                     if event_path.starts_with(wt_path.as_str()) {
-                        affected.insert(wt_path.clone());
+                        // Skip gitignore check if the worktree is already queued
+                        // (a previous event in this batch was non-ignored).
+                        if affected.contains(wt_path)
+                            || !is_gitignored_path(wt_path, event_path)
+                        {
+                            affected.insert(wt_path.clone());
+                        }
                         break;
                     }
                 }

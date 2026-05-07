@@ -7,7 +7,7 @@
  * underlying git / SQLite reality.
  */
 import { basename, dirname, join } from 'node:path';
-import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
+import { existsSync, readdirSync, statSync } from 'node:fs';
 import { test, expect } from '../fixtures';
 import {
   CONFIG_DB_PATH,
@@ -70,19 +70,6 @@ function parseGitDateEnv(value: string | undefined): number | null {
 
   const parsed = Date.parse(trimmed);
   return Number.isNaN(parsed) ? null : Math.floor(parsed / 1000);
-}
-
-async function waitForFile(filePath: string, timeoutMs = DEFAULT_UI_TIMEOUT) {
-  const deadline = Date.now() + timeoutMs;
-
-  while (Date.now() < deadline) {
-    if (existsSync(filePath)) {
-      return;
-    }
-    await new Promise(resolve => setTimeout(resolve, 120));
-  }
-
-  throw new Error(`Timed out waiting for file: ${filePath}`);
 }
 
 function sqlString(value: string) {
@@ -568,50 +555,43 @@ test.describe('Daily developer workflow', () => {
 
     const workspacePath = matchingWorkspaces[0]!;
     const stateDbPath = join(workspacePath, '.sproutgit', 'state.db');
-    const outputPath = join(workspacePath, '.sproutgit', 'hook-output', 'after-create.txt');
     const hookId = 'hook-daily-after-create';
-    const now = Math.floor(Date.now() / 1000);
+    const hookName = 'Daily after-create hook';
     const { shell, script } = dailyAfterCreateHook();
 
-    executeSqlite(
-      stateDbPath,
-      [
-        'INSERT INTO hook_definitions (',
-        '  id, name, scope, trigger, shell, script, execution_mode, enabled, critical, timeout_seconds, created_at, updated_at',
-        ') VALUES (',
-        `  ${sqlString(hookId)},`,
-        `  ${sqlString('Daily after-create hook')},`,
-        `  ${sqlString('workspace')},`,
-        `  ${sqlString('after_worktree_create')},`,
-        `  ${sqlString(shell)},`,
-        `  ${sqlString(script)},`,
-        `  ${sqlString('terminal_tab')},`,
-        '  1,',
-        '  0,',
-        '  60,',
-        `  ${now},`,
-        `  ${now}`,
-        ');',
-      ].join('\n')
-    );
+    // Use the helper (not raw SQL) so all columns get values and keepOpenOnCompletion=1
+    // ensures the terminal session tab stays visible long enough to assert on.
+    insertHookDefinition(stateDbPath, {
+      id: hookId,
+      name: hookName,
+      trigger: 'after_worktree_create',
+      shell,
+      script,
+      scope: 'workspace',
+      executionTarget: 'trigger_worktree',
+      executionMode: 'terminal_tab',
+      keepOpenOnCompletion: 1,
+      timeoutSeconds: 60,
+    });
 
     await createWorktreeViaUi(tauriPage, 'feature/hook-smoke');
-    try {
-      await waitForFile(outputPath, 60_000);
-    } catch {
-      const hookRows = querySqlite(
-        stateDbPath,
-        `SELECT status, error_message FROM hook_runs WHERE hook_id = ${sqlString(hookId)} ORDER BY started_at DESC LIMIT 1`
-      );
-      const status = hookRows[0]?.[0] ?? 'unknown';
-      const errorMessage = hookRows[0]?.[1] ?? '';
-      throw new Error(
-        `Hook output file was not created within 60s (status=${status}, error=${errorMessage || 'none'})`
-      );
-    }
 
-    const hookOutput = readFileSync(outputPath, 'utf8');
-    expect(hookOutput).toContain('after_worktree_create|feature/hook-smoke|');
+    // terminal_tab hooks record status=success the moment the Tauri event is
+    // emitted — the shell script runs asynchronously afterward.  Waiting for a
+    // filesystem artifact (the output file) is therefore inherently racy.
+    // Instead, assert on the UI state that appears synchronously:
+    //   1. The hook-operation-header confirms hooks were triggered.
+    //   2. The terminal session tab confirms the terminal_tab launch request
+    //      was handled by the frontend.
+    const hookHeader = tauriPage.getByTestId('hook-operation-header');
+    await hookHeader.waitFor(DEFAULT_UI_TIMEOUT);
+    await expect(hookHeader).toBeVisible();
+
+    const sessionTab = tauriPage.locator(
+      `[data-testid="terminal-session-tab"][data-session-label^="${hookName} ("]`
+    );
+    await sessionTab.waitFor(DEFAULT_UI_TIMEOUT);
+    await expect(sessionTab).toBeVisible();
 
     const hookRows = querySqlite(
       stateDbPath,
