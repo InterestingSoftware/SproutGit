@@ -268,13 +268,17 @@ fn list_remotes_for_repo(repo_path: &str) -> Result<Vec<String>, String> {
         .collect())
 }
 
-fn current_branch_and_upstream(repo_path: &str) -> Result<(Option<String>, Option<String>), String> {
+fn current_branch_and_upstream(
+    repo_path: &str,
+) -> Result<(Option<String>, Option<String>), String> {
     let branch_output = run_git(
         GitAction::RevParse,
         &["-C", repo_path, "rev-parse", "--abbrev-ref", "HEAD"],
     )?;
     let branch_output = ensure_git_success(branch_output, "Failed to determine current branch")?;
-    let branch_name = String::from_utf8_lossy(&branch_output.stdout).trim().to_string();
+    let branch_name = String::from_utf8_lossy(&branch_output.stdout)
+        .trim()
+        .to_string();
     let branch = if branch_name.is_empty() || branch_name == "HEAD" {
         None
     } else {
@@ -294,7 +298,9 @@ fn current_branch_and_upstream(repo_path: &str) -> Result<(Option<String>, Optio
     )?;
 
     let upstream = if upstream_output.status.success() {
-        let value = String::from_utf8_lossy(&upstream_output.stdout).trim().to_string();
+        let value = String::from_utf8_lossy(&upstream_output.stdout)
+            .trim()
+            .to_string();
         if value.is_empty() {
             None
         } else {
@@ -682,8 +688,12 @@ pub async fn delete_managed_worktree(
         match out {
             Ok(o) if o.status.success() => {
                 let b = String::from_utf8_lossy(&o.stdout).trim().to_string();
-                if b == "HEAD" { None } else { Some(b) }
-            }
+                if b == "HEAD" {
+                    None
+                } else {
+                    Some(b)
+                }
+            },
             _ => None,
         }
     } else {
@@ -712,13 +722,7 @@ pub async fn delete_managed_worktree(
     if let Some(branch) = branch_to_delete {
         let out = run_git(
             GitAction::DeleteBranch,
-            &[
-                "-C",
-                &root_repo.to_string_lossy(),
-                "branch",
-                "-D",
-                &branch,
-            ],
+            &["-C", &root_repo.to_string_lossy(), "branch", "-D", &branch],
         )?;
         if !out.status.success() {
             let stderr = String::from_utf8_lossy(&out.stderr);
@@ -969,9 +973,8 @@ pub async fn pull_worktree(worktree_path: String) -> Result<String, String> {
     let wt_str = wt_path.to_string_lossy();
 
     let (branch, upstream) = current_branch_and_upstream(&wt_str)?;
-    let branch = branch.ok_or_else(|| {
-        "Cannot pull from detached HEAD; checkout a branch first".to_string()
-    })?;
+    let branch = branch
+        .ok_or_else(|| "Cannot pull from detached HEAD; checkout a branch first".to_string())?;
 
     if upstream.is_none() {
         return Err(format!(
@@ -994,9 +997,8 @@ pub async fn push_worktree_branch(
     let wt_str = wt_path.to_string_lossy();
 
     let (branch, upstream) = current_branch_and_upstream(&wt_str)?;
-    let branch = branch.ok_or_else(|| {
-        "Cannot push from detached HEAD; checkout a branch first".to_string()
-    })?;
+    let branch = branch
+        .ok_or_else(|| "Cannot push from detached HEAD; checkout a branch first".to_string())?;
 
     if upstream.is_some() {
         let push_output = run_git(GitAction::Push, &["-C", &wt_str, "push"])?;
@@ -1014,7 +1016,9 @@ pub async fn push_worktree_branch(
         let remote = validate_non_option_value(remote.trim(), "Publish remote")?.to_string();
         let remotes = list_remotes_for_repo(&wt_str)?;
         if !remotes.iter().any(|r| r == &remote) {
-            return Err(format!("Remote '{remote}' is not configured in this repository"));
+            return Err(format!(
+                "Remote '{remote}' is not configured in this repository"
+            ));
         }
         remote
     } else {

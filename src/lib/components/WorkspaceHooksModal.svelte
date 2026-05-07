@@ -678,7 +678,8 @@
                             </p>
                           </div>
                           <p class="mt-1 text-xs text-[var(--sg-text-faint)]">
-                            {executionTargetLabel(row.hook)} • {row.hook.timeoutSeconds}s • {row.hook.shell}
+                            {executionTargetLabel(row.hook)} • {row.hook.timeoutSeconds}s • {row
+                              .hook.shell}
                           </p>
                           <div class="mt-2 flex flex-wrap items-center gap-1.5">
                             <span
@@ -904,7 +905,8 @@
               <p class="mt-1 text-[11px] leading-relaxed text-[var(--sg-text-dim)]">
                 This hook runs on <span class="font-medium text-[var(--sg-text)]"
                   >{normalizeTriggerLabel(form.trigger)}</span
-                > and targets
+                >
+                and targets
                 <span class="font-medium text-[var(--sg-text)]"
                   >{selectedRunAgainstOption?.label}</span
                 >.
@@ -1031,8 +1033,8 @@
                     <span>
                       <span class="block text-xs text-[var(--sg-text)]">Keep run dialog open</span>
                       <span class="block text-[10px] text-[var(--sg-text-faint)]"
-                        >Keep the launched terminal tab open after the script exits.
-                        When off, hook-run terminal tabs auto-close on exit.</span
+                        >Keep the launched terminal tab open after the script exits. When off,
+                        hook-run terminal tabs auto-close on exit.</span
                       >
                     </span>
                   </Checkbox>

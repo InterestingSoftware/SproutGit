@@ -202,10 +202,7 @@ function dailyAfterCreateTerminalHook(marker: string) {
 
   return {
     shell: process.platform === 'darwin' ? 'zsh' : 'bash',
-    script: [
-      `echo "${marker}:$SPROUTGIT_WORKTREE_BRANCH"`,
-      'sleep 0.3',
-    ].join('\n'),
+    script: [`echo "${marker}:$SPROUTGIT_WORKTREE_BRANCH"`, 'sleep 0.3'].join('\n'),
   };
 }
 
@@ -739,5 +736,85 @@ test.describe('Daily developer workflow', () => {
     expect(hookRows.map(row => row[0])).toEqual([firstHookId, secondHookId]);
     expect(hookRows.map(row => row[1])).toEqual(['success', 'success']);
     expect(hookRows.map(row => row[2])).toEqual(['after_worktree_create', 'after_worktree_create']);
+  });
+
+  test('auto-closes terminal session when keepOpenOnCompletion is false', async ({ tauriPage }) => {
+    const repoPath = createTestRepo('daily-autoclose-hooks', { extraCommits: 1 });
+
+    await importRepoViaUi(tauriPage, repoPath);
+
+    const workspaceParent = dirname(dirname(repoPath));
+    const workspacePath = join(workspaceParent, `${basename(repoPath)}-workspace`);
+    const stateDbPath = join(workspacePath, '.sproutgit', 'state.db');
+
+    const autoCloseHookId = 'hook-daily-autoclose-0';
+    const keepOpenHookId = 'hook-daily-keepopen-1';
+    const autoCloseHookName = 'Daily auto-close hook';
+    const keepOpenHookName = 'Daily keep-open hook';
+
+    const hookOne = dailyAfterCreateTerminalHook('AUTO_CLOSE');
+    const hookTwo = dailyAfterCreateTerminalHook('KEEP_OPEN');
+
+    // Hook with keepOpenOnCompletion: 0 — terminal session should disappear after exit
+    insertHookDefinition(stateDbPath, {
+      id: autoCloseHookId,
+      name: autoCloseHookName,
+      trigger: 'after_worktree_create',
+      shell: hookOne.shell,
+      script: hookOne.script,
+      scope: 'workspace',
+      executionTarget: 'trigger_worktree',
+      executionMode: 'terminal_tab',
+      keepOpenOnCompletion: 0,
+      timeoutSeconds: 90,
+    });
+
+    // Hook with keepOpenOnCompletion: 1 — terminal session should remain visible after exit
+    insertHookDefinition(stateDbPath, {
+      id: keepOpenHookId,
+      name: keepOpenHookName,
+      trigger: 'after_worktree_create',
+      shell: hookTwo.shell,
+      script: hookTwo.script,
+      scope: 'workspace',
+      executionTarget: 'trigger_worktree',
+      executionMode: 'terminal_tab',
+      keepOpenOnCompletion: 1,
+      timeoutSeconds: 90,
+    });
+
+    // Serialize execution: keepOpen runs after autoClose, matching the multi-hooks
+    // pattern to avoid the hookTerminalLaunchRequest reactive-update race.
+    insertHookDependency(stateDbPath, keepOpenHookId, autoCloseHookId);
+
+    const targetBranch = 'feature/autoclose-hooks';
+    await createWorktreeViaUi(tauriPage, targetBranch);
+
+    const autoCloseSessionTab = tauriPage.locator(
+      `[data-testid="terminal-session-tab"][data-session-label^="${autoCloseHookName} ("]`
+    );
+    const keepOpenSessionTab = tauriPage.locator(
+      `[data-testid="terminal-session-tab"][data-session-label^="${keepOpenHookName} ("]`
+    );
+
+    // autoClose hook fires first (keepOpen depends on it). Wait for its tab.
+    await autoCloseSessionTab.waitFor(DEFAULT_UI_TIMEOUT);
+
+    // The auto-close session should disappear after the process exits
+    // (the backend appends `exit` to the command when keep_open_on_completion is false).
+    const autoCloseDeadline = Date.now() + DEFAULT_UI_TIMEOUT;
+    while (Date.now() < autoCloseDeadline) {
+      const visible = await tauriPage.isVisible(
+        `[data-testid="terminal-session-tab"][data-session-label^="${autoCloseHookName} ("]`
+      );
+      if (!visible) break;
+      await new Promise(resolve => setTimeout(resolve, 150));
+    }
+    await expect(autoCloseSessionTab).not.toBeVisible();
+
+    // keepOpen hook runs after autoClose completes. Wait for its tab to appear
+    // and verify it remains visible (shell stays alive — no exit appended).
+    await keepOpenSessionTab.waitFor(DEFAULT_UI_TIMEOUT);
+    await expect(keepOpenSessionTab).toBeVisible();
   });
 });

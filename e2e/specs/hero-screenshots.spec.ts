@@ -261,9 +261,28 @@ test.describe('Hero screenshots @screenshots', () => {
     const hookSetupId = 'hero-hook-setup';
     const hookLintId = 'hero-hook-lint';
     const hookCleanId = 'hero-hook-clean';
-    seedHook(stateDbPath, hookSetupId, 'Set up dev environment', 'after_worktree_create', 'terminal_tab', 1);
-    seedHook(stateDbPath, hookLintId, 'Run linter & type check', 'after_worktree_create', 'terminal_tab');
-    seedHook(stateDbPath, hookCleanId, 'Clean build cache', 'before_worktree_remove', 'terminal_tab');
+    seedHook(
+      stateDbPath,
+      hookSetupId,
+      'Set up dev environment',
+      'after_worktree_create',
+      'terminal_tab',
+      1
+    );
+    seedHook(
+      stateDbPath,
+      hookLintId,
+      'Run linter & type check',
+      'after_worktree_create',
+      'terminal_tab'
+    );
+    seedHook(
+      stateDbPath,
+      hookCleanId,
+      'Clean build cache',
+      'before_worktree_remove',
+      'terminal_tab'
+    );
     // "Run linter" depends on "Set up dev environment" so it shows indentation.
     seedHookDependency(stateDbPath, hookLintId, hookSetupId);
 

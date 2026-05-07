@@ -837,9 +837,7 @@
                     class="mb-3 max-h-40 overflow-y-auto rounded border border-(--sg-border) bg-(--sg-bg) p-2"
                   >
                     <pre
-                      class="whitespace-pre-wrap text-xs leading-relaxed text-(--sg-text-dim)"
-                      >{releaseNotes}</pre
-                    >
+                      class="whitespace-pre-wrap text-xs leading-relaxed text-(--sg-text-dim)">{releaseNotes}</pre>
                   </div>
                 {/if}
                 <button

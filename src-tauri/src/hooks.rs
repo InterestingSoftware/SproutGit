@@ -253,10 +253,7 @@ fn trigger_supports_initiating_worktree(trigger: &str) -> bool {
     )
 }
 
-fn validate_execution_preferences(
-    trigger: &str,
-    execution_target: &str,
-) -> Result<(), String> {
+fn validate_execution_preferences(trigger: &str, execution_target: &str) -> Result<(), String> {
     if execution_target == "initiating_worktree" && !trigger_supports_initiating_worktree(trigger) {
         return Err(format!(
             "Trigger '{trigger}' cannot target the initiating worktree"

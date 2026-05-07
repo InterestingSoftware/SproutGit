@@ -233,7 +233,10 @@
     operationLogs = [...operationLogs, line];
   }
 
-  function updateHookTerminalRun(hookId: string, updater: (current: HookTerminalRun) => HookTerminalRun) {
+  function updateHookTerminalRun(
+    hookId: string,
+    updater: (current: HookTerminalRun) => HookTerminalRun
+  ) {
     const idx = hookTerminalRuns.findIndex(run => run.hookId === hookId);
     if (idx < 0) return;
     const current = hookTerminalRuns[idx];
@@ -1329,10 +1332,9 @@
     const matchedWorktree = findPath(worktrees, wt => wt.path, cwd);
     const locationLabel = pathsEqual(cwd, workspace?.workspacePath)
       ? 'workspace'
-      : matchedWorktree?.branch ?? cwd.split('/').pop() ?? 'worktree';
+      : (matchedWorktree?.branch ?? cwd.split('/').pop() ?? 'worktree');
     const sessionLabel = `${event.hookName} (${locationLabel})`;
-    const keepOpenOnCompletion =
-      operationHooks.find(hook => hook.id === event.hookId)?.keepOpenOnCompletion ?? false;
+    const keepOpenOnCompletion = event.keepOpenOnCompletion;
 
     if (matchedWorktree) {
       activeWorktreePath = matchedWorktree.path;
@@ -1385,9 +1387,7 @@
       command: event.command,
       keepOpenOnCompletion,
     };
-    appendOperationLog(
-      `Opened ${event.hookName} in ${locationLabel} terminal.`
-    );
+    appendOperationLog(`Opened ${event.hookName} in ${locationLabel} terminal.`);
   }
 
   function handleCreateWorktreeFromGraph(fromRef: string) {
@@ -2200,7 +2200,10 @@
             <button
               type="button"
               onclick={() => void runActiveWorktreeAction('pull')}
-              disabled={!selectedWorktree || activeIsRoot || selectedWorktree.detached || syncingAction !== null}
+              disabled={!selectedWorktree ||
+                activeIsRoot ||
+                selectedWorktree.detached ||
+                syncingAction !== null}
               class="rounded-md p-1.5 text-[var(--sg-text-dim)] hover:bg-[var(--sg-surface-raised)] hover:text-[var(--sg-text)] disabled:text-[var(--sg-text-faint)] disabled:opacity-50"
               title={selectedWorktree?.detached
                 ? 'Pull unavailable for detached HEAD'
@@ -2217,7 +2220,10 @@
             <button
               type="button"
               onclick={() => void runActiveWorktreeAction('push')}
-              disabled={!selectedWorktree || activeIsRoot || selectedWorktree.detached || syncingAction !== null}
+              disabled={!selectedWorktree ||
+                activeIsRoot ||
+                selectedWorktree.detached ||
+                syncingAction !== null}
               class="rounded-md p-1.5 text-[var(--sg-text-dim)] hover:bg-[var(--sg-surface-raised)] hover:text-[var(--sg-text)] disabled:text-[var(--sg-text-faint)] disabled:opacity-50"
               title={selectedWorktree?.detached
                 ? 'Push unavailable for detached HEAD'
@@ -2495,7 +2501,9 @@
             class="flex items-center justify-between gap-3 border-b border-[var(--sg-border)] bg-[var(--sg-surface-raised)] px-3 py-2"
           >
             <div class="min-w-0">
-              <p class="truncate text-xs font-semibold text-[var(--sg-text)]">{operationStatus.title}</p>
+              <p class="truncate text-xs font-semibold text-[var(--sg-text)]">
+                {operationStatus.title}
+              </p>
               <p class="truncate text-[10px] text-[var(--sg-text-faint)]">
                 {#if operationCompleted}
                   {operationStatus.detail} Completed.
@@ -2509,11 +2517,26 @@
                 <p class="truncate text-[10px] text-[var(--sg-text-faint)]">{lastOperationLog}</p>
               {/if}
               <div class="mt-1 flex flex-wrap items-center gap-1 text-[10px]">
-                <span class="rounded border border-[var(--sg-border)] bg-[var(--sg-surface)] px-1.5 py-px text-[var(--sg-text-faint)]">Pending: {hookStatusSummary.pending}</span>
-                <span class="rounded border border-[var(--sg-accent)]/40 bg-[var(--sg-accent)]/15 px-1.5 py-px text-[var(--sg-accent)]">Running: {hookStatusSummary.running}</span>
-                <span class="rounded border border-[var(--sg-primary)]/40 bg-[var(--sg-primary)]/15 px-1.5 py-px text-[var(--sg-primary)]">Complete: {hookStatusSummary.success}</span>
-                <span class="rounded border border-[var(--sg-warning)]/40 bg-[var(--sg-warning)]/15 px-1.5 py-px text-[var(--sg-warning)]">Skipped: {hookStatusSummary.skipped}</span>
-                <span class="rounded border border-[var(--sg-danger)]/40 bg-[var(--sg-danger)]/15 px-1.5 py-px text-[var(--sg-danger)]">Errors: {hookStatusSummary.error + hookStatusSummary.timed_out}</span>
+                <span
+                  class="rounded border border-[var(--sg-border)] bg-[var(--sg-surface)] px-1.5 py-px text-[var(--sg-text-faint)]"
+                  >Pending: {hookStatusSummary.pending}</span
+                >
+                <span
+                  class="rounded border border-[var(--sg-accent)]/40 bg-[var(--sg-accent)]/15 px-1.5 py-px text-[var(--sg-accent)]"
+                  >Running: {hookStatusSummary.running}</span
+                >
+                <span
+                  class="rounded border border-[var(--sg-primary)]/40 bg-[var(--sg-primary)]/15 px-1.5 py-px text-[var(--sg-primary)]"
+                  >Complete: {hookStatusSummary.success}</span
+                >
+                <span
+                  class="rounded border border-[var(--sg-warning)]/40 bg-[var(--sg-warning)]/15 px-1.5 py-px text-[var(--sg-warning)]"
+                  >Skipped: {hookStatusSummary.skipped}</span
+                >
+                <span
+                  class="rounded border border-[var(--sg-danger)]/40 bg-[var(--sg-danger)]/15 px-1.5 py-px text-[var(--sg-danger)]"
+                  >Errors: {hookStatusSummary.error + hookStatusSummary.timed_out}</span
+                >
               </div>
             </div>
             <div class="flex shrink-0 items-center gap-2">
@@ -2936,7 +2959,9 @@
             </div>
           {:else if activeTab === 'terminal' && !activeTerminalPath}
             <div class="flex flex-1 items-center justify-center">
-              <p class="text-sm text-[var(--sg-text-faint)]">Select a worktree or workspace terminal target</p>
+              <p class="text-sm text-[var(--sg-text-faint)]">
+                Select a worktree or workspace terminal target
+              </p>
             </div>
           {:else if activeTab !== 'terminal'}
             <div class="flex flex-1 items-center justify-center">

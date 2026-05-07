@@ -194,8 +194,8 @@
     try {
       // When autoCloseOnExit is enabled, spawn non-interactively so the process
       // exits naturally when the script completes.  This avoids the PTY-input
-      // timing race on Windows ConPTY (where the shell won't exit on its own
-      // after running an interactive-mode script).
+      // timing race on Windows ConPTY (where `exit` sent via PTY may never be
+      // processed if the ConPTY output buffer isn't fully drained first).
       const nonInteractiveCmd = autoCloseOnExit && initialCommand.trim() ? initialCommand : null;
 
       const id = await spawnTerminal(shell, cwd, term.cols, term.rows, nonInteractiveCmd);
