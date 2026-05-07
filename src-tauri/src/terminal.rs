@@ -1,6 +1,7 @@
 use std::collections::HashMap;
-use std::io::{Read, Write};
+use std::io::{BufRead, BufReader, Read, Write};
 use std::path::PathBuf;
+use std::process::Stdio;
 use std::sync::{Arc, Mutex};
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -129,6 +130,91 @@ pub async fn spawn_terminal(
 
     let pty_id = generate_pty_id();
 
+    // Non-interactive mode: skip the PTY entirely and run the script via a
+    // regular piped process.  On Windows ConPTY, the PTY master reader can
+    // block indefinitely after the child exits (the pseudo-console output pipe
+    // does not signal EOF until the ConPTY handle is explicitly closed), which
+    // would prevent `terminal-closed` from ever being emitted.  A plain
+    // `std::process::Command` with piped stdout/stderr exits cleanly and emits
+    // the event as soon as the process terminates.
+    if let Some(ref script) = command {
+        let mut proc_cmd = std::process::Command::new(&shell);
+        proc_cmd.current_dir(&cwd_path);
+        proc_cmd.env("GIT_TERMINAL_PROMPT", "0");
+        proc_cmd.stdout(Stdio::piped());
+        proc_cmd.stderr(Stdio::piped());
+
+        if matches!(shell.as_str(), "pwsh" | "powershell") {
+            proc_cmd.arg("-NonInteractive");
+            proc_cmd.arg("-Command");
+            proc_cmd.arg(script.as_str());
+        } else {
+            proc_cmd.arg("-c");
+            proc_cmd.arg(script.as_str());
+        }
+
+        // Suppress the console window on Windows so no extra window flashes.
+        #[cfg(target_os = "windows")]
+        {
+            use std::os::windows::process::CommandExt;
+            const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+            proc_cmd.creation_flags(CREATE_NO_WINDOW);
+        }
+
+        let mut child = proc_cmd
+            .spawn()
+            .map_err(|e| format!("Failed to spawn shell '{shell}': {e}"))?;
+
+        let pty_id_clone = pty_id.clone();
+        let app_stdout = app_handle.clone();
+        let app_stderr = app_handle.clone();
+        let app_closed = app_handle.clone();
+
+        // Stream stdout
+        if let Some(stdout) = child.stdout.take() {
+            let id = pty_id_clone.clone();
+            std::thread::spawn(move || {
+                let reader = BufReader::new(stdout);
+                for line in reader.lines() {
+                    match line {
+                        Ok(l) => {
+                            let _ = app_stdout
+                                .emit(&format!("terminal-output-{id}"), format!("{l}\r\n"));
+                        }
+                        Err(_) => break,
+                    }
+                }
+            });
+        }
+
+        // Stream stderr
+        if let Some(stderr) = child.stderr.take() {
+            let id = pty_id_clone.clone();
+            std::thread::spawn(move || {
+                let reader = BufReader::new(stderr);
+                for line in reader.lines() {
+                    match line {
+                        Ok(l) => {
+                            let _ = app_stderr
+                                .emit(&format!("terminal-output-{id}"), format!("{l}\r\n"));
+                        }
+                        Err(_) => break,
+                    }
+                }
+            });
+        }
+
+        // Wait for exit, then fire terminal-closed
+        std::thread::spawn(move || {
+            let _ = child.wait();
+            let _ = app_closed.emit(&format!("terminal-closed-{pty_id_clone}"), ());
+        });
+
+        return Ok(pty_id);
+    }
+
+    // Interactive PTY mode (command == None) ──────────────────────────────────
+
     let pty_system = native_pty_system();
     let pair = pty_system
         .openpty(PtySize {
@@ -144,19 +230,6 @@ pub async fn spawn_terminal(
 
     // Set GIT_TERMINAL_PROMPT=0 so git doesn't hang waiting for interactive input
     cmd.env("GIT_TERMINAL_PROMPT", "0");
-
-    // Non-interactive mode: pass the script as a shell argument so the process
-    // exits naturally when the script completes (no PTY-input timing required).
-    if let Some(ref script) = command {
-        if matches!(shell.as_str(), "pwsh" | "powershell") {
-            cmd.arg("-NonInteractive");
-            cmd.arg("-Command");
-            cmd.arg(script.as_str());
-        } else {
-            cmd.arg("-c");
-            cmd.arg(script.as_str());
-        }
-    }
 
     pair.slave
         .spawn_command(cmd)
