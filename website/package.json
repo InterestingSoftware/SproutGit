@@ -9,12 +9,12 @@
   },
   "dependencies": {
     "@fontsource/space-grotesk": "^5.2.10",
-    "astro": "^6.1.10",
+    "astro": "^6.4.2",
     "sharp": "^0.34.5"
   },
   "devDependencies": {
-    "@tailwindcss/vite": "4.2.4",
-    "tailwindcss": "4.2.4",
-    "vite": "^7.3.2"
+    "@tailwindcss/vite": "4.3.0",
+    "tailwindcss": "4.3.0",
+    "vite": "^8.0.14"
   }
 }
