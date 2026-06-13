@@ -14,11 +14,11 @@
     "postinstall": "node scripts/patch-electron-plist.mjs"
   },
   "devDependencies": {
-    "concurrently": "^9.2.1",
+    "concurrently": "^10.0.3",
     "cross-env": "^10.1.0",
-    "oxlint": "^1.64.0",
-    "prettier": "^3.8.3",
-    "turbo": "^2.9.12"
+    "oxlint": "^1.69.0",
+    "prettier": "^3.8.4",
+    "turbo": "^2.9.18"
   },
   "packageManager": "pnpm@11.1.1",
   "engines": {
