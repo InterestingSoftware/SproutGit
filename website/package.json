@@ -9,7 +9,7 @@
   },
   "dependencies": {
     "@fontsource/space-grotesk": "^5.2.10",
-    "astro": "^6.1.10",
+    "astro": "^6.4.6",
     "sharp": "^0.34.5"
   },
   "devDependencies": {
