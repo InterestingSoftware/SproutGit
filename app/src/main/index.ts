@@ -148,9 +148,9 @@ function createWindow(): BrowserWindow {
       // CDP screenshots still work because they capture the renderer's backing
       // store, not screen pixels. (macOS clamps off-screen x/y back on-screen,
       // so position tricks don't work — this is the reliable alternative.)
-      win.showInactive();
       win.setOpacity(0);
       win.setIgnoreMouseEvents(true);
+      win.showInactive();
     } else {
       win.show();
     }
