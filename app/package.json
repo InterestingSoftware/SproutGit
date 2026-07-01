@@ -19,6 +19,7 @@
   "build": {
     "appId": "com.sproutgit.app",
     "productName": "SproutGit",
+    "executableName": "SproutGit",
     "copyright": "Copyright © 2026 SproutGit contributors",
     "directories": {
       "buildResources": "build",
