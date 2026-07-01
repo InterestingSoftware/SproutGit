@@ -5,16 +5,25 @@ import {
   validateBranchName,
 } from '@sproutgit/types';
 import { normalize, resolve, sep } from 'node:path';
+import { realpathSync } from 'node:fs';
 import { gitForPath } from './client.js';
 
 /**
  * Returns all worktrees for the repo at `repoPath`.
  * Parses `git worktree list --porcelain` for reliable structured output.
+ *
+ * When `managedWorktreesPath` is supplied, each entry is classified via
+ * `isExternal` — true when it lives outside that directory and isn't the
+ * root itself (e.g. a worktree registered by an external tool). Without it,
+ * classification defaults to `false` since it can't be determined safely.
  */
-export async function listWorktrees(repoPath: string): Promise<WorktreeListResult> {
+export async function listWorktrees(
+  repoPath: string,
+  managedWorktreesPath?: string
+): Promise<WorktreeListResult> {
   const git = gitForPath(repoPath);
   const raw = await git.raw(['worktree', 'list', '--porcelain']);
-  const worktrees = parseWorktreePorcelain(raw);
+  const worktrees = parseWorktreePorcelain(raw, repoPath, managedWorktreesPath);
   return { repoPath, worktrees };
 }
 
@@ -79,7 +88,51 @@ export async function deleteManagedWorktree(
 
 // ─── Internal helpers ─────────────────────────────────────────────────────────
 
-function parseWorktreePorcelain(raw: string): WorktreeInfo[] {
+/**
+ * Resolves symlinks (e.g. macOS's /var → /private/var) so paths that refer
+ * to the same directory compare equal even if one side went through a
+ * symlinked temp dir and the other didn't. Falls back to a plain `resolve`
+ * for paths that don't exist (already-removed worktrees, races, etc).
+ *
+ * Exported so other IPC handlers that compare a caller-supplied path against
+ * git's own worktree list (e.g. deletion validation, hook metadata lookup)
+ * use the same symlink-safe comparison instead of a plain `resolve()`.
+ */
+export function canonicalize(path: string): string {
+  try {
+    return realpathSync.native(path);
+  } catch {
+    return resolve(path);
+  }
+}
+
+/**
+ * True when `childPath` is `parentPath` itself or nested inside it, checked
+ * on a path-separator boundary (so `worktrees-other` doesn't match `worktrees`).
+ * Mirrors the boundary check used by TerminalManagerWithMeta.closeForPath.
+ */
+function isPathWithin(childPath: string, parentPath: string): boolean {
+  const parent = canonicalize(parentPath);
+  const child = canonicalize(childPath);
+  return child === parent || child.startsWith(parent + sep);
+}
+
+/** See `listWorktrees` for the classification rules this implements. */
+export function classifyIsExternal(
+  worktreePath: string,
+  repoPath: string,
+  managedWorktreesPath?: string
+): boolean {
+  if (isPathWithin(worktreePath, repoPath)) return false;
+  if (!managedWorktreesPath) return false;
+  return !isPathWithin(worktreePath, managedWorktreesPath);
+}
+
+function parseWorktreePorcelain(
+  raw: string,
+  repoPath: string,
+  managedWorktreesPath?: string
+): WorktreeInfo[] {
   const worktrees: WorktreeInfo[] = [];
   const blocks = raw.trim().split(/\n\n+/);
 
@@ -92,13 +145,16 @@ function parseWorktreePorcelain(raw: string): WorktreeInfo[] {
 
     if (!pathLine) continue;
 
+    const path = normalize(pathLine.replace('worktree ', '').trim());
+
     worktrees.push({
-      path: normalize(pathLine.replace('worktree ', '').trim()),
+      path,
       head: headLine ? headLine.replace('HEAD ', '').trim() : null,
       branch: branchLine
         ? branchLine.replace('branch refs/heads/', '').trim()
         : null,
       detached,
+      isExternal: classifyIsExternal(path, repoPath, managedWorktreesPath),
     });
   }
 

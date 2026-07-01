@@ -9,6 +9,7 @@ import { IPC } from '@sproutgit/types';
 import type { WorkspaceHookTrigger, WorkspaceHookShell, HookProgressEvent, WorktreeSwitchHookSource } from '@sproutgit/types';
 import { openWorkspaceDb, eq } from '@sproutgit/database';
 import { hookDefinitions, worktreeMetadata } from '@sproutgit/database/schema/workspace';
+import { listWorktrees, canonicalize } from '@sproutgit/git/worktrees';
 import { join, basename, normalize } from 'path';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
@@ -65,11 +66,45 @@ async function runHook(args: RunHookArgs, win: BrowserWindow): Promise<void> {
   if (!hook || !hook.enabled) { db.close(); return; }
 
   // Look up worktree metadata for branch / source ref
-  const wtMeta = db
+  let wtMeta = db
     .select()
     .from(worktreeMetadata)
     .where(eq(worktreeMetadata.worktreePath, args.worktreePath))
     .get();
+
+  if (!wtMeta) {
+    // First time we've seen this worktree — likely one registered by an
+    // external tool (e.g. Claude Code) rather than created through the app.
+    // Lazily record its provenance so hook env vars aren't empty; branch
+    // comes from git itself, sourceRef is unknown since we didn't create it.
+    try {
+      const rootRepoPath = join(args.workspacePath, '.sproutgit', 'root');
+      const { worktrees } = await listWorktrees(rootRepoPath);
+      // canonicalize() resolves symlinks (e.g. macOS's /var vs /private/var)
+      // so a worktree under a symlinked temp dir still matches here.
+      const targetCanonical = canonicalize(args.worktreePath);
+      const registered = worktrees.find(w => canonicalize(w.path) === targetCanonical);
+      if (registered) {
+        const now = new Date();
+        db.insert(worktreeMetadata)
+          .values({
+            worktreePath: args.worktreePath,
+            branch: registered.branch ?? '',
+            sourceRef: '',
+            rootRepoPath,
+            createdAt: now,
+            updatedAt: now,
+          })
+          .onConflictDoNothing()
+          .run();
+        wtMeta = db
+          .select()
+          .from(worktreeMetadata)
+          .where(eq(worktreeMetadata.worktreePath, args.worktreePath))
+          .get();
+      }
+    } catch { /* best-effort — hooks still run with empty branch/sourceRef */ }
+  }
   db.close();
 
   const osName = process.platform === 'darwin' ? 'macos'

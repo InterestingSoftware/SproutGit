@@ -7,7 +7,7 @@ import {
   useContextMenu,
   UpdateBadge,
 } from '@sproutgit/ui';
-import { GitBranch, RefreshCw, ArrowDownToLine, ArrowUpFromLine, Download, Plus, Sliders, Trash2, MoreHorizontal, FolderPen, FolderSearch, SquareTerminal, Play, Copy, CopyPlus, Bot, ChevronDown } from 'lucide-react';
+import { GitBranch, RefreshCw, ArrowDownToLine, ArrowUpFromLine, Download, Plus, Sliders, Trash2, MoreHorizontal, FolderPen, FolderSearch, SquareTerminal, Play, Copy, CopyPlus, Bot, ChevronDown, Link2, Rocket } from 'lucide-react';
 import type { WorktreeInfo, WorkspaceStatus, AgentRoster } from '@sproutgit/types';
 import type { UpdateState } from '@sproutgit/ui';
 
@@ -34,6 +34,7 @@ type Props = {
   onOpenTerminal: (cwd: string, label?: string) => void;
   onOpenHooksModal: () => void;
   onOpenRunHookModal: (wt: WorktreeInfo) => void;
+  onRunCreateHooks: (wt: WorktreeInfo) => void;
   onDeleteWorktree: (wt: WorktreeInfo) => void;
   onLaunchAgent: (worktreePath: string, agentId?: string) => void;
 };
@@ -80,6 +81,7 @@ export function WorktreeSidebar({
   onOpenTerminal,
   onOpenHooksModal,
   onOpenRunHookModal,
+  onRunCreateHooks,
   onDeleteWorktree,
   onLaunchAgent,
 }: Props) {
@@ -115,17 +117,16 @@ export function WorktreeSidebar({
   }
 
   const rootPath = workspaceStatus?.rootPath ?? '';
-  const managedPath = workspaceStatus?.worktreesPath ?? '';
   const nonRootWorktrees = worktrees.filter(wt => wt.path !== rootPath);
-  const underManaged = nonRootWorktrees.filter(wt => managedPath && wt.path.startsWith(managedPath));
+  const underManaged = nonRootWorktrees.filter(wt => !wt.isExternal);
   const persistentWorktrees = underManaged.filter(wt => isPersistentBranch(wt.branch));
   const taskWorktrees = underManaged.filter(wt => !isPersistentBranch(wt.branch));
-  const externalWorktrees = nonRootWorktrees.filter(wt => !managedPath || !wt.path.startsWith(managedPath));
+  const externalWorktrees = nonRootWorktrees.filter(wt => wt.isExternal);
 
   // Flat sorted inventory — managed → persistent → external, alpha within section
   const inventoryRows: InventoryRow[] = [];
   if (creatingWorktree && pendingCreationBranch && !taskWorktrees.some(wt => wt.branch === pendingCreationBranch)) {
-    inventoryRows.push({ wt: { path: PENDING_PATH, branch: pendingCreationBranch, head: null, detached: false }, typeLabel: 'Managed', section: 'managed' });
+    inventoryRows.push({ wt: { path: PENDING_PATH, branch: pendingCreationBranch, head: null, detached: false, isExternal: false }, typeLabel: 'Managed', section: 'managed' });
   }
   for (const wt of taskWorktrees) inventoryRows.push({ wt, typeLabel: 'Managed', section: 'managed' });
   for (const wt of persistentWorktrees) inventoryRows.push({ wt, typeLabel: 'Persistent', section: 'persistent' });
@@ -237,7 +238,7 @@ export function WorktreeSidebar({
               <div
                 key={row.wt.path}
                 className={`sg-worktree-btn group flex items-center gap-2 px-3 py-2 transition-colors ${isPending ? 'cursor-not-allowed opacity-60' : 'cursor-pointer hover:bg-(--sg-surface-raised)'} ${idx > 0 ? 'border-t border-(--sg-border-subtle)' : ''}`}
-                data-testid="worktree-item"
+                data-testid={row.wt.isExternal ? 'worktree-item-external' : 'worktree-item'}
                 data-branch={row.wt.branch ?? ''}
                 data-path={row.wt.path}
                 data-active={isActive ? 'true' : 'false'}
@@ -274,6 +275,9 @@ export function WorktreeSidebar({
                     { label: 'Push', icon: <ArrowUpFromLine size={14} />, onClick: () => void api.push(row.wt.path).then(() => { toast('Pushed', 'success'); }).catch((err: unknown) => toast(String(err), 'error')) },
                     'separator',
                     { label: 'Run Hook…', icon: <Play size={14} />, onClick: () => onOpenRunHookModal(row.wt) },
+                    ...(row.wt.isExternal
+                      ? [{ label: 'Run Create Hooks…', icon: <Rocket size={14} />, onClick: () => onRunCreateHooks(row.wt) }]
+                      : []),
                     'separator',
                     { label: 'Copy Branch Name', icon: <Copy size={14} />, onClick: () => void navigator.clipboard.writeText(row.wt.branch ?? '') },
                     { label: 'Copy Path', icon: <CopyPlus size={14} />, onClick: () => void navigator.clipboard.writeText(row.wt.path) },
@@ -299,6 +303,9 @@ export function WorktreeSidebar({
 
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-1.5">
+                    {row.wt.isExternal && (
+                      <Link2 size={11} className="shrink-0 text-(--sg-text-faint)" aria-hidden="true" />
+                    )}
                     <p className={`sg-worktree-label truncate text-xs font-semibold ${isActive ? 'text-(--sg-primary)' : 'text-(--sg-text)'}`}>
                       {row.wt.branch ?? (row.wt.detached ? 'detached' : row.wt.path.split('/').pop())}
                     </p>
@@ -365,6 +372,9 @@ export function WorktreeSidebar({
                         ...(agentMenuItems(row.wt.path).length > 0 ? ['separator' as const, ...agentMenuItems(row.wt.path)] : []),
                         'separator',
                         { label: 'Run Hook…', icon: <Play size={14} />, onClick: () => onOpenRunHookModal(row.wt) },
+                        ...(row.wt.isExternal
+                          ? [{ label: 'Run Create Hooks…', icon: <Rocket size={14} />, onClick: () => onRunCreateHooks(row.wt) }]
+                          : []),
                         'separator',
                         { label: 'Copy Branch Name', icon: <Copy size={14} />, onClick: () => void navigator.clipboard.writeText(row.wt.branch ?? '') },
                         { label: 'Copy Path', icon: <CopyPlus size={14} />, onClick: () => void navigator.clipboard.writeText(row.wt.path) },

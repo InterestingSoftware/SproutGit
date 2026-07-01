@@ -45,10 +45,10 @@ export function useWorkspaceStatus(workspacePath: string) {
 
 // ── Worktrees ─────────────────────────────────────────────────────────────────
 
-export function useWorktrees(gitRepoPath: string) {
+export function useWorktrees(gitRepoPath: string, managedWorktreesPath?: string) {
   return useQuery({
     queryKey: qk.worktrees(gitRepoPath),
-    queryFn: () => api.listWorktrees(gitRepoPath) as Promise<WorktreeInfo[]>,
+    queryFn: () => api.listWorktrees(gitRepoPath, managedWorktreesPath) as Promise<WorktreeInfo[]>,
     enabled: !!gitRepoPath,
   });
 }
@@ -262,7 +262,7 @@ export function usePush(worktreePath: string) {
 export function useDeleteWorktree(gitRepoPath: string) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (args: { rootRepoPath: string; worktreePath: string; deleteBranch: boolean; branchName?: string | null }) =>
+    mutationFn: (args: { rootRepoPath: string; managedWorktreesPath?: string; worktreePath: string; deleteBranch: boolean; branchName?: string | null }) =>
       api.deleteWorktree(args) as Promise<void>,
     onSuccess: (_data, args) => {
       // Remove cached status for the deleted worktree so no in-flight refetch

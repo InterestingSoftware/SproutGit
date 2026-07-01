@@ -128,7 +128,7 @@ function WorkspaceInner() {
   const {
     data: worktrees = [],
     isLoading: worktreesLoading,
-  } = useWorktrees(gitRepoPath);
+  } = useWorktrees(gitRepoPath, workspaceStatus?.worktreesPath);
 
   const {
     data: commits = [],
@@ -279,6 +279,26 @@ function WorkspaceInner() {
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [workspacePath, gitRepoPath]);
+
+  // ── Refresh worktrees when the window regains focus ───────────────────
+  // Catches worktrees an external tool (e.g. Claude Code) registered while
+  // this window was unfocused, on top of the filesystem watcher above.
+  useEffect(() => {
+    if (!gitRepoPath) return;
+    const onFocus = () => void qc.invalidateQueries({ queryKey: qk.worktrees(gitRepoPath) });
+    window.addEventListener('focus', onFocus);
+    return () => window.removeEventListener('focus', onFocus);
+  }, [gitRepoPath, qc]);
+
+  // ── Drop worktree_metadata rows for worktrees that have disappeared ────
+  // Best-effort bookkeeping cleanup only — never runs `git worktree prune`.
+  useEffect(() => {
+    if (!workspacePath || worktrees.length === 0) return;
+    void api.pruneWorktreeMetadata({
+      workspacePath,
+      activeWorktreePaths: worktrees.map(w => w.path),
+    }).catch(() => undefined);
+  }, [workspacePath, worktrees]);
 
   // ── Session persistence ───────────────────────────────────────────────
 
@@ -529,9 +549,11 @@ function WorkspaceInner() {
     if (isDeletingActive) useWorkspaceStore.setState({ activeWorktree: nextWt });
     await deleteWorktreeMutation.mutateAsync({
       rootRepoPath: gitRepoPath,
+      ...(workspaceStatus?.worktreesPath ? { managedWorktreesPath: workspaceStatus.worktreesPath } : {}),
       worktreePath: wt.path,
-      // Delete the branch for managed worktrees (those living under .sproutgit/worktrees/)
-      deleteBranch: !!(workspaceStatus?.worktreesPath && wt.path.startsWith(workspaceStatus.worktreesPath) && wt.branch),
+      // Never delete the branch of an external worktree — an external tool
+      // owns it. The main process re-enforces this guard server-side too.
+      deleteBranch: !wt.isExternal && !!wt.branch,
       branchName: wt.branch ?? null,
     });
 
@@ -547,6 +569,22 @@ function WorkspaceInner() {
 
     toast('Worktree removed', 'success');
     setDeleteTarget(null);
+  }
+
+  // after_worktree_create hooks never fire retroactively for a worktree we
+  // adopted rather than created — this lets the user opt in explicitly
+  // (e.g. to run a dependency install) from the worktree's context menu.
+  async function runCreateHooksFor(wt: WorktreeInfo) {
+    try {
+      await api.runCreateHooks({
+        workspacePath,
+        newWorktreePath: wt.path,
+        initiatingWorktreePath: activeWorktree?.path ?? null,
+      });
+      toast('Create hooks ran', 'success');
+    } catch (err) {
+      toast(`Create hooks failed: ${String(err)}`, 'error');
+    }
   }
 
   async function loadCommitDiff(commit: CommitEntry) {
@@ -886,6 +924,7 @@ function WorkspaceInner() {
             onOpenTerminal={(cwd, label) => void openTerminal(cwd, label)}
             onOpenHooksModal={() => setHooksModalOpen(true)}
             onOpenRunHookModal={wt => setRunHookTarget(wt)}
+            onRunCreateHooks={wt => void runCreateHooksFor(wt)}
             onDeleteWorktree={wt => setDeleteTarget(wt)}
             agentRoster={agentRoster}
             worktreesWithLiveAgent={worktreesWithLiveAgent}

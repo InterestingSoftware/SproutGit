@@ -72,8 +72,8 @@ const api = {
     invoke(IPC.GIT_SET_CONFIG, { key, value }),
 
   // ── Worktrees ─────────────────────────────────────────────────────────────
-  listWorktrees: (repoPath: string): Promise<WorktreeInfo[]> =>
-    invoke(IPC.GIT_LIST_WORKTREES, repoPath),
+  listWorktrees: (repoPath: string, managedWorktreesPath?: string): Promise<WorktreeInfo[]> =>
+    invoke(IPC.GIT_LIST_WORKTREES, repoPath, managedWorktreesPath),
 
   createWorktree: (args: {
     rootRepoPath: string;
@@ -85,11 +85,15 @@ const api = {
 
   deleteWorktree: (args: {
     rootRepoPath: string;
+    managedWorktreesPath?: string;
     worktreePath: string;
     deleteBranch: boolean;
     branchName?: string | null;
   }): Promise<void> =>
     invoke(IPC.WORKTREE_DELETE, args),
+
+  pruneWorktreeMetadata: (args: { workspacePath: string; activeWorktreePaths: string[] }): Promise<void> =>
+    invoke(IPC.WORKTREE_PRUNE_METADATA, args),
 
   // ── Commits ───────────────────────────────────────────────────────────────
   getCommitGraph: (args: {
