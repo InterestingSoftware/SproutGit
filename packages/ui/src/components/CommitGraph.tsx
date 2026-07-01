@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useMemo } from 'react';
 import { Search, ChevronUp, ChevronDown, X, GitBranch, TreePine, Tag } from 'lucide-react';
 import { type CommitEntry, type WorktreeInfo } from '@sproutgit/types';
 
@@ -27,75 +27,111 @@ const LANE_COLORS = [
 type LaneCommit = CommitEntry & {
   lane: number;
   y: number;
-  parentPositions: { hash: string; lane: number; y: number }[];
-  offGraphParentCount: number;
   worktreeBranch: string | null;
 };
 
-function computeLanes(commits: CommitEntry[], worktreeBranches: Set<string>): { rows: LaneCommit[]; maxLane: number } {
-  if (commits.length === 0) return { rows: [], maxLane: 0 };
+/** One edge piece confined to the gap between two adjacent rows. */
+export type GapSegment = {
+  fromLane: number;
+  toLane: number;
+  /** Lane whose colour the segment takes (the rail the edge travels on). */
+  railLane: number;
+};
+
+export type GraphLayout = {
+  rows: LaneCommit[];
+  /** gapSegments[g] = segments in the band between row g and row g+1. */
+  gapSegments: GapSegment[][];
+  maxLane: number;
+};
+
+/**
+ * Per-row segment layout. Every child→parent edge travels on a "rail": it
+ * bends from the child's lane into the rail within the child's own row band,
+ * runs straight down the rail, and the parent node sits on the rail's lane.
+ * Children sharing a parent join the same rail, so lines converge instead of
+ * stacking overlapping curves. Lane transitions never span more than one row.
+ */
+export function computeGraphLayout(
+  commits: CommitEntry[],
+  worktreeBranches: Set<string>
+): GraphLayout {
+  if (commits.length === 0) return { rows: [], gapSegments: [], maxLane: 0 };
 
   const hashToIdx = new Map<string, number>();
   commits.forEach((c, i) => hashToIdx.set(c.hash, i));
 
-  const activeLanes: (string | null)[] = [];
+  // One rail per pending parent hash → the lane its edges occupy in transit.
+  const rails = new Map<string, number>();
+  const laneOccupied: boolean[] = [];
 
-  function findOrAllocLane(hash: string): number {
-    const existing = activeLanes.indexOf(hash);
-    if (existing !== -1) return existing;
-    const empty = activeLanes.indexOf(null);
-    if (empty !== -1) {
-      activeLanes[empty] = hash;
-      return empty;
+  function allocLane(minLane: number): number {
+    for (let l = minLane; l < laneOccupied.length; l++) {
+      if (!laneOccupied[l]) return l;
     }
-    activeLanes.push(hash);
-    return activeLanes.length - 1;
+    return Math.max(laneOccupied.length, minLane);
   }
 
+  type Edge = { childRow: number; childLane: number; rail: number; parentHash: string };
+  const edges: Edge[] = [];
   const rows: LaneCommit[] = [];
   let maxLane = 0;
 
   for (let i = 0; i < commits.length; i++) {
     const commit = commits[i]!;
-    const lane = findOrAllocLane(commit.hash);
-    if (lane > maxLane) maxLane = lane;
 
-    const y = i * ROW_H + ROW_H / 2;
-    activeLanes[lane] = null;
+    // The commit lands on its incoming rail's lane; tips open a fresh lane.
+    let lane: number;
+    const incomingRail = rails.get(commit.hash);
+    if (incomingRail !== undefined) {
+      lane = incomingRail;
+      rails.delete(commit.hash);
+      laneOccupied[lane] = false;
+    } else {
+      lane = allocLane(0);
+    }
+    if (lane > maxLane) maxLane = lane;
 
     for (let p = 0; p < commit.parents.length; p++) {
       const parentHash = commit.parents[p]!;
-      if (hashToIdx.has(parentHash) && activeLanes.indexOf(parentHash) === -1) {
-        if (p === 0) {
-          activeLanes[lane] = parentHash;
-        } else {
-          const pLane = findOrAllocLane(parentHash);
-          if (pLane > maxLane) maxLane = pLane;
-        }
+      if (!hashToIdx.has(parentHash)) continue; // parent beyond the loaded window
+      const existing = rails.get(parentHash);
+      if (existing !== undefined) {
+        edges.push({ childRow: i, childLane: lane, rail: existing, parentHash });
+        continue;
       }
+      // First parent continues in the commit's own lane; other parents branch
+      // out to the nearest free lane on the right.
+      const railLane =
+        p === 0 && !laneOccupied[lane] ? lane : allocLane(lane + 1);
+      laneOccupied[railLane] = true;
+      rails.set(parentHash, railLane);
+      if (railLane > maxLane) maxLane = railLane;
+      edges.push({ childRow: i, childLane: lane, rail: railLane, parentHash });
     }
 
     const wtBranch = commit.refs.find(r => worktreeBranches.has(r)) ?? null;
-
-    rows.push({ ...commit, lane, y, parentPositions: [], offGraphParentCount: 0, worktreeBranch: wtBranch });
+    rows.push({ ...commit, lane, y: i * ROW_H + ROW_H / 2, worktreeBranch: wtBranch });
   }
 
-  // Second pass: resolve parent positions for line drawing.
-  const hashToRow = new Map<string, LaneCommit>();
-  rows.forEach(r => hashToRow.set(r.hash, r));
+  // Rasterise edges into per-gap segments. Edges sharing a rail produce
+  // identical straight pieces — dedupe so each is drawn once.
+  const gapCount = commits.length - 1;
+  const gapSegments: GapSegment[][] = Array.from({ length: gapCount }, () => []);
+  const seen = new Set<string>();
 
-  for (const row of rows) {
-    row.parentPositions = row.parents
-      .map(ph => {
-        const parent = hashToRow.get(ph);
-        if (!parent) return null;
-        return { hash: ph, lane: parent.lane, y: parent.y };
-      })
-      .filter((p): p is NonNullable<typeof p> => p !== null);
-    row.offGraphParentCount = row.parents.length - row.parentPositions.length;
+  for (const edge of edges) {
+    const parentRow = hashToIdx.get(edge.parentHash)!;
+    for (let g = edge.childRow; g < parentRow && g < gapCount; g++) {
+      const fromLane = g === edge.childRow ? edge.childLane : edge.rail;
+      const key = `${g}:${fromLane}:${edge.rail}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      gapSegments[g]!.push({ fromLane, toLane: edge.rail, railLane: edge.rail });
+    }
   }
 
-  return { rows, maxLane };
+  return { rows, gapSegments, maxLane };
 }
 
 function laneX(lane: number): number {
@@ -160,9 +196,15 @@ export function CommitGraph({
   } | null>(null);
 
   // Derived sets.
-  const worktreeBranches = new Set(worktrees.filter(w => w.branch).map(w => w.branch!));
+  const worktreeBranches = useMemo(
+    () => new Set(worktrees.filter(w => w.branch).map(w => w.branch!)),
+    [worktrees]
+  );
 
-  const { rows, maxLane } =  computeLanes(commits, worktreeBranches);
+  const { rows, gapSegments, maxLane } = useMemo(
+    () => computeGraphLayout(commits, worktreeBranches),
+    [commits, worktreeBranches]
+  );
 
   const svgWidth = (maxLane + 1) * COL_W + PADDING_LEFT * 2;
   const svgHeight = commits.length * ROW_H;
@@ -363,43 +405,55 @@ export function CommitGraph({
         {/* Sticky SVG lane column */}
         <div style={{ position: 'sticky', left: 0, width: svgWidth, float: 'left', height: svgHeight, zIndex: 1 }}>
           <svg width={svgWidth} height={svgHeight} style={{ display: 'block' }}>
-            {rows.map((row, i) => {
-              if (i < firstVisible || i > lastVisible) return null;
-              const cx = laneX(row.lane);
-              const color = laneColor(row.lane);
-              return (
-                <g key={row.hash}>
-                  {/* Parent connection lines */}
-                  {row.parentPositions.map(p => {
-                    const px = laneX(p.lane);
-                    const midY = (row.y + p.y) / 2;
-                    const d = cx === px
-                      ? `M ${cx} ${row.y} L ${px} ${p.y}`
-                      : `M ${cx} ${row.y} C ${cx} ${midY} ${px} ${midY} ${px} ${p.y}`;
-                    return (
-                      <path
-                        key={p.hash}
-                        d={d}
-                        stroke={color}
-                        strokeWidth={1.5}
-                        fill="none"
-                        opacity={0.8}
-                      />
-                    );
-                  })}
-                  {/* Commit node */}
-                  {row.worktreeBranch ? (
-                    // Diamond for worktree commits.
-                    <polygon
-                      points={`${cx},${row.y - NODE_R - 2} ${cx + NODE_R + 2},${row.y} ${cx},${row.y + NODE_R + 2} ${cx - NODE_R - 2},${row.y}`}
-                      fill={color}
-                    />
-                  ) : (
-                    <circle cx={cx} cy={row.y} r={NODE_R} fill={color} />
-                  )}
-                </g>
-              );
-            })}
+            {/* Edge segments (drawn first so nodes always sit on top) */}
+            <g>
+              {gapSegments.map((segs, g) => {
+                // Gap g spans rows g..g+1 — render if either endpoint row is visible.
+                if (g < firstVisible - 1 || g > lastVisible) return null;
+                const y1 = g * ROW_H + ROW_H / 2;
+                const y2 = y1 + ROW_H;
+                const midY = y1 + ROW_H / 2;
+                return (
+                  <g key={g}>
+                    {segs.map(seg => {
+                      const x1 = laneX(seg.fromLane);
+                      const x2 = laneX(seg.toLane);
+                      const d = x1 === x2
+                        ? `M ${x1} ${y1} L ${x2} ${y2}`
+                        : `M ${x1} ${y1} C ${x1} ${midY} ${x2} ${midY} ${x2} ${y2}`;
+                      return (
+                        <path
+                          key={`${seg.fromLane}-${seg.toLane}`}
+                          d={d}
+                          stroke={laneColor(seg.railLane)}
+                          strokeWidth={1.5}
+                          fill="none"
+                          opacity={0.8}
+                        />
+                      );
+                    })}
+                  </g>
+                );
+              })}
+            </g>
+            {/* Commit nodes */}
+            <g>
+              {rows.map((row, i) => {
+                if (i < firstVisible || i > lastVisible) return null;
+                const cx = laneX(row.lane);
+                const color = laneColor(row.lane);
+                return row.worktreeBranch ? (
+                  // Diamond for worktree commits.
+                  <polygon
+                    key={row.hash}
+                    points={`${cx},${row.y - NODE_R - 2} ${cx + NODE_R + 2},${row.y} ${cx},${row.y + NODE_R + 2} ${cx - NODE_R - 2},${row.y}`}
+                    fill={color}
+                  />
+                ) : (
+                  <circle key={row.hash} cx={cx} cy={row.y} r={NODE_R} fill={color} />
+                );
+              })}
+            </g>
           </svg>
         </div>
 
