@@ -328,6 +328,15 @@ The image already has: ubuntu 24.04, Node 22, pnpm, xvfb, dbus, all Electron sys
 
 ---
 
+## Pull requests
+
+Release notes are generated from PR descriptions. Always fill out [.github/PULL_REQUEST_TEMPLATE.md](../.github/PULL_REQUEST_TEMPLATE.md) completely when opening a PR:
+
+- Pick the correct **Type** checkbox — it should match the Conventional Commits type used in the commit/PR title (`feat`, `fix`, `perf`, `chore`, `docs`, `refactor`).
+- Write **Summary** bullets as release-note entries for end users (user-visible outcome, past tense) — not a description of the diff.
+- Fill in **Screenshots / recordings** for any renderer/UI change; delete that section otherwise.
+- State **Breaking changes** explicitly, even if "None".
+
 ## Common pitfalls
 
 - **Don't import from `old/`** — it's the Tauri/SvelteKit source for reference only.
