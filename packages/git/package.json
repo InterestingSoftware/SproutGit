@@ -26,9 +26,9 @@
   },
   "devDependencies": {
     "@sproutgit/ts-config": "workspace:*",
-    "@types/node": "^25.7.0",
-    "typescript": "npm:@typescript/native-preview@beta",
-    "vitest": "^4.1.6"
+    "@types/node": "^26.0.1",
+    "typescript": "npm:@typescript/native-preview@7.0.0-dev.20260701.1",
+    "vitest": "^4.1.9"
   },
   "license": "MIT"
 }
