@@ -33,6 +33,13 @@ type Session = {
  *   manager.resize(id, 120, 40);
  *   manager.close(id);
  */
+/**
+ * Upper bound on concurrent PTY sessions. Without a cap, a renderer bug (or a
+ * runaway loop calling spawn) could exhaust OS process/file-descriptor limits
+ * with no backpressure.
+ */
+const MAX_SESSIONS = 64;
+
 export class TerminalManager {
   private sessions = new Map<string, Session>();
   protected readonly onData: TerminalDataCallback;
@@ -47,6 +54,10 @@ export class TerminalManager {
    * Spawns a new PTY session and returns its unique session ID.
    */
   spawn(options: SpawnOptions): string {
+    if (this.sessions.size >= MAX_SESSIONS) {
+      throw new Error(`Terminal session limit reached (${MAX_SESSIONS}). Close an existing terminal first.`);
+    }
+
     const id = randomUUID();
     const { cwd, shell, command, env, cols = 80, rows = 24 } = options;
 
