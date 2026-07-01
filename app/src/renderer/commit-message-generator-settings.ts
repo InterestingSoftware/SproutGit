@@ -3,16 +3,20 @@ import { api } from './api.js';
 
 export const COMMIT_MESSAGE_GENERATOR_SETTINGS_KEY = 'commitMessageGenerator';
 
+function isStringArray(value: unknown): value is string[] {
+  return Array.isArray(value) && value.every(v => typeof v === 'string');
+}
+
 /** Loads the configured commit-message generator, falling back to the default preset. */
 export async function loadCommitMessageGeneratorSettings(): Promise<CommitMessageGeneratorSettings> {
   const raw = await api.getSetting(COMMIT_MESSAGE_GENERATOR_SETTINGS_KEY);
   if (!raw) return DEFAULT_COMMIT_MESSAGE_GENERATOR_SETTINGS;
   try {
-    const parsed = JSON.parse(raw) as Partial<CommitMessageGeneratorSettings>;
+    const parsed = JSON.parse(raw) as Partial<Record<keyof CommitMessageGeneratorSettings, unknown>>;
     return {
-      presetId: parsed.presetId ?? DEFAULT_COMMIT_MESSAGE_GENERATOR_SETTINGS.presetId,
-      command: parsed.command ?? DEFAULT_COMMIT_MESSAGE_GENERATOR_SETTINGS.command,
-      args: parsed.args ?? DEFAULT_COMMIT_MESSAGE_GENERATOR_SETTINGS.args,
+      presetId: typeof parsed.presetId === 'string' ? parsed.presetId : DEFAULT_COMMIT_MESSAGE_GENERATOR_SETTINGS.presetId,
+      command: typeof parsed.command === 'string' ? parsed.command : DEFAULT_COMMIT_MESSAGE_GENERATOR_SETTINGS.command,
+      args: isStringArray(parsed.args) ? parsed.args : DEFAULT_COMMIT_MESSAGE_GENERATOR_SETTINGS.args,
     };
   } catch {
     return DEFAULT_COMMIT_MESSAGE_GENERATOR_SETTINGS;

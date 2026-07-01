@@ -21,11 +21,33 @@ const RECENT_COMMIT_COUNT = 10;
  * matching value from `env`. This lets preset prompts reference vars like
  * `$SPROUTGIT_RECENT_COMMITS` without needing a shell (args are never
  * shell-parsed, so plain env expansion would otherwise never happen).
+ * Braces must be paired — `${SPROUTGIT_FOO` or `SPROUTGIT_FOO}` are left as-is.
  */
 function substituteSproutgitVars(input: string, env: Record<string, string>): string {
-  return input.replace(/\$\{?(SPROUTGIT_[A-Z_]+)\}?/g, (match, name: string) =>
-    Object.prototype.hasOwnProperty.call(env, name) ? env[name]! : match
+  return input.replace(
+    /\$\{(SPROUTGIT_[A-Z_]+)\}|\$(SPROUTGIT_[A-Z_]+)/g,
+    (match, braced: string | undefined, bare: string | undefined) => {
+      const name = braced ?? bare!;
+      return Object.prototype.hasOwnProperty.call(env, name) ? env[name]! : match;
+    }
   );
+}
+
+/** Coerces a `?` value to a string array, dropping anything that isn't one. */
+function toStringArray(value: unknown): string[] {
+  return Array.isArray(value) ? value.filter((v): v is string => typeof v === 'string') : [];
+}
+
+/**
+ * Settings are round-tripped through JSON in the config DB, so they're not
+ * actually guaranteed to match `CommitMessageGeneratorSettings` at runtime —
+ * corrupted or hand-edited storage shouldn't be able to crash the main process.
+ */
+function normalizeSettings(settings: CommitMessageGeneratorSettings): { command: string; args: string[] } {
+  return {
+    command: typeof settings?.command === 'string' ? settings.command.trim() : '',
+    args: toStringArray(settings?.args),
+  };
 }
 
 export function registerCommitMessageGeneratorHandlers(): void {
@@ -34,7 +56,7 @@ export function registerCommitMessageGeneratorHandlers(): void {
     worktreePath: string;
     settings: CommitMessageGeneratorSettings;
   }): Promise<CommitMessageGenerateResult> => {
-    const command = args.settings.command.trim();
+    const { command, args: generatorArgs } = normalizeSettings(args.settings);
     if (!command) {
       return { error: 'No commit message generator configured. Pick a preset or enter a command in Settings.' };
     }
@@ -61,7 +83,7 @@ export function registerCommitMessageGeneratorHandlers(): void {
       SPROUTGIT_RECENT_COMMITS: recentSubjects.join('\n'),
     };
 
-    const substitutedArgs = args.settings.args.map(a => substituteSproutgitVars(a, sproutgitEnv));
+    const substitutedArgs = generatorArgs.map(a => substituteSproutgitVars(a, sproutgitEnv));
 
     return new Promise<CommitMessageGenerateResult>(resolve => {
       let child: ReturnType<typeof execFile>;

@@ -99,6 +99,60 @@ describe('commitmsg:generate', () => {
     expect(args).toEqual(['-p', 'style ref: fix: bar']);
   });
 
+  it('leaves unpaired braces around $SPROUTGIT_* tokens untouched', async () => {
+    getStagedDiffMock.mockResolvedValue('some diff');
+    getRecentCommitSubjectsMock.mockResolvedValue(['fix: bar']);
+    execFileMock.mockImplementation((_cmd, _args, _opts, callback: (...cbArgs: unknown[]) => void) => {
+      callback(null, 'chore: x', '');
+      return { stdin: { write: vi.fn(), end: vi.fn(), on: vi.fn() } };
+    });
+
+    const handler = getRegisteredHandler();
+    await handler({}, {
+      ...baseArgs,
+      settings: {
+        presetId: 'claude-code',
+        command: 'claude',
+        args: ['-p', 'unpaired: ${SPROUTGIT_RECENT_COMMITS and $SPROUTGIT_RECENT_COMMITS}'],
+      },
+    });
+
+    const [, args] = execFileMock.mock.calls[0]!;
+    // The bare `$SPROUTGIT_RECENT_COMMITS` before the stray "}" still substitutes;
+    // the malformed `${...` (missing closing brace) is left as-is.
+    expect(args).toEqual(['-p', 'unpaired: ${SPROUTGIT_RECENT_COMMITS and fix: bar}']);
+  });
+
+  it('does not crash on malformed persisted settings (non-string command / non-array args)', async () => {
+    getStagedDiffMock.mockResolvedValue('some diff');
+    const handler = getRegisteredHandler();
+    const result = await handler({}, {
+      ...baseArgs,
+      // Simulates corrupted settings JSON that bypassed the renderer-side validation.
+      settings: { presetId: 'custom', command: 123 as unknown as string, args: 'not-an-array' as unknown as string[] },
+    });
+    expect(result).toEqual({ error: 'No commit message generator configured. Pick a preset or enter a command in Settings.' });
+    expect(execFileMock).not.toHaveBeenCalled();
+  });
+
+  it('filters out non-string entries from a malformed args array', async () => {
+    getStagedDiffMock.mockResolvedValue('some diff');
+    getRecentCommitSubjectsMock.mockResolvedValue([]);
+    execFileMock.mockImplementation((_cmd, _args, _opts, callback: (...cbArgs: unknown[]) => void) => {
+      callback(null, 'chore: x', '');
+      return { stdin: { write: vi.fn(), end: vi.fn(), on: vi.fn() } };
+    });
+
+    const handler = getRegisteredHandler();
+    await handler({}, {
+      ...baseArgs,
+      settings: { presetId: 'custom', command: 'claude', args: ['-p', 42, null, 'ok'] as unknown as string[] },
+    });
+
+    const [, args] = execFileMock.mock.calls[0]!;
+    expect(args).toEqual(['-p', 'ok']);
+  });
+
   it('reports a timeout as a distinct error', async () => {
     getStagedDiffMock.mockResolvedValue('some diff');
     getRecentCommitSubjectsMock.mockResolvedValue([]);
