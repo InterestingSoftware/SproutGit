@@ -17,3 +17,4 @@ out/
 !.env.example
 .playwright-mcp
 logs
+.astro/

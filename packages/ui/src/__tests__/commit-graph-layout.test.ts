@@ -56,6 +56,24 @@ describe('computeGraphLayout', () => {
     expect(gapSegments[2]).toContainEqual({ fromLane: 1, toLane: 0, railLane: 0 });
   });
 
+  it('keeps main in its lane when a feature branch reaches the fork point first', () => {
+    // topo-order emits the merged branch right after the merge commit:
+    // m → [a, f1]; f1 → f2 → c; a → c  (c is the fork point on main)
+    const { rows } = layout([
+      commit('m', ['a', 'f1']),
+      commit('f1', ['f2']),
+      commit('f2', ['c']),
+      commit('a', ['c']),
+      commit('c', []),
+    ]);
+    const byHash = Object.fromEntries(rows.map(r => [r.hash, r]));
+    expect(byHash['m']!.lane).toBe(0);
+    expect(byHash['a']!.lane).toBe(0);
+    expect(byHash['c']!.lane).toBe(0); // fork point stays on main's lane
+    expect(byHash['f1']!.lane).toBe(1);
+    expect(byHash['f2']!.lane).toBe(1);
+  });
+
   it('never emits a segment spanning more than one row band', () => {
     // Interleaved branches to force long-lived rails.
     const commits = [

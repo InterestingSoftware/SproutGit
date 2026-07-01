@@ -46,11 +46,13 @@ export type GraphLayout = {
 };
 
 /**
- * Per-row segment layout. Every child→parent edge travels on a "rail": it
- * bends from the child's lane into the rail within the child's own row band,
- * runs straight down the rail, and the parent node sits on the rail's lane.
- * Children sharing a parent join the same rail, so lines converge instead of
- * stacking overlapping curves. Lane transitions never span more than one row.
+ * Per-row segment layout. Every child→parent edge travels on its own "rail":
+ * it bends from the child's lane into the rail within the child's row band,
+ * runs straight down the rail, and bends into the parent's lane in the final
+ * band. The parent adopts the leftmost incoming rail, so a long-lived branch
+ * (main) keeps one lane instead of drifting toward whichever child happened
+ * to reach the fork point first. Lane transitions never span more than one
+ * row band.
  */
 export function computeGraphLayout(
   commits: CommitEntry[],
@@ -61,8 +63,11 @@ export function computeGraphLayout(
   const hashToIdx = new Map<string, number>();
   commits.forEach((c, i) => hashToIdx.set(c.hash, i));
 
-  // One rail per pending parent hash → the lane its edges occupy in transit.
-  const rails = new Map<string, number>();
+  // Incoming lines in flight, indexed by target parent hash. A parent forked
+  // into several children carries one entry per child edge. Adjacent-row
+  // edges register their child's lane as a candidate without occupying it.
+  type Incoming = { lane: number; firstParent: boolean; occupies: boolean };
+  const railsByParent = new Map<string, Incoming[]>();
   const laneOccupied: boolean[] = [];
 
   function allocLane(minLane: number): number {
@@ -72,7 +77,19 @@ export function computeGraphLayout(
     return Math.max(laneOccupied.length, minLane);
   }
 
-  type Edge = { childRow: number; childLane: number; rail: number; parentHash: string };
+  function registerIncoming(parentHash: string, entry: Incoming): void {
+    const list = railsByParent.get(parentHash);
+    if (list) list.push(entry);
+    else railsByParent.set(parentHash, [entry]);
+  }
+
+  type Edge = {
+    childRow: number;
+    childLane: number;
+    /** Transit lane; null for adjacent-row edges that bend directly. */
+    rail: number | null;
+    parentHash: string;
+  };
   const edges: Edge[] = [];
   const rows: LaneCommit[] = [];
   let maxLane = 0;
@@ -80,24 +97,41 @@ export function computeGraphLayout(
   for (let i = 0; i < commits.length; i++) {
     const commit = commits[i]!;
 
-    // The commit lands on its incoming rail's lane; tips open a fresh lane.
+    // Adopt a lane from the incoming lines: first-parent edges take priority
+    // (so a long-lived branch keeps one lane through merges and forks), then
+    // leftmost wins. Non-occupying candidates are only valid if their lane
+    // isn't taken by a passing rail. Tips open a fresh lane.
+    const incoming = railsByParent.get(commit.hash) ?? [];
+    railsByParent.delete(commit.hash);
+    const candidates = incoming.filter(c => c.occupies || !laneOccupied[c.lane]);
     let lane: number;
-    const incomingRail = rails.get(commit.hash);
-    if (incomingRail !== undefined) {
-      lane = incomingRail;
-      rails.delete(commit.hash);
-      laneOccupied[lane] = false;
+    if (candidates.length > 0) {
+      let best = candidates[0]!;
+      for (const c of candidates) {
+        if (
+          (c.firstParent && !best.firstParent) ||
+          (c.firstParent === best.firstParent && c.lane < best.lane)
+        ) {
+          best = c;
+        }
+      }
+      lane = best.lane;
     } else {
       lane = allocLane(0);
+    }
+    for (const c of incoming) {
+      if (c.occupies) laneOccupied[c.lane] = false;
     }
     if (lane > maxLane) maxLane = lane;
 
     for (let p = 0; p < commit.parents.length; p++) {
       const parentHash = commit.parents[p]!;
-      if (!hashToIdx.has(parentHash)) continue; // parent beyond the loaded window
-      const existing = rails.get(parentHash);
-      if (existing !== undefined) {
-        edges.push({ childRow: i, childLane: lane, rail: existing, parentHash });
+      const parentRow = hashToIdx.get(parentHash);
+      if (parentRow === undefined) continue; // parent beyond the loaded window
+      if (parentRow === i + 1) {
+        // Adjacent rows — the edge is a single bend, no transit lane needed.
+        edges.push({ childRow: i, childLane: lane, rail: null, parentHash });
+        registerIncoming(parentHash, { lane, firstParent: p === 0, occupies: false });
         continue;
       }
       // First parent continues in the commit's own lane; other parents branch
@@ -105,7 +139,7 @@ export function computeGraphLayout(
       const railLane =
         p === 0 && !laneOccupied[lane] ? lane : allocLane(lane + 1);
       laneOccupied[railLane] = true;
-      rails.set(parentHash, railLane);
+      registerIncoming(parentHash, { lane: railLane, firstParent: p === 0, occupies: true });
       if (railLane > maxLane) maxLane = railLane;
       edges.push({ childRow: i, childLane: lane, rail: railLane, parentHash });
     }
@@ -114,20 +148,22 @@ export function computeGraphLayout(
     rows.push({ ...commit, lane, y: i * ROW_H + ROW_H / 2, worktreeBranch: wtBranch });
   }
 
-  // Rasterise edges into per-gap segments. Edges sharing a rail produce
-  // identical straight pieces — dedupe so each is drawn once.
+  // Rasterise edges into per-gap segments, deduping identical pieces.
   const gapCount = commits.length - 1;
   const gapSegments: GapSegment[][] = Array.from({ length: gapCount }, () => []);
   const seen = new Set<string>();
 
   for (const edge of edges) {
     const parentRow = hashToIdx.get(edge.parentHash)!;
+    const parentLane = rows[parentRow]!.lane;
+    const rail = edge.rail ?? parentLane;
     for (let g = edge.childRow; g < parentRow && g < gapCount; g++) {
-      const fromLane = g === edge.childRow ? edge.childLane : edge.rail;
-      const key = `${g}:${fromLane}:${edge.rail}`;
+      const fromLane = g === edge.childRow ? edge.childLane : rail;
+      const toLane = g === parentRow - 1 ? parentLane : rail;
+      const key = `${g}:${fromLane}:${toLane}`;
       if (seen.has(key)) continue;
       seen.add(key);
-      gapSegments[g]!.push({ fromLane, toLane: edge.rail, railLane: edge.rail });
+      gapSegments[g]!.push({ fromLane, toLane, railLane: rail });
     }
   }
 
