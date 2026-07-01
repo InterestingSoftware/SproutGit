@@ -1,6 +1,7 @@
 import * as pty from 'node-pty';
 import { randomUUID } from 'node:crypto';
 import { accessSync, constants, existsSync } from 'node:fs';
+import { sep } from 'node:path';
 import { type WorkspaceHookShell } from '@sproutgit/types';
 
 export type TerminalDataCallback = (sessionId: string, data: string) => void;
@@ -153,8 +154,12 @@ export class TerminalManagerWithMeta extends TerminalManager {
   }
 
   override closeForPath(pathPrefix: string): void {
+    // Require a path-separator boundary (or an exact match) so removing
+    // "worktrees/foo" doesn't also close a terminal cwd'd into the sibling
+    // directory "worktrees/foobar".
+    const prefixWithSep = pathPrefix.endsWith(sep) ? pathPrefix : pathPrefix + sep;
     for (const [id, m] of this.meta) {
-      if (m.cwd.startsWith(pathPrefix)) {
+      if (m.cwd === pathPrefix || m.cwd.startsWith(prefixWithSep)) {
         this.close(id);
       }
     }
