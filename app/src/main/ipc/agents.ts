@@ -5,13 +5,14 @@
  * Gemini, or anything custom) launched as a PTY session in a worktree, the
  * same way hooks are launched — it shows up as a normal terminal tab.
  */
-import { ipcMain, type BrowserWindow } from 'electron';
+import type { BrowserWindow } from 'electron';
 import { IPC } from '@sproutgit/types';
 import type { AgentRoster } from '@sproutgit/types';
 import { openWorkspaceDb, eq, getAgentRoster, saveAgentRoster, type ConfigDb } from '@sproutgit/database';
 import { worktreeMetadata } from '@sproutgit/database/schema/workspace';
 import { join, basename } from 'path';
 import { manager, sessionWindows } from './terminal.js';
+import { handle } from './handle.js';
 
 function getWorkspaceDb(workspacePath: string) {
   const dbPath = join(workspacePath, '.sproutgit', 'state.db');
@@ -19,13 +20,13 @@ function getWorkspaceDb(workspacePath: string) {
 }
 
 export function registerAgentHandlers(configDb: ConfigDb, getWindow: () => BrowserWindow | null): void {
-  ipcMain.handle(IPC.AGENT_LIST, () => getAgentRoster(configDb));
+  handle(IPC.AGENT_LIST, () => getAgentRoster(configDb));
 
-  ipcMain.handle(IPC.AGENT_SAVE, (_e, roster: AgentRoster) => {
+  handle(IPC.AGENT_SAVE, (_e, roster: AgentRoster) => {
     saveAgentRoster(configDb, roster);
   });
 
-  ipcMain.handle(IPC.AGENT_LAUNCH, (_e, args: {
+  handle(IPC.AGENT_LAUNCH, (_e, args: {
     workspacePath: string;
     worktreePath: string;
     agentId?: string;
@@ -66,21 +67,28 @@ export function registerAgentHandlers(configDb: ConfigDb, getWindow: () => Brows
       SPROUTGIT_AGENT: agent.id,
     };
 
-    // The agent binary is spawned directly (not through a shell), so its
-    // failure-to-launch (e.g. command not installed) surfaces as a normal
-    // PTY exit — no special-casing needed here. resolveShell: false stops
-    // TerminalManager from substituting the platform default shell for an
-    // unresolvable command, which would otherwise spawn (and mislabel) a
-    // plain shell session as this agent.
-    const id = manager.spawn({
-      cwd: args.worktreePath,
-      shell: agent.command,
-      args: agent.args,
-      resolveShell: false,
-      env,
-      label: agent.name,
-      agentId: agent.id,
-    });
+    // The agent binary is spawned directly (not through a shell). On POSIX,
+    // a missing/bad command still surfaces as a normal async PTY exit. On
+    // Windows, ConPTY's CreateProcess can fail synchronously instead, so we
+    // catch and log here rather than letting an unhandled rejection hide
+    // the real cause. resolveShell: false stops TerminalManager from
+    // substituting the platform default shell for an unresolvable command,
+    // which would otherwise spawn (and mislabel) a plain shell as this agent.
+    let id: string;
+    try {
+      id = manager.spawn({
+        cwd: args.worktreePath,
+        shell: agent.command,
+        args: agent.args,
+        resolveShell: false,
+        env,
+        label: agent.name,
+        agentId: agent.id,
+      });
+    } catch (spawnErr) {
+      const message = spawnErr instanceof Error ? spawnErr.message : String(spawnErr);
+      throw new Error(`Failed to launch agent "${agent.name}" (command: ${JSON.stringify(agent.command)}, args: ${JSON.stringify(agent.args)}): ${message}`, { cause: spawnErr });
+    }
 
     sessionWindows.set(id, win);
 
