@@ -1,4 +1,5 @@
-import { ipcMain, app } from 'electron';
+import { app } from 'electron';
+import { handle } from './handle.js';
 import { IPC, type WorkspaceHookShell, type WorkspaceHookTrigger, type WorkspaceHookScope, type HookExecutionTarget } from '@sproutgit/types';
 import { openConfigDb, openWorkspaceDb, eq } from '@sproutgit/database';
 import { join } from 'path';
@@ -29,7 +30,7 @@ function getWorkspaceDb(workspacePath: string) {
 
 export function registerWorkspaceHandlers(configDb: ConfigDb): void {
   // ── Recent workspaces ─────────────────────────────────────────────────────
-  ipcMain.handle(IPC.WORKSPACE_LIST_RECENT, () => {
+  handle(IPC.WORKSPACE_LIST_RECENT, () => {
     const rows = configDb
       .select()
       .from(recentWorkspaces)
@@ -39,7 +40,7 @@ export function registerWorkspaceHandlers(configDb: ConfigDb): void {
     return rows;
   });
 
-  ipcMain.handle(IPC.WORKSPACE_ADD_RECENT, (_e, workspacePath: string) => {
+  handle(IPC.WORKSPACE_ADD_RECENT, (_e, workspacePath: string) => {
     log.info('[workspace] addRecentWorkspace:', workspacePath);
     configDb
       .insert(recentWorkspaces)
@@ -54,7 +55,7 @@ export function registerWorkspaceHandlers(configDb: ConfigDb): void {
     app.addRecentDocument(workspacePath);
   });
 
-  ipcMain.handle(IPC.WORKSPACE_REMOVE_RECENT, (_e, workspacePath: string) => {
+  handle(IPC.WORKSPACE_REMOVE_RECENT, (_e, workspacePath: string) => {
     configDb
       .delete(recentWorkspaces)
       .where(eq(recentWorkspaces.workspacePath, workspacePath))
@@ -63,13 +64,13 @@ export function registerWorkspaceHandlers(configDb: ConfigDb): void {
 
   // ── Per-workspace UI state ──────────────────────────────────────────────────
 
-  ipcMain.handle(IPC.WORKSPACE_GET_STATE, (_e, args: { workspacePath: string; key: string }) => {
+  handle(IPC.WORKSPACE_GET_STATE, (_e, args: { workspacePath: string; key: string }) => {
     const db = getWorkspaceDb(args.workspacePath);
     const row = db.select().from(workspaceState).where(eq(workspaceState.key, args.key)).get();
     return row?.value ?? null;
   });
 
-  ipcMain.handle(IPC.WORKSPACE_SET_STATE, (_e, args: { workspacePath: string; key: string; value: string }) => {
+  handle(IPC.WORKSPACE_SET_STATE, (_e, args: { workspacePath: string; key: string; value: string }) => {
     const db = getWorkspaceDb(args.workspacePath);
     db.insert(workspaceState)
       .values({ key: args.key, value: args.value })
@@ -77,7 +78,7 @@ export function registerWorkspaceHandlers(configDb: ConfigDb): void {
       .run();
   });
 
-  ipcMain.handle(IPC.WORKSPACE_CLOSE, (_e, workspacePath: string) => {
+  handle(IPC.WORKSPACE_CLOSE, (_e, workspacePath: string) => {
     const db = workspaceDbCache.get(workspacePath);
     if (db) {
       db.close();
@@ -86,14 +87,14 @@ export function registerWorkspaceHandlers(configDb: ConfigDb): void {
   });
 
   // ── Worktree metadata ─────────────────────────────────────────────────────
-  ipcMain.handle(IPC.WORKTREE_GET_META, (_e, args: { workspacePath: string; worktreePath: string }) => {
+  handle(IPC.WORKTREE_GET_META, (_e, args: { workspacePath: string; worktreePath: string }) => {
     const db = getWorkspaceDb(args.workspacePath);
     return db.select().from(worktreeMetadata)
       .where(eq(worktreeMetadata.worktreePath, args.worktreePath))
       .get() ?? null;
   });
 
-  ipcMain.handle(IPC.WORKTREE_SET_META, (_e, args: {
+  handle(IPC.WORKTREE_SET_META, (_e, args: {
     workspacePath: string;
     worktreePath: string;
     branch?: string;
@@ -124,7 +125,7 @@ export function registerWorkspaceHandlers(configDb: ConfigDb): void {
   });
 
   // ── Hook definitions ──────────────────────────────────────────────────────
-  ipcMain.handle(IPC.HOOK_LIST, (_e, workspacePath: string) => {
+  handle(IPC.HOOK_LIST, (_e, workspacePath: string) => {
     const db = getWorkspaceDb(workspacePath);
     const hooks = db.select().from(hookDefinitions).all();
     const deps = db.select().from(hookDependencies).all();
@@ -136,7 +137,7 @@ export function registerWorkspaceHandlers(configDb: ConfigDb): void {
     return hooks.map(h => ({ ...h, dependencyIds: depsMap.get(h.id) ?? [] }));
   });
 
-  ipcMain.handle(IPC.HOOK_CREATE, (_e, args: {
+  handle(IPC.HOOK_CREATE, (_e, args: {
     workspacePath: string;
     id: string;
     name: string;
@@ -179,7 +180,7 @@ export function registerWorkspaceHandlers(configDb: ConfigDb): void {
     }
   });
 
-  ipcMain.handle(IPC.HOOK_UPDATE, (_e, args: {
+  handle(IPC.HOOK_UPDATE, (_e, args: {
     workspacePath: string;
     id: string;
     name?: string;
@@ -224,12 +225,12 @@ export function registerWorkspaceHandlers(configDb: ConfigDb): void {
     }
   });
 
-  ipcMain.handle(IPC.HOOK_DELETE, (_e, args: { workspacePath: string; id: string }) => {
+  handle(IPC.HOOK_DELETE, (_e, args: { workspacePath: string; id: string }) => {
     const db = getWorkspaceDb(args.workspacePath);
     db.delete(hookDefinitions).where(eq(hookDefinitions.id, args.id)).run();
   });
 
-  ipcMain.handle(IPC.HOOK_RUN_LOG, (_e, args: {
+  handle(IPC.HOOK_RUN_LOG, (_e, args: {
     workspacePath: string;
     id: string;
     hookId: string;
@@ -257,12 +258,12 @@ export function registerWorkspaceHandlers(configDb: ConfigDb): void {
   });
 
   // ── Worktree provenance ────────────────────────────────────────────────────
-  ipcMain.handle(IPC.WORKTREE_LIST_PROVENANCE, (_e, workspacePath: string) => {
+  handle(IPC.WORKTREE_LIST_PROVENANCE, (_e, workspacePath: string) => {
     const db = getWorkspaceDb(workspacePath);
     return db.select().from(worktreeMetadata).all();
   });
 
-  ipcMain.handle(IPC.WORKTREE_GET_PROVENANCE, (_e, args: {
+  handle(IPC.WORKTREE_GET_PROVENANCE, (_e, args: {
     workspacePath: string;
     worktreePath: string;
   }) => {
@@ -273,12 +274,12 @@ export function registerWorkspaceHandlers(configDb: ConfigDb): void {
   });
 
   // ── Nested repo sync rules ─────────────────────────────────────────────────
-  ipcMain.handle(IPC.NESTED_REPO_LIST, (_e, workspacePath: string) => {
+  handle(IPC.NESTED_REPO_LIST, (_e, workspacePath: string) => {
     const db = getWorkspaceDb(workspacePath);
     return db.select().from(nestedRepoSyncRules).all();
   });
 
-  ipcMain.handle(IPC.NESTED_REPO_UPSERT, (_e, args: {
+  handle(IPC.NESTED_REPO_UPSERT, (_e, args: {
     workspacePath: string;
     repoRelativePath: string;
     enabled: boolean;
@@ -294,7 +295,7 @@ export function registerWorkspaceHandlers(configDb: ConfigDb): void {
       .run();
   });
 
-  ipcMain.handle(IPC.NESTED_REPO_DELETE, (_e, args: {
+  handle(IPC.NESTED_REPO_DELETE, (_e, args: {
     workspacePath: string;
     repoRelativePath: string;
   }) => {

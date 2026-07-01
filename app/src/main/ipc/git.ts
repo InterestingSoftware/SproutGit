@@ -1,4 +1,3 @@
-import { ipcMain } from 'electron';
 import { existsSync } from 'node:fs';
 import { IPC } from '@sproutgit/types';
 import { getGitInfo } from '@sproutgit/git';
@@ -18,13 +17,7 @@ import {
 } from '@sproutgit/git/staging';
 import { fetchWorktree, pullWorktree, pushWorktreeBranch, getWorktreePushStatus } from '@sproutgit/git/remote';
 import { getDiffFiles, getDiffContent, getWorkingDiff } from '@sproutgit/git/diff';
-
-function handle<T>(
-  channel: string,
-  fn: (event: Electron.IpcMainInvokeEvent, ...args: never[]) => Promise<T>,
-): void {
-  ipcMain.handle(channel, (event, ...args) => fn(event, ...(args as never[])));
-}
+import { handle } from './handle.js';
 
 export function registerGitHandlers(): void {
   // ── git info ──────────────────────────────────────────────────────────────
