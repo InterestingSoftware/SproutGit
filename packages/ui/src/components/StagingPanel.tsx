@@ -1,6 +1,6 @@
 import { useState, useRef } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Plus, Minus, FilePlus, Pencil, FileMinus, FileText, File } from 'lucide-react';
+import { Plus, Minus, FilePlus, Pencil, FileMinus, FileText, File, Sparkles } from 'lucide-react';
 import hljs from 'highlight.js/lib/core';
 import typescriptLang from 'highlight.js/lib/languages/typescript';
 import javascriptLang from 'highlight.js/lib/languages/javascript';
@@ -14,8 +14,9 @@ import yamlLang from 'highlight.js/lib/languages/yaml';
 import sqlLang from 'highlight.js/lib/languages/sql';
 import pythonLang from 'highlight.js/lib/languages/python';
 import goLang from 'highlight.js/lib/languages/go';
-import { type StatusFileEntry, type WorktreeStatusResult } from '@sproutgit/types';
+import { type StatusFileEntry, type WorktreeStatusResult, type CommitMessageGenerateResult } from '@sproutgit/types';
 import { Spinner } from './Spinner.js';
+import { ConfirmDialog } from './ConfirmDialog.js';
 
 hljs.registerLanguage('typescript', typescriptLang);
 hljs.registerLanguage('javascript', javascriptLang);
@@ -47,6 +48,8 @@ type Props = {
   /** Increment from outside to trigger a status reload (e.g. file watcher). */
   refreshSignal?: number;
   onToast?: (message: string, variant: 'success' | 'error') => void;
+  /** Runs the configured AI commit-message generator against the staged diff. */
+  generateCommitMessage?: (worktreePath: string) => Promise<CommitMessageGenerateResult>;
 };
 
 // ─── Validation ───────────────────────────────────────────────────────────────
@@ -78,6 +81,7 @@ export function StagingPanel({
   onStatusChange,
   refreshSignal = 0,
   onToast,
+  generateCommitMessage,
 }: Props) {
   const qc = useQueryClient();
   const statusKey = ['stagingStatus', worktreePath, refreshSignal] as const;
@@ -153,8 +157,37 @@ export function StagingPanel({
   const [diffFile, setDiffFile] = useState<string | null>(null);
   const [diffStaged, setDiffStaged] = useState(false);
   const [diffError, setDiffError] = useState<string | null>(null);
+  const [generating, setGenerating] = useState(false);
+  const [confirmOverwrite, setConfirmOverwrite] = useState(false);
 
   const commitError = commitTouched ? validateCommitMessage(commitMessage) : null;
+
+  async function runGenerateCommitMessage() {
+    if (!generateCommitMessage) return;
+    setConfirmOverwrite(false);
+    setGenerating(true);
+    try {
+      const result = await generateCommitMessage(worktreePath);
+      if (result.message) {
+        setCommitMessage(result.message);
+        setCommitTouched(true);
+      } else {
+        onToast?.(result.error ?? 'Generator produced no output.', 'error');
+      }
+    } catch (err) {
+      onToast?.(`Failed to generate message: ${String(err)}`, 'error');
+    } finally {
+      setGenerating(false);
+    }
+  }
+
+  function handleGenerateClick() {
+    if (commitMessage.trim()) {
+      setConfirmOverwrite(true);
+      return;
+    }
+    void runGenerateCommitMessage();
+  }
 
   async function loadDiff(file: string | null, staged: boolean) {
     setDiffFile(file);
@@ -383,13 +416,26 @@ export function StagingPanel({
                 }
               }}
             >
-              <textarea
-                className={`sg-commit-input w-full resize-none bg-(--sg-input-bg) border rounded px-2 py-1.5 text-xs text-(--sg-text) placeholder:text-(--sg-text-faint) outline-none focus:border-(--sg-input-focus) ${commitError ? 'border-(--sg-danger) focus:border-(--sg-danger)' : 'border-(--sg-input-border)'}`}
-                placeholder="Commit message"
-                value={commitMessage}
-                onChange={e => { setCommitMessage(e.target.value); setCommitTouched(true); }}
-                rows={3}
-              />
+              <div className="relative">
+                <textarea
+                  className={`sg-commit-input w-full resize-none bg-(--sg-input-bg) border rounded px-2 py-1.5 pr-7 text-xs text-(--sg-text) placeholder:text-(--sg-text-faint) outline-none focus:border-(--sg-input-focus) ${commitError ? 'border-(--sg-danger) focus:border-(--sg-danger)' : 'border-(--sg-input-border)'}`}
+                  placeholder="Commit message"
+                  value={commitMessage}
+                  onChange={e => { setCommitMessage(e.target.value); setCommitTouched(true); }}
+                  rows={3}
+                />
+                {generateCommitMessage && (
+                  <button
+                    data-testid="btn-generate-commit-message"
+                    className="absolute right-1.5 top-1.5 inline-flex items-center justify-center p-[3px] bg-transparent border-none cursor-pointer text-(--sg-text-faint) rounded-[4px] transition-colors hover:text-(--sg-primary) hover:bg-(--sg-surface-raised) disabled:opacity-40 disabled:cursor-not-allowed"
+                    onClick={handleGenerateClick}
+                    disabled={generating || stagedFiles.length === 0}
+                    title={stagedFiles.length === 0 ? 'Stage changes to generate a message' : 'Generate commit message from staged diff'}
+                  >
+                    {generating ? <Spinner size="sm" /> : <Sparkles size={13} />}
+                  </button>
+                )}
+              </div>
               {commitError && <p className="text-[10px] text-(--sg-danger) mt-0.5 m-0">{commitError}</p>}
               <button
                 className="sg-btn--primary mt-1 flex w-full items-center justify-center gap-2 rounded bg-(--sg-primary) px-2.5 py-1.5 text-xs font-semibold text-white hover:bg-(--sg-primary-hover) disabled:cursor-not-allowed disabled:opacity-40 border-none cursor-pointer transition-colors"
@@ -439,6 +485,16 @@ export function StagingPanel({
           </div>
         )}
       </div>
+
+      {confirmOverwrite && (
+        <ConfirmDialog
+          title="Replace commit message?"
+          message="The commit message box already has text. Generating a new message will replace it."
+          confirmLabel="Replace"
+          onConfirm={() => void runGenerateCommitMessage()}
+          onCancel={() => setConfirmOverwrite(false)}
+        />
+      )}
     </div>
   );
 }

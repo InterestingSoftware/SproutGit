@@ -53,6 +53,15 @@ export async function getDiffContent(
 }
 
 /**
+ * Returns the raw unified diff of currently staged changes (index vs HEAD).
+ * Used as the input fed to commit-message generators.
+ */
+export async function getStagedDiff(worktreePath: string): Promise<string> {
+  const git = gitForPath(worktreePath);
+  return git.raw(['diff', '--cached', '--unified=3']);
+}
+
+/**
  * Returns the unified diff for the current working tree (staged + unstaged).
  */
 export async function getWorkingDiff(

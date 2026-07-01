@@ -23,14 +23,14 @@ jobs:
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v6
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v6
         with:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - uses: actions/cache@v4
+      - uses: actions/cache@v5
         with:
           path: .turbo
           key: turbo-lint-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}-${{ github.sha }}
@@ -51,14 +51,14 @@ jobs:
         os: [ubuntu-latest, macos-14, windows-latest]
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v6
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v6
         with:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - uses: actions/cache@v4
+      - uses: actions/cache@v5
         with:
           path: .turbo
           key: turbo-test-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}-${{ github.sha }}
@@ -92,21 +92,21 @@ jobs:
         run: |
           echo "ELECTRON_CACHE=${{ runner.temp }}/electron-cache" >> "$GITHUB_ENV"
           echo "ELECTRON_BUILDER_CACHE=${{ runner.temp }}/electron-builder-cache" >> "$GITHUB_ENV"
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v6
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v6
         with:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - uses: actions/cache@v4
+      - uses: actions/cache@v5
         with:
           path: .turbo
           key: turbo-build-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}-${{ github.sha }}
           restore-keys: |
             turbo-build-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}-
             turbo-build-${{ runner.os }}-
-      - uses: actions/cache@v4
+      - uses: actions/cache@v5
         with:
           path: |
             ${{ runner.temp }}/electron-cache
@@ -125,7 +125,7 @@ jobs:
         run: |
           pnpm exec electron-vite build
           pnpm exec electron-builder --${{ matrix.platform }} --publish never
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: SproutGit-${{ matrix.platform }}
           path: |
@@ -160,16 +160,16 @@ jobs:
       - name: Set Electron cache path
         shell: bash
         run: echo "ELECTRON_CACHE=${{ runner.temp }}/electron-cache" >> "$GITHUB_ENV"
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v6
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v6
         with:
           node-version: 22
           cache: pnpm
       # Restore Electron binary cache BEFORE pnpm install so the postinstall
       # script can use the cached zip instead of downloading from the network.
       # If placed after install, the cache is restored too late to help.
-      - uses: actions/cache@v4
+      - uses: actions/cache@v5
         with:
           path: |
             ${{ runner.temp }}/electron-cache
@@ -238,7 +238,7 @@ jobs:
           if (Test-Path $sgLog) { Get-Content $sgLog } else { Write-Host "(not found)" }
         working-directory: e2e
       # ────────────────────────────────────────────────────────────────────
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: failure()
         with:
           name: e2e-results-${{ matrix.platform }}
@@ -256,11 +256,11 @@ jobs:
     permissions:
       contents: write   # needed to create the GitHub Release
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           path: artifacts
           merge-multiple: true
-      - uses: softprops/action-gh-release@v2
+      - uses: softprops/action-gh-release@v3
         with:
           tag_name: ${{ github.ref == 'refs/heads/main' && format('v0.1.{0}', github.run_number) || github.ref_name }}
           files: artifacts/**
