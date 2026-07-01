@@ -73,7 +73,7 @@ sproutgit/
 │   ├── types/                  ← Shared TypeScript types + IPC channel constants
 │   ├── ui/                     ← Shared React components (WindowControls, CommitGraph, …)
 │   └── ts-config/              ← Shared tsconfig bases
-├── e2e/                        ← Playwright end-to-end tests
+├── e2e/                        ← WebdriverIO end-to-end tests
 └── website/                    ← Astro marketing site
 ```
 
@@ -168,7 +168,7 @@ pnpm test
 
 Tests live alongside the packages they test (e.g., `packages/git/src/__tests__/`).
 
-### E2E tests (Playwright + Electron)
+### E2E tests (WebdriverIO + Electron)
 
 ```sh
 # Build the app first (E2E runs against compiled output)
@@ -178,7 +178,7 @@ pnpm --filter app build
 pnpm test:e2e
 ```
 
-E2E fixtures are in `e2e/fixtures.ts`. Tests launch the real Electron binary and interact via Playwright's `_electron` driver. No Tauri adapter — tests use `page` (a Playwright `Page` over the renderer) and `gotoHash(page, '/route?param=value')` to navigate.
+E2E specs use WebdriverIO (`e2e/wdio.conf.ts`) with `wdio-electron-service`, launching the real Electron binary and driving it via WebDriver. Shared helpers live in `e2e/helpers.ts` — plain async functions such as `gotoHash('/route?param=value')` and `goHome()` (using the WDIO globals `browser`/`$`/`expect`), not a Playwright-style fixture.
 
 ## Contributing
 

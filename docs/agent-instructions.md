@@ -14,7 +14,7 @@ SproutGit is an Electron-based, cross-platform Git desktop app with a **worktree
 
 **Monorepo:** pnpm v11 workspaces + Turborepo v2  
 **Dev command:** `pnpm dev`  
-**Test command:** `pnpm test` (unit) / `pnpm test:e2e` (Playwright E2E)  
+**Test command:** `pnpm test` (unit) / `pnpm test:e2e` (WebdriverIO E2E)  
 **Typecheck:** `pnpm typecheck`  
 **Lint:** `pnpm lint`
 
@@ -35,7 +35,7 @@ SproutGit is an Electron-based, cross-platform Git desktop app with a **worktree
 | Drizzle ORM | latest |
 | simple-git | latest |
 | node-pty | latest |
-| Playwright | latest |
+| WebdriverIO | latest |
 
 ---
 
@@ -49,9 +49,9 @@ packages/
   database/             ← @sproutgit/database — Drizzle + node:sqlite
   types/                ← @sproutgit/types — shared types + ALL IPC channel constants
   ui/                   ← @sproutgit/ui — shared React components
+  providers/github/     ← @sproutgit/provider-github — GitHub OAuth + repo listing
   ts-config/            ← shared tsconfig
-  eslint-config/        ← shared ESLint config
-e2e/                    ← Playwright end-to-end tests
+e2e/                    ← WebdriverIO end-to-end tests
 website/                ← Astro marketing site
 old/                    ← Legacy Tauri/SvelteKit source (do NOT modify)
 ```
@@ -210,11 +210,10 @@ Key modules:
 
 ## E2E testing (`e2e/`)
 
-- **Framework:** Playwright with `@playwright/test` + Electron driver
-- **Test fixture:** `e2e/fixtures.ts` exports `test` (with `page`, `testRepo`, `gotoHash`)
-- `testRepo` auto-creates a bare-format SproutGit workspace in a temp directory
-- `gotoHash(page, '/route?param=value')` sets `window.location.hash` and waits for navigation
-- Build the app first (`pnpm --filter app build`), then run `pnpm test:e2e`
+- **Framework:** WebdriverIO (`e2e/wdio.conf.ts`) with `wdio-electron-service`, driving the real Electron binary via WebDriver
+- **Shared helpers:** `e2e/helpers.ts` exports plain async functions (not a Playwright-style fixture) — `gotoHash(hash)`, `goHome()`, `createTestRepo()`, `cleanupRepo()`, `closeAndCleanup()`, toast helpers — used alongside the WDIO globals `browser`/`$`/`expect`
+- `gotoHash(hash)` sets `window.location.hash` inside the loaded renderer and waits for TanStack Router to process the change
+- Build the app first (`pnpm --filter app build`), then run `pnpm test:e2e` (aliases `pnpm --filter @sproutgit/e2e test`)
 
 ### Selectors
 

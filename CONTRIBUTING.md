@@ -32,9 +32,9 @@ pnpm dev
 pnpm dev              # Start Electron app with hot-reload (electron-vite)
 pnpm build            # Production build → app/dist-electron/
 pnpm typecheck        # TypeScript typecheck across all packages
-pnpm lint             # ESLint
+pnpm lint             # oxlint
 pnpm test             # Unit tests (Vitest)
-pnpm test:e2e         # Playwright E2E tests (requires a production build first)
+pnpm test:e2e         # WebdriverIO E2E tests (requires a production build first)
 ```
 
 ---
@@ -49,7 +49,8 @@ packages/
   database/           ← Drizzle ORM + node:sqlite — config DB and workspace DB
   terminal/           ← node-pty wrapper
   ui/                 ← Shared React components
-e2e/                  ← Playwright end-to-end tests
+  providers/github/   ← GitHub provider integration (OAuth, repo listing)
+e2e/                  ← WebdriverIO end-to-end tests
 website/              ← Astro marketing site
 old/                  ← Legacy Tauri/SvelteKit source — do NOT modify
 ```
