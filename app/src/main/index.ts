@@ -12,6 +12,7 @@ import { registerSettingsHandlers } from './ipc/settings.js';
 import { registerSystemHandlers } from './ipc/system.js';
 import { registerGithubHandlers } from './ipc/github.js';
 import { registerHookHandlers } from './ipc/hooks.js';
+import { registerCommitMessageGeneratorHandlers } from './ipc/commit-message-generator.js';
 import { registerWatchHandlers } from './ipc/watcher.js';
 import { registerUpdateHandlers, startUpdateCheck } from './ipc/update.js';
 import { openConfigDb } from '@sproutgit/database';
@@ -232,6 +233,8 @@ app.whenReady().then(() => {
   if (isE2EMode) log.info('[e2e] github handlers ok');
   registerHookHandlers(getMainWindow);
   if (isE2EMode) log.info('[e2e] hook handlers ok');
+  registerCommitMessageGeneratorHandlers();
+  if (isE2EMode) log.info('[e2e] commit message generator handlers ok');
   registerWatchHandlers(getMainWindow);
   if (isE2EMode) log.info('[e2e] watch handlers ok');
   // Skip update handler registration in E2E mode. On Linux CI, electron-updater

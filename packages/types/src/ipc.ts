@@ -73,6 +73,8 @@ export const IPC = {
   HOOK_RUN_CREATE: 'hook:runCreate',
   HOOK_RUN_TRIGGER: 'hook:runTrigger',
   HOOK_TOGGLE: 'hook:toggle',
+  // ── Commit message generator ─────────────────────────────────────────────
+  COMMITMSG_GENERATE: 'commitmsg:generate',
   // ── System / editors / shells ─────────────────────────────────────────────
   SYSTEM_DETECT_EDITORS: 'system:detectEditors',
   SYSTEM_DETECT_GIT_TOOLS: 'system:detectGitTools',
@@ -154,6 +156,7 @@ import type {
 import type { EditorInfo, GitToolInfo } from './tools.js';
 import type { GitHubAuthStatus, DeviceCodeResponse, GitHubPollResult, GitHubEmailSuggestion, GitHubRepo } from './github.js';
 import type { TerminalInfo } from './terminal.js';
+import type { CommitMessageGeneratorSettings, CommitMessageGenerateResult } from './commit-message-generator.js';
 
 /** Shape of one row returned by WORKTREE_GET_META / WORKTREE_SET_META. */
 export type WorktreeMetaRow = {
@@ -241,6 +244,8 @@ export type IpcMap = {
   'hook:runCreate':   { args: [args: { workspacePath: string; newWorktreePath: string; initiatingWorktreePath?: string | null }]; result: void };
   'hook:runTrigger':  { args: [args: { workspacePath: string; trigger: WorkspaceHookTrigger; worktreePath: string; initiatingWorktreePath?: string | null; source?: WorktreeSwitchHookSource }]; result: void };
   'hook:runLog':      { args: [args: HookRunLogArgs]; result: void };
+  // ── Commit message generator ─────────────────────────────────────────────
+  'commitmsg:generate': { args: [args: { workspacePath: string; worktreePath: string; settings: CommitMessageGeneratorSettings }]; result: CommitMessageGenerateResult };
   // ── Terminal ──────────────────────────────────────────────────────────────
   'terminal:create': { args: [args: { cwd: string; shell?: string; label?: string; cols?: number; rows?: number }]; result: string };
   'terminal:write':  { args: [args: { id: string; data: string }];           result: void };
