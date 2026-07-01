@@ -1,15 +1,30 @@
 import { gotoHash, goHome, createTestRepo, closeAndCleanup, monitorErrors, waitForToast } from '../helpers.js';
 
 /**
- * Deterministic, cross-platform test agents. `sh -c` is present on both the
- * macOS dev machine and the ubuntu-latest CI runner. The default agent prints
- * SPROUTGIT_AGENT so the test can prove env injection worked, then sleeps so
- * the PTY (and its terminal tab / badge) stay alive long enough to assert on.
+ * Deterministic, cross-platform test agents. `sh`/`bash` aren't guaranteed on
+ * the Windows E2E runner, so the agent command is `node` — every platform's
+ * CI job runs `actions/setup-node` before the E2E step, and passing the
+ * script via `-e` means there's no shell involved to quote/escape for
+ * (the whole string is one argv entry, spawned directly by node-pty).
+ * The default agent prints SPROUTGIT_AGENT so the test can prove env
+ * injection worked, then idles so the terminal tab / badge stay alive long
+ * enough to assert on; each test explicitly kills its sessions afterwards
+ * (see afterEach below) instead of relying on a fixed sleep duration.
  */
 const TEST_AGENTS = {
   agents: [
-    { id: 'test-default-agent', name: 'Test Default Agent', command: 'sh', args: ['-c', 'echo "AGENT=$SPROUTGIT_AGENT"; sleep 30'] },
-    { id: 'test-alt-agent', name: 'Test Alt Agent', command: 'sh', args: ['-c', 'sleep 30'] },
+    {
+      id: 'test-default-agent',
+      name: 'Test Default Agent',
+      command: 'node',
+      args: ['-e', "console.log('AGENT=' + process.env.SPROUTGIT_AGENT); setInterval(() => {}, 1000);"],
+    },
+    {
+      id: 'test-alt-agent',
+      name: 'Test Alt Agent',
+      command: 'node',
+      args: ['-e', 'setInterval(() => {}, 1000);'],
+    },
   ],
   defaultAgentId: 'test-default-agent',
 };
@@ -25,6 +40,15 @@ async function seedTestAgents(): Promise<void> {
   );
 }
 
+/** Kill every live PTY session so a leftover agent process can't starve later specs. */
+async function closeAllTerminals(): Promise<void> {
+  await browser.executeAsync((done: (err?: string) => void) => {
+    (window as unknown as { api: { closeAllTerminals: () => Promise<void> } })
+      .api.closeAllTerminals()
+      .then(() => done(), (e: unknown) => done(String(e)));
+  });
+}
+
 describe('agent launch workflow', () => {
   let testRepo: string;
 
@@ -34,6 +58,7 @@ describe('agent launch workflow', () => {
   });
 
   afterEach(async () => {
+    await closeAllTerminals();
     await closeAndCleanup(testRepo);
   });
 

@@ -9,6 +9,11 @@ interface Props {
 }
 
 function randomId() {
+  // crypto.randomUUID() gives stable, collision-resistant IDs (important as
+  // React list keys); fall back to Math.random() only if it's unavailable.
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return `agent-${crypto.randomUUID()}`;
+  }
   return `agent-${Math.random().toString(36).slice(2, 10)}`;
 }
 

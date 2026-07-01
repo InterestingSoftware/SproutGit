@@ -18,6 +18,16 @@ export type SpawnOptions = {
   env?: Record<string, string>;
   cols?: number;
   rows?: number;
+  /**
+   * When false, `shell` is spawned exactly as given instead of being passed
+   * through resolveShellBin()'s shell-name resolution/fallback logic — which
+   * can silently substitute the platform default shell for an empty string
+   * or an unresolvable path. Callers spawning an explicit executable (e.g. an
+   * agent CLI) should set this to false so a misconfigured command fails
+   * loudly instead of quietly launching a plain shell mislabeled as the agent.
+   * Defaults to true.
+   */
+  resolveShell?: boolean;
 };
 
 type Session = {
@@ -61,9 +71,9 @@ export class TerminalManager {
     }
 
     const id = randomUUID();
-    const { cwd, shell, args = [], command, env, cols = 80, rows = 24 } = options;
+    const { cwd, shell, args = [], command, env, cols = 80, rows = 24, resolveShell = true } = options;
 
-    const shellBin = resolveShellBin(shell);
+    const shellBin = resolveShell ? resolveShellBin(shell) : shell;
     const safeCwd = existsSync(cwd) ? cwd : process.cwd();
 
     // Strip lifecycle variables injected by the dev-server launcher (e.g.

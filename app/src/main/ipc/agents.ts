@@ -37,6 +37,9 @@ export function registerAgentHandlers(configDb: ConfigDb, getWindow: () => Brows
     const agentId = args.agentId ?? roster.defaultAgentId;
     const agent = roster.agents.find(a => a.id === agentId);
     if (!agent) throw new Error(`No configured agent found for id "${String(agentId)}".`);
+    if (!agent.command.trim()) {
+      throw new Error(`Agent "${agent.name}" has no command configured. Set one in Settings → Coding Agents.`);
+    }
 
     const db = getWorkspaceDb(args.workspacePath);
     const wtMeta = db
@@ -65,11 +68,15 @@ export function registerAgentHandlers(configDb: ConfigDb, getWindow: () => Brows
 
     // The agent binary is spawned directly (not through a shell), so its
     // failure-to-launch (e.g. command not installed) surfaces as a normal
-    // PTY exit — no special-casing needed here.
+    // PTY exit — no special-casing needed here. resolveShell: false stops
+    // TerminalManager from substituting the platform default shell for an
+    // unresolvable command, which would otherwise spawn (and mislabel) a
+    // plain shell session as this agent.
     const id = manager.spawn({
       cwd: args.worktreePath,
       shell: agent.command,
       args: agent.args,
+      resolveShell: false,
       env,
       label: agent.name,
       agentId: agent.id,

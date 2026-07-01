@@ -26,21 +26,45 @@ function defaultRoster(): AgentRoster {
   return { agents: getDefaultAgentPresets(), defaultAgentId: 'claude-code' };
 }
 
+function isCodingAgent(value: unknown): value is CodingAgent {
+  if (!value || typeof value !== 'object') return false;
+  const a = value as Record<string, unknown>;
+  return typeof a['id'] === 'string'
+    && typeof a['name'] === 'string'
+    && typeof a['command'] === 'string'
+    && Array.isArray(a['args'])
+    && a['args'].every(arg => typeof arg === 'string');
+}
+
+/** Parses the stored `codingAgents` JSON, returning null if it's corrupted or malformed. */
+function parseStoredAgents(value: string): CodingAgent[] | null {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(value);
+  } catch {
+    return null;
+  }
+  return Array.isArray(parsed) && parsed.every(isCodingAgent) ? parsed : null;
+}
+
 /**
  * Reads the coding-agent roster from the config DB, seeding the built-in
- * presets on first read (when neither key has been saved before).
+ * presets on first read (when neither key has been saved before), and also
+ * re-seeding (and persisting the fix) if the stored value is missing,
+ * corrupted, or doesn't match the expected shape — e.g. from a manual edit,
+ * a partial write, or an older/incompatible version of this app.
  */
 export function getAgentRoster(db: ConfigDb): AgentRoster {
   const agentsRow = db.select().from(settings).where(eq(settings.key, AGENTS_KEY)).get();
   const defaultIdRow = db.select().from(settings).where(eq(settings.key, DEFAULT_AGENT_ID_KEY)).get();
 
-  if (!agentsRow) {
+  const agents = agentsRow ? parseStoredAgents(agentsRow.value) : null;
+  if (!agents) {
     const seeded = defaultRoster();
     saveAgentRoster(db, seeded);
     return seeded;
   }
 
-  const agents = JSON.parse(agentsRow.value) as CodingAgent[];
   const defaultAgentId = defaultIdRow?.value ?? null;
   return { agents, defaultAgentId };
 }
