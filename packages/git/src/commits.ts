@@ -50,6 +50,16 @@ export async function countCommits(repoPath: string): Promise<number> {
 }
 
 /**
+ * Returns the subjects of the most recent commits on HEAD, newest first —
+ * used as a style reference for AI commit-message generators.
+ */
+export async function getRecentCommitSubjects(repoPath: string, count = 10): Promise<string[]> {
+  const git = gitForPath(repoPath);
+  const raw = await git.raw(['log', `--max-count=${count}`, '--format=%s']);
+  return raw.trim().split('\n').filter(Boolean);
+}
+
+/**
  * Lists all local branches, remote-tracking branches, and tags.
  */
 export async function listRefs(repoPath: string): Promise<RefsResult> {

@@ -14,7 +14,9 @@
     "preview": "electron-vite preview",
     "typecheck": "tsgo --noEmit -p tsconfig.node.json && tsgo --noEmit -p tsconfig.web.json",
     "start": "electron .",
-    "postinstall": "node node_modules/electron/install.js"
+    "postinstall": "node node_modules/electron/install.js",
+    "test": "vitest run",
+    "test:watch": "vitest"
   },
   "build": {
     "appId": "com.sproutgit.app",
@@ -115,7 +117,8 @@
     "electron-vite": "^5.0.0",
     "tailwindcss": "^4.3.2",
     "typescript": "npm:@typescript/native-preview@7.0.0-dev.20260630.1",
-    "vite": "^8.1.2"
+    "vite": "^8.1.2",
+    "vitest": "^4.1.9"
   },
   "license": "MIT"
 }
