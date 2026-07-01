@@ -3,6 +3,7 @@ import { migrate } from 'drizzle-orm/better-sqlite3/migrator';
 import { mkdirSync, existsSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import type { Database } from 'better-sqlite3';
 import { openNodeSqlite } from './node-sqlite-compat.js';
 import * as configSchema from './schema/config.js';
 
@@ -28,8 +29,12 @@ export function openConfigDb(dbPath: string) {
   sqlite.pragma('journal_mode = WAL');
   sqlite.pragma('foreign_keys = ON');
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const db = drizzle(sqlite as any, { schema: configSchema });
+  // openNodeSqlite() returns a CompatDatabase shim, not a real better-sqlite3
+  // Database — drizzle-orm/better-sqlite3 only wants the type for its public
+  // API surface (prepare/exec/pragma/transaction/close), all of which
+  // CompatDatabase implements, so this bridge is safe despite not being
+  // structurally identical.
+  const db = drizzle(sqlite as unknown as Database, { schema: configSchema });
 
   // Apply all pending migrations from the embedded migrations folder.
   // Use fileURLToPath so the path is valid on Windows (new URL().pathname

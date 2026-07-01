@@ -3,6 +3,7 @@ import { migrate } from 'drizzle-orm/better-sqlite3/migrator';
 import { mkdirSync, existsSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import type { Database } from 'better-sqlite3';
 import { openNodeSqlite } from './node-sqlite-compat.js';
 import * as workspaceSchema from './schema/workspace.js';
 
@@ -63,8 +64,12 @@ export function openWorkspaceDb(dbPath: string) {
     }
   }
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const db = drizzle(sqlite as any, { schema: workspaceSchema });
+  // openNodeSqlite() returns a CompatDatabase shim, not a real better-sqlite3
+  // Database — drizzle-orm/better-sqlite3 only wants the type for its public
+  // API surface (prepare/exec/pragma/transaction/close), all of which
+  // CompatDatabase implements, so this bridge is safe despite not being
+  // structurally identical.
+  const db = drizzle(sqlite as unknown as Database, { schema: workspaceSchema });
 
   // Use fileURLToPath so the path is valid on Windows.
   migrate(db, { migrationsFolder: fileURLToPath(new URL('../migrations/workspace', import.meta.url)) });
