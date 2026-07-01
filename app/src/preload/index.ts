@@ -35,6 +35,8 @@ import type {
   RecentWorkspace,
   CreateWorktreeResult,
   WorktreeSwitchHookSource,
+  CommitMessageGeneratorSettings,
+  CommitMessageGenerateResult,
 } from '@sproutgit/types';
 
 /**
@@ -359,6 +361,14 @@ const api = {
     ipcRenderer.on(IPC.EVENT_HOOK_TERMINAL_LAUNCH, handler);
     return () => ipcRenderer.off(IPC.EVENT_HOOK_TERMINAL_LAUNCH, handler);
   },
+
+  // ── Commit message generator ──────────────────────────────────────────────
+  generateCommitMessage: (args: {
+    workspacePath: string;
+    worktreePath: string;
+    settings: CommitMessageGeneratorSettings;
+  }): Promise<CommitMessageGenerateResult> =>
+    invoke(IPC.COMMITMSG_GENERATE, args),
 
   // ── File watcher ──────────────────────────────────────────────────────────
   startWatching: (repoPath: string): Promise<void> =>

@@ -25,6 +25,7 @@ import { NewWorktreeDialog } from '../workspace/dialogs/NewWorktreeDialog.js';
 import { DeleteWorktreeDialog } from '../workspace/dialogs/DeleteWorktreeDialog.js';
 import { PublishDialog } from '../workspace/dialogs/PublishDialog.js';
 import { RunHookDialog } from '../workspace/dialogs/RunHookDialog.js';
+import { loadCommitMessageGeneratorSettings } from '../commit-message-generator-settings.js';
 import {
   qk,
   useWorkspaceStatus,
@@ -991,6 +992,10 @@ function WorkspaceInner() {
                           ? api.getDiffContent(p, 'HEAD', file)
                           : api.getWorkingDiff(p, file)
                       }
+                      generateCommitMessage={async p => {
+                        const settings = await loadCommitMessageGeneratorSettings();
+                        return api.generateCommitMessage({ workspacePath, worktreePath: p, settings });
+                      }}
                       onCommit={() => {
                         toast('Committed', 'success');
                         setStagingRefresh(n => n + 1);
