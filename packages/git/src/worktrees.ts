@@ -1,5 +1,10 @@
-import { type WorktreeListResult, type WorktreeInfo, type CreateWorktreeResult } from '@sproutgit/types';
-import { normalize } from 'node:path';
+import {
+  type WorktreeListResult,
+  type WorktreeInfo,
+  type CreateWorktreeResult,
+  validateBranchName,
+} from '@sproutgit/types';
+import { normalize, resolve, sep } from 'node:path';
 import { gitForPath } from './client.js';
 
 /**
@@ -23,8 +28,22 @@ export async function createManagedWorktree(
   fromRef: string,
   newBranch: string
 ): Promise<CreateWorktreeResult> {
+  const branchError = validateBranchName(newBranch);
+  if (branchError) {
+    throw new Error(`Invalid branch name: ${branchError}`);
+  }
+
   const git = gitForPath(rootRepoPath);
   const worktreePath = `${managedWorktreesPath}/${newBranch}`;
+
+  // Defense in depth: validateBranchName already rejects '..' and path
+  // separators that would escape managedWorktreesPath, but re-verify the
+  // resolved path stays contained in case validation rules ever change.
+  const resolvedRoot = resolve(managedWorktreesPath) + sep;
+  const resolvedTarget = resolve(worktreePath);
+  if (!(resolvedTarget + sep).startsWith(resolvedRoot)) {
+    throw new Error('Worktree path must stay within the managed worktrees directory.');
+  }
 
   await git.raw(['worktree', 'add', '-b', newBranch, worktreePath, fromRef]);
 

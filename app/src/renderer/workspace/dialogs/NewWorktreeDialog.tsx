@@ -1,7 +1,7 @@
 import { api } from '../../api.js';
 import { useEffect, useRef, useState } from 'react';
 import { Spinner, Autocomplete } from '@sproutgit/ui';
-import type { RefInfo } from '@sproutgit/types';
+import { validateBranchName, type RefInfo } from '@sproutgit/types';
 import { primaryBtn, secondaryBtn, fieldLabel, fieldInput } from './dialog-classes.js';
 
 type Props = {
@@ -15,25 +15,6 @@ type Props = {
   onCreated: (newWorktreePath: string) => void;
   onToast: (msg: string, variant: 'success' | 'error') => void;
 };
-
-function validateBranchName(name: string): string | null {
-  const t = name.trim();
-  if (!t) return 'Branch name is required.';
-  if (t.startsWith('-')) return 'Cannot start with a hyphen.';
-  if (t.startsWith('.') || t.includes('/.')) return "Cannot start with a dot or contain '/.'.";
-  if (t.endsWith('.')) return 'Cannot end with a dot.';
-  if (t.endsWith('/')) return 'Cannot end with a slash.';
-  if (t.includes('..')) return "Cannot contain '..'.";
-  if (t.includes('@{')) return "Cannot contain '@{'.";
-  if (t === '@') return "Cannot be '@'.";
-  if (t.endsWith('.lock')) return "Cannot end with '.lock'.";
-  if (t.includes('\\')) return 'Cannot contain backslash.';
-  // eslint-disable-next-line no-control-regex
-  if (/[\x00-\x1f\x7f ~^:]/.test(t)) return 'Cannot contain spaces or special chars.';
-  if (/[?*[\]]/.test(t)) return 'Cannot contain glob chars.';
-  if (t.includes('//')) return 'Cannot contain consecutive slashes.';
-  return null;
-}
 
 export function NewWorktreeDialog({ open, workspacePath, gitRepoPath, managedWorktreesPath, refs, onClose, onBeforeCreate, onCreated, onToast }: Props) {
   const dialogRef = useRef<HTMLDialogElement>(null);
