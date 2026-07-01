@@ -9,8 +9,8 @@ import { IPC } from '@sproutgit/types';
 import type { WorkspaceHookTrigger, WorkspaceHookShell, HookProgressEvent, WorktreeSwitchHookSource } from '@sproutgit/types';
 import { openWorkspaceDb, eq } from '@sproutgit/database';
 import { hookDefinitions, worktreeMetadata } from '@sproutgit/database/schema/workspace';
-import { listWorktrees } from '@sproutgit/git/worktrees';
-import { join, basename, normalize, resolve as resolvePath } from 'path';
+import { listWorktrees, canonicalize } from '@sproutgit/git/worktrees';
+import { join, basename, normalize } from 'path';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { manager, sessionWindows, registerHookExitHandler } from './terminal.js';
@@ -80,7 +80,10 @@ async function runHook(args: RunHookArgs, win: BrowserWindow): Promise<void> {
     try {
       const rootRepoPath = join(args.workspacePath, '.sproutgit', 'root');
       const { worktrees } = await listWorktrees(rootRepoPath);
-      const registered = worktrees.find(w => resolvePath(w.path) === resolvePath(args.worktreePath));
+      // canonicalize() resolves symlinks (e.g. macOS's /var vs /private/var)
+      // so a worktree under a symlinked temp dir still matches here.
+      const targetCanonical = canonicalize(args.worktreePath);
+      const registered = worktrees.find(w => canonicalize(w.path) === targetCanonical);
       if (registered) {
         const now = new Date();
         db.insert(worktreeMetadata)

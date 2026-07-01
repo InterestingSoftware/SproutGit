@@ -9,9 +9,11 @@ export type WorktreeInfo = {
   branch: string | null;
   detached: boolean;
   /**
-   * True when the worktree lives outside `<workspace>/.sproutgit/worktrees/`
-   * (and isn't the root) — e.g. one registered by an external tool such as
-   * Claude Code. Computed once in the main process so renderer and main agree.
+   * True when the worktree is neither the repo root nor nested under the
+   * managed worktrees directory passed to `listWorktrees` — e.g. one
+   * registered by an external tool such as Claude Code. Defaults to `false`
+   * when no managed directory was supplied (can't be classified safely).
+   * Computed once in the main process so renderer and main agree.
    */
   isExternal: boolean;
 };

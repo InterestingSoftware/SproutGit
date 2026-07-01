@@ -38,7 +38,10 @@ export function DeleteWorktreeDialog({ target, loading, onConfirm, onCancel }: P
         </p>
         {target.isExternal && (
           <p className="text-xs text-(--sg-warning) m-0">
-            This worktree was registered by an external tool — its branch <strong>"{target.branch ?? label}"</strong> will not be deleted, only the worktree registration.
+            This worktree was registered by an external tool — only the worktree registration will be removed
+            {target.branch
+              ? <> and its branch <strong>"{target.branch}"</strong> will not be deleted.</>
+              : '.'}
           </p>
         )}
         <div className="flex gap-2 justify-end">

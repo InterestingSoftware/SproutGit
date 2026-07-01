@@ -93,8 +93,12 @@ export async function deleteManagedWorktree(
  * to the same directory compare equal even if one side went through a
  * symlinked temp dir and the other didn't. Falls back to a plain `resolve`
  * for paths that don't exist (already-removed worktrees, races, etc).
+ *
+ * Exported so other IPC handlers that compare a caller-supplied path against
+ * git's own worktree list (e.g. deletion validation, hook metadata lookup)
+ * use the same symlink-safe comparison instead of a plain `resolve()`.
  */
-function canonicalize(path: string): string {
+export function canonicalize(path: string): string {
   try {
     return realpathSync.native(path);
   } catch {
