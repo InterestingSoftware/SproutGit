@@ -36,6 +36,14 @@ export function DeleteWorktreeDialog({ target, loading, onConfirm, onCancel }: P
         <p className="text-xs text-(--sg-text-dim) m-0">
           Remove worktree <strong>"{label}"</strong>? This cannot be undone.
         </p>
+        {target.isExternal && (
+          <p className="text-xs text-(--sg-warning) m-0">
+            This worktree was registered by an external tool — only the worktree registration will be removed
+            {target.branch
+              ? <> and its branch <strong>"{target.branch}"</strong> will not be deleted.</>
+              : '.'}
+          </p>
+        )}
         <div className="flex gap-2 justify-end">
           <button className={secondaryBtn} onClick={onCancel} disabled={loading}>Cancel</button>
           <button className={dangerBtn} onClick={() => onConfirm(target)} disabled={loading} data-testid="btn-confirm-delete-worktree">

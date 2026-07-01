@@ -54,6 +54,19 @@ function watchPath(
     watchers.push(fetchHeadWatcher);
   } catch { /* path may not exist */ }
 
+  try {
+    // Git records one admin subdirectory per linked worktree under
+    // <bare root>/worktrees/<name> — this is where `git worktree add/remove`
+    // (run by us or an external tool like Claude Code) shows up, regardless
+    // of where the actual worktree checkout lives on disk.
+    const worktreesAdminWatcher = watch(
+      join(repoPath, '.sproutgit', 'root', 'worktrees'),
+      { persistent: false, recursive: true },
+      () => emitWorktreeChanged(),
+    );
+    watchers.push(worktreesAdminWatcher);
+  } catch { /* path may not exist (imported, non-sproutgit repos) */ }
+
   return watchers;
 }
 

@@ -1,9 +1,10 @@
 import { describe, it, expect, beforeAll } from 'vitest';
 import { execSync } from 'node:child_process';
-import { mkdtempSync, rmSync, writeFileSync, realpathSync } from 'node:fs';
+import { mkdtempSync, rmSync, writeFileSync, realpathSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { listWorktrees, getCommitGraph, getWorktreeStatus, stageFiles, createCommit, getStagedDiff, getRecentCommitSubjects } from '../index.js';
+import { classifyIsExternal } from '../worktrees.js';
 
 /**
  * Creates a bare git repo for testing with an initial commit.
@@ -38,6 +39,61 @@ describe('worktrees', () => {
     const result = await listWorktrees(repoPath);
     expect(result.worktrees).toHaveLength(1);
     expect(result.worktrees[0]?.path).toBe(repoPath);
+  });
+
+  it('marks the root worktree as not external even without a managed path', async () => {
+    const result = await listWorktrees(repoPath);
+    expect(result.worktrees[0]?.isExternal).toBe(false);
+  });
+
+  it('classifies a worktree under the managed directory as not external', async () => {
+    const managedWorktreesPath = join(repoPath, '.sproutgit', 'worktrees');
+    const managedWtPath = join(managedWorktreesPath, 'feature-a');
+    mkdirSync(managedWorktreesPath, { recursive: true });
+    execSync(`git worktree add -b feature-a "${managedWtPath}"`, { cwd: repoPath, stdio: 'ignore' });
+
+    const result = await listWorktrees(repoPath, managedWorktreesPath);
+    const managed = result.worktrees.find(w => w.branch === 'feature-a');
+    expect(managed?.isExternal).toBe(false);
+
+    execSync(`git worktree remove --force "${managedWtPath}"`, { cwd: repoPath, stdio: 'ignore' });
+  });
+
+  it('classifies a worktree registered outside the managed directory as external', async () => {
+    const managedWorktreesPath = join(repoPath, '.sproutgit', 'worktrees');
+    const externalDir = realpathSync.native(mkdtempSync(join(tmpdir(), 'sg-git-test-external-')));
+    const externalWtPath = join(externalDir, 'claude-worktree');
+    execSync(`git worktree add -b claude-adopted "${externalWtPath}"`, { cwd: repoPath, stdio: 'ignore' });
+
+    const result = await listWorktrees(repoPath, managedWorktreesPath);
+    const external = result.worktrees.find(w => w.branch === 'claude-adopted');
+    expect(external?.isExternal).toBe(true);
+
+    execSync(`git worktree remove --force "${externalWtPath}"`, { cwd: repoPath, stdio: 'ignore' });
+    rmSync(externalDir, { recursive: true, force: true });
+  });
+});
+
+describe('classifyIsExternal', () => {
+  it('treats the repo root itself as not external', () => {
+    expect(classifyIsExternal('/ws/root', '/ws/root', '/ws/worktrees')).toBe(false);
+  });
+
+  it('treats a path under the managed worktrees directory as not external', () => {
+    expect(classifyIsExternal('/ws/worktrees/feature-a', '/ws/root', '/ws/worktrees')).toBe(false);
+  });
+
+  it('treats a sibling directory that merely shares a prefix as external', () => {
+    // "/ws/worktrees-other" must not match the "/ws/worktrees" boundary check.
+    expect(classifyIsExternal('/ws/worktrees-other/foo', '/ws/root', '/ws/worktrees')).toBe(true);
+  });
+
+  it('treats a path entirely outside the workspace as external', () => {
+    expect(classifyIsExternal('/home/user/project/.claude/worktrees/abc', '/ws/root', '/ws/worktrees')).toBe(true);
+  });
+
+  it('defaults to not external when no managed path is supplied', () => {
+    expect(classifyIsExternal('/anything/at/all', '/ws/root', undefined)).toBe(false);
   });
 });
 

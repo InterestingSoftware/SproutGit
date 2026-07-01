@@ -5,6 +5,7 @@ import {
   listWorktrees,
   createManagedWorktree,
   deleteManagedWorktree,
+  canonicalize,
 } from '@sproutgit/git/worktrees';
 import { getCommitGraph, countCommits, listRefs } from '@sproutgit/git/commits';
 import {
@@ -26,8 +27,8 @@ export function registerGitHandlers(): void {
   });
 
   // ── worktrees ─────────────────────────────────────────────────────────────
-  handle(IPC.GIT_LIST_WORKTREES, async (_e, repoPath: string) => {
-    const result = await listWorktrees(repoPath);
+  handle(IPC.GIT_LIST_WORKTREES, async (_e, repoPath: string, managedWorktreesPath?: string) => {
+    const result = await listWorktrees(repoPath, managedWorktreesPath);
     return result.worktrees;
   });
 
@@ -47,11 +48,29 @@ export function registerGitHandlers(): void {
 
   handle(IPC.WORKTREE_DELETE, async (_e, args: {
     rootRepoPath: string;
+    managedWorktreesPath?: string;
     worktreePath: string;
     deleteBranch: boolean;
     branchName?: string | null;
   }) => {
-    return deleteManagedWorktree(args.rootRepoPath, args.worktreePath, args.deleteBranch, args.branchName);
+    // Validate the path over IPC: only remove worktrees git itself has
+    // registered against this repo — never an arbitrary filesystem path.
+    // Compare via canonicalize() (realpath, symlink-safe) rather than a plain
+    // resolve() so e.g. macOS's /var vs /private/var doesn't cause a
+    // legitimately-registered worktree to be refused.
+    const { worktrees } = await listWorktrees(args.rootRepoPath, args.managedWorktreesPath);
+    const resolvedTarget = canonicalize(args.worktreePath);
+    const match = worktrees.find(w => canonicalize(w.path) === resolvedTarget);
+    if (!match) {
+      throw new Error('Refusing to remove: path is not a registered worktree of this repository.');
+    }
+    // Defense in depth: never delete the branch of an external worktree,
+    // even if the caller asked for it — an external tool owns that branch.
+    const deleteBranch = args.deleteBranch && !match.isExternal;
+    // Use the matched, git-reported path rather than the caller-supplied one
+    // now that we've validated it — avoids passing through an unresolved
+    // string with different (but equivalent) casing/symlinks to git.
+    return deleteManagedWorktree(args.rootRepoPath, match.path, deleteBranch, args.branchName);
   });
 
   // ── commits ───────────────────────────────────────────────────────────────

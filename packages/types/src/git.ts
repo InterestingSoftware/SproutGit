@@ -8,6 +8,14 @@ export type WorktreeInfo = {
   head: string | null;
   branch: string | null;
   detached: boolean;
+  /**
+   * True when the worktree is neither the repo root nor nested under the
+   * managed worktrees directory passed to `listWorktrees` — e.g. one
+   * registered by an external tool such as Claude Code. Defaults to `false`
+   * when no managed directory was supplied (can't be classified safely).
+   * Computed once in the main process so renderer and main agree.
+   */
+  isExternal: boolean;
 };
 
 export type WorktreeListResult = {
