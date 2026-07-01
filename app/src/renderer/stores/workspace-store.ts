@@ -3,7 +3,7 @@ import type { WorktreeInfo } from '@sproutgit/types';
 
 export type Tab = 'graph' | 'staging' | 'terminal';
 export type TerminalLayout = 'tabs' | 'split' | 'grid';
-export type TerminalSession = { id: string; label: string; pendingData: string; cwd: string };
+export type TerminalSession = { id: string; label: string; pendingData: string; cwd: string; agentId: string | null };
 
 interface WorkspaceUiState {
   workspacePath: string;

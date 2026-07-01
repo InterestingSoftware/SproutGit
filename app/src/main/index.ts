@@ -12,6 +12,7 @@ import { registerSettingsHandlers } from './ipc/settings.js';
 import { registerSystemHandlers } from './ipc/system.js';
 import { registerGithubHandlers } from './ipc/github.js';
 import { registerHookHandlers } from './ipc/hooks.js';
+import { registerAgentHandlers } from './ipc/agents.js';
 import { registerCommitMessageGeneratorHandlers } from './ipc/commit-message-generator.js';
 import { registerWatchHandlers } from './ipc/watcher.js';
 import { registerUpdateHandlers, startUpdateCheck } from './ipc/update.js';
@@ -245,6 +246,8 @@ app.whenReady().then(() => {
   if (isE2EMode) log.info('[e2e] github handlers ok');
   registerHookHandlers(getMainWindow);
   if (isE2EMode) log.info('[e2e] hook handlers ok');
+  registerAgentHandlers(configDb, getMainWindow);
+  if (isE2EMode) log.info('[e2e] agent handlers ok');
   registerCommitMessageGeneratorHandlers();
   if (isE2EMode) log.info('[e2e] commit message generator handlers ok');
   registerWatchHandlers(getMainWindow);

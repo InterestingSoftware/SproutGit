@@ -35,6 +35,8 @@ import type {
   RecentWorkspace,
   CreateWorktreeResult,
   WorktreeSwitchHookSource,
+  AgentRoster,
+  AgentTerminalLaunchEvent,
   CommitMessageGeneratorSettings,
   CommitMessageGenerateResult,
 } from '@sproutgit/types';
@@ -364,6 +366,26 @@ const api = {
     const handler = (_e: Electron.IpcRendererEvent, payload: HookTerminalLaunchEvent) => callback(payload);
     ipcRenderer.on(IPC.EVENT_HOOK_TERMINAL_LAUNCH, handler);
     return () => ipcRenderer.off(IPC.EVENT_HOOK_TERMINAL_LAUNCH, handler);
+  },
+
+  // ── Coding agents ─────────────────────────────────────────────────────────
+  listAgents: (): Promise<AgentRoster> =>
+    invoke(IPC.AGENT_LIST),
+
+  saveAgents: (roster: AgentRoster): Promise<void> =>
+    invoke(IPC.AGENT_SAVE, roster),
+
+  launchAgent: (args: {
+    workspacePath: string;
+    worktreePath: string;
+    agentId?: string;
+  }): Promise<string> =>
+    invoke(IPC.AGENT_LAUNCH, args),
+
+  onAgentTerminalLaunch: (callback: (event: AgentTerminalLaunchEvent) => void) => {
+    const handler = (_e: Electron.IpcRendererEvent, payload: AgentTerminalLaunchEvent) => callback(payload);
+    ipcRenderer.on(IPC.EVENT_AGENT_TERMINAL_LAUNCH, handler);
+    return () => ipcRenderer.off(IPC.EVENT_AGENT_TERMINAL_LAUNCH, handler);
   },
 
   // ── Commit message generator ──────────────────────────────────────────────

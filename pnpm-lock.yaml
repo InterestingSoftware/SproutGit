@@ -171,6 +171,9 @@ importers:
 
   packages/database:
     dependencies:
+      '@sproutgit/types':
+        specifier: workspace:*
+        version: link:../types
       drizzle-orm:
         specifier: ^0.45.2
         version: 0.45.2(@types/better-sqlite3@7.6.13)(better-sqlite3@12.11.1)

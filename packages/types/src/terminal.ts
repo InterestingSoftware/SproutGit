@@ -17,4 +17,6 @@ export type TerminalInfo = {
   id: string;
   cwd: string;
   label: string | null;
+  /** Set when this session was launched via agent:launch, identifying which agent is running. */
+  agentId: string | null;
 };
