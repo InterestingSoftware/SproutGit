@@ -40,9 +40,12 @@ This matters especially with AI agents. Each agent gets its own isolated directo
 ## Features
 
 - **Worktree management** — create, switch, and delete managed worktrees from a clean sidebar
+- **External worktree support** — worktrees registered by other tools (e.g. an AI agent's own `git worktree add`) are adopted automatically, shown alongside managed worktrees with a distinct icon, and fully usable for terminals, diffs, hooks, and agent launches; removing one never deletes its branch
 - **Commit graph** — visual branch history with diff viewer
 - **Staging & commits** — file-level staging, commit message editor
-- **Hooks** — per-workspace lifecycle hooks (pre-switch, post-switch, etc.) with a progress overlay
+- **AI commit-message generation** — optional "magic" button that runs a configured command (built-in presets for Claude Code, Kiro, Codex, Gemini, or a custom command) against the staged diff and recent commit history to draft a message
+- **AI coding agents** — launch a configured coding agent (Claude Code, Kiro, Cursor, Codex CLI, Gemini CLI, or a custom command) as a terminal session scoped to any worktree, tagged with a live-session badge
+- **Hooks** — per-workspace lifecycle hooks (pre-switch, post-switch, etc.) with a progress overlay; adopted external worktrees can opt in via a "Run Create Hooks…" action
 - **Integrated terminal** — persistent per-worktree terminal sessions
 - **GitHub integration** — clone from GitHub repos, device-flow OAuth
 - **Auto-update** — built-in update checker via electron-updater

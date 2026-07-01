@@ -79,6 +79,8 @@ old/                    ← Legacy Tauri/SvelteKit source (do NOT modify)
   - `hooks.ts` — workspace lifecycle hook execution
   - `watcher.ts` — chokidar filesystem watcher → push events to renderer
   - `update.ts` — electron-updater auto-update
+  - `agents.ts` — coding agent roster CRUD + launching an agent as a PTY session in a worktree
+  - `commit-message-generator.ts` — runs the configured command against the staged diff to draft a commit message
 
 ---
 

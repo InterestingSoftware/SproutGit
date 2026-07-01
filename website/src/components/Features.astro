@@ -31,6 +31,18 @@ const features = [
     tag: 'Automation',
   },
   {
+    icon: `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v3M12 18v3M3 12h3M18 12h3M5.6 5.6l2.1 2.1M16.3 16.3l2.1 2.1M5.6 18.4l2.1-2.1M16.3 7.7l2.1-2.1"/><circle cx="12" cy="12" r="3"/></svg>`,
+    title: 'AI commit messages',
+    desc: 'Generate a commit message from your staged diff and recent history with one click. Bring your own command — presets for Claude Code, Kiro, Codex, and Gemini, or wire up anything custom.',
+    tag: 'AI',
+  },
+  {
+    icon: `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>`,
+    title: 'Launch coding agents in worktrees',
+    desc: 'Run Claude Code, Cursor, Codex CLI, Gemini CLI, Kiro, or a custom command as a terminal session scoped to a single worktree, with a live-session badge in the sidebar.',
+    tag: 'AI',
+  },
+  {
     icon: `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>`,
     title: 'Editor integration',
     desc: 'Open any worktree in your configured editor. Respects GIT_EDITOR, core.editor, VISUAL, and EDITOR in that order — your preference, not ours.',
@@ -62,7 +74,8 @@ const features = [
         Everything you need for parallel Git work.
       </h2>
       <p style="max-width:520px;margin:0 auto;color:var(--sg-text-dim);font-size:1.05rem;line-height:1.7;">
-        No AI gimmicks, no subscription. Just a fast, honest Git client that
+        AI features are optional and bring-your-own-command — no built-in
+        subscription, no vendor lock-in. Just a fast, honest Git client that
         treats worktrees as a first-class concept.
       </p>
     </div>
