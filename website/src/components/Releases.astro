@@ -1,0 +1,124 @@
+---
+const GITHUB = 'https://github.com/InterestingSoftware/SproutGit';
+const RELEASES_API = 'https://api.github.com/repos/InterestingSoftware/SproutGit/releases?per_page=5';
+const RELEASES_PAGE = `${GITHUB}/releases`;
+
+interface GithubReleaseAsset {
+  name: string;
+  browser_download_url: string;
+  size: number;
+}
+
+interface GithubRelease {
+  html_url: string;
+  tag_name: string;
+  name: string | null;
+  body: string | null;
+  published_at: string | null;
+  prerelease: boolean;
+  assets: GithubReleaseAsset[];
+}
+
+let releases: GithubRelease[] = [];
+
+try {
+  const response = await fetch(RELEASES_API, {
+    headers: { Accept: 'application/vnd.github+json' },
+  });
+  if (response.ok) {
+    releases = await response.json();
+  }
+} catch {
+  releases = [];
+}
+
+const dateFormatter = new Intl.DateTimeFormat('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
+
+const formatDate = (iso: string | null) => (iso ? dateFormatter.format(new Date(iso)) : '');
+
+const summarize = (body: string | null) => {
+  if (!body) return 'See the full release notes on GitHub.';
+  const firstParagraph = body
+    .split('\n')
+    .map((line) => line.trim())
+    .find((line) => line.length > 0 && !line.startsWith('#'));
+  if (!firstParagraph) return 'See the full release notes on GitHub.';
+  return firstParagraph.length > 220 ? `${firstParagraph.slice(0, 217)}…` : firstParagraph;
+};
+---
+
+<section id="releases" style="padding: 6rem 2rem;">
+  <div style="max-width: 900px; margin: 0 auto;">
+
+    <div data-animate style="text-align:center;margin-bottom:3.5rem;">
+      <p style="font-size:0.75rem;font-weight:600;letter-spacing:0.1em;text-transform:uppercase;color:var(--sg-primary);margin:0 0 0.75rem;">
+        Shipping in the open
+      </p>
+      <h2 style="font-size:clamp(1.9rem,4vw,2.8rem);font-weight:700;letter-spacing:-0.03em;color:var(--sg-text);margin:0 0 1rem;">
+        Latest releases
+      </h2>
+      <p style="max-width:520px;margin:0 auto;color:var(--sg-text-dim);font-size:1.05rem;line-height:1.7;">
+        Pulled straight from GitHub Releases. Every build is versioned, tagged, and available to download.
+      </p>
+    </div>
+
+    {releases.length > 0 ? (
+      <ul style="list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:1rem;" data-stagger>
+        {releases.map((release) => (
+          <li data-animate class="release-card" style="
+            border: 1px solid var(--sg-border-subtle);
+            border-radius: 12px;
+            padding: 1.5rem 1.75rem;
+            background: var(--sg-surface);
+          ">
+            <div style="display:flex;flex-wrap:wrap;align-items:center;gap:0.75rem;margin-bottom:0.5rem;">
+              <span style="font-size:1rem;font-weight:700;color:var(--sg-text);letter-spacing:-0.01em;">
+                {release.name || release.tag_name}
+              </span>
+              {release.prerelease && (
+                <span style="
+                  font-size:0.65rem;font-weight:700;letter-spacing:0.07em;text-transform:uppercase;
+                  padding:2px 7px;border-radius:999px;
+                  background:color-mix(in srgb, var(--sg-accent) 15%, transparent);
+                  color:var(--sg-accent);
+                ">Pre-release</span>
+              )}
+              <span style="font-size:0.8rem;color:var(--sg-text-faint);">{formatDate(release.published_at)}</span>
+            </div>
+            <p style="margin:0 0 1rem;font-size:0.9rem;color:var(--sg-text-dim);line-height:1.6;">
+              {summarize(release.body)}
+            </p>
+            <div style="display:flex;flex-wrap:wrap;gap:1rem;align-items:center;">
+              <a href={release.html_url} target="_blank" rel="noopener noreferrer"
+                 style="font-size:0.85rem;font-weight:600;color:var(--sg-primary);text-decoration:none;">
+                Release notes ↗
+              </a>
+              {release.assets.length > 0 && (
+                <span style="font-size:0.8rem;color:var(--sg-text-faint);">
+                  {release.assets.length} download{release.assets.length === 1 ? '' : 's'}
+                </span>
+              )}
+            </div>
+          </li>
+        ))}
+      </ul>
+    ) : (
+      <p data-animate style="text-align:center;color:var(--sg-text-dim);font-size:0.95rem;">
+        Couldn't load releases right now — check them out directly on GitHub.
+      </p>
+    )}
+
+    <div data-animate style="text-align:center;margin-top:2.5rem;">
+      <a href={RELEASES_PAGE} target="_blank" rel="noopener noreferrer"
+         style="
+           display:inline-flex;align-items:center;gap:0.5rem;
+           font-size:0.9rem;font-weight:700;color:var(--sg-primary);
+           padding:0.75rem 1.5rem;border-radius:10px;
+           border:1.5px solid color-mix(in srgb, var(--sg-primary) 30%, transparent);
+           text-decoration:none;
+         ">
+        View all releases ↗
+      </a>
+    </div>
+  </div>
+</section>
