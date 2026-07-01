@@ -52,6 +52,11 @@ export const IPC = {
   SETTINGS_SET: 'settings:set',
   SETTINGS_DELETE: 'settings:delete',
   SETTINGS_GET_ALL: 'settings:getAll',
+  // ── Coding agents ────────────────────────────────────────────────────────
+  AGENT_LIST: 'agent:list',
+  AGENT_SAVE: 'agent:save',
+  AGENT_LAUNCH: 'agent:launch',
+  EVENT_AGENT_TERMINAL_LAUNCH: 'event:agentTerminalLaunch',
   // ── Git config ───────────────────────────────────────────────────────────
   GIT_GET_CONFIG: 'git:getConfig',
   GIT_SET_CONFIG: 'git:setConfig',
@@ -153,6 +158,7 @@ import type {
 import type { EditorInfo, GitToolInfo } from './tools.js';
 import type { GitHubAuthStatus, DeviceCodeResponse, GitHubPollResult, GitHubEmailSuggestion, GitHubRepo } from './github.js';
 import type { TerminalInfo } from './terminal.js';
+import type { AgentRoster } from './agents.js';
 
 /** Shape of one row returned by WORKTREE_GET_META / WORKTREE_SET_META. */
 export type WorktreeMetaRow = {
@@ -252,6 +258,10 @@ export type IpcMap = {
   'settings:set':    { args: [args: { key: string; value: string }];        result: void };
   'settings:delete': { args: [key: string];                                  result: void };
   'settings:getAll': { args: [];                                             result: { key: string; value: string }[] };
+  // ── Coding agents ─────────────────────────────────────────────────────────
+  'agent:list':   { args: [];                                                          result: AgentRoster };
+  'agent:save':   { args: [roster: AgentRoster];                                       result: void };
+  'agent:launch': { args: [args: { workspacePath: string; worktreePath: string; agentId?: string }]; result: string };
   // ── System ────────────────────────────────────────────────────────────────
   'system:appVersion':    { args: [];             result: string };
   'system:listShells':    { args: [];             result: { name: string; path: string }[] };

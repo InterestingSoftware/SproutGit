@@ -10,6 +10,8 @@ export type TerminalExitCallback = (sessionId: string, exitCode: number) => void
 export type SpawnOptions = {
   cwd: string;
   shell: WorkspaceHookShell | string;
+  /** Positional args passed directly to the spawned executable (e.g. agent CLI flags). */
+  args?: string[];
   /** Optional one-shot command injected after spawn (e.g. a hook script). */
   command?: string | null;
   /** Environment variable overrides merged on top of `process.env`. */
@@ -59,7 +61,7 @@ export class TerminalManager {
     }
 
     const id = randomUUID();
-    const { cwd, shell, command, env, cols = 80, rows = 24 } = options;
+    const { cwd, shell, args = [], command, env, cols = 80, rows = 24 } = options;
 
     const shellBin = resolveShellBin(shell);
     const safeCwd = existsSync(cwd) ? cwd : process.cwd();
@@ -75,7 +77,7 @@ export class TerminalManager {
       baseEnv[k] = v;
     }
 
-    const proc = pty.spawn(shellBin, [], {
+    const proc = pty.spawn(shellBin, args, {
       name: 'xterm-256color',
       cwd: safeCwd,
       env: {
@@ -151,11 +153,11 @@ export class TerminalManager {
  * so `closeForPath` can work correctly and the renderer can rebuild labels.
  */
 export class TerminalManagerWithMeta extends TerminalManager {
-  protected meta = new Map<string, { cwd: string; label: string }>();
+  protected meta = new Map<string, { cwd: string; label: string; agentId: string | null }>();
 
-  override spawn(options: SpawnOptions & { label?: string }): string {
+  override spawn(options: SpawnOptions & { label?: string; agentId?: string }): string {
     const id = super.spawn(options);
-    this.meta.set(id, { cwd: options.cwd, label: options.label ?? options.cwd });
+    this.meta.set(id, { cwd: options.cwd, label: options.label ?? options.cwd, agentId: options.agentId ?? null });
     return id;
   }
 
@@ -186,8 +188,8 @@ export class TerminalManagerWithMeta extends TerminalManager {
     return this.meta.get(sessionId)?.label;
   }
 
-  listSessions(): { id: string; cwd: string; label: string }[] {
-    return Array.from(this.meta.entries()).map(([id, m]) => ({ id, cwd: m.cwd, label: m.label }));
+  listSessions(): { id: string; cwd: string; label: string; agentId: string | null }[] {
+    return Array.from(this.meta.entries()).map(([id, m]) => ({ id, cwd: m.cwd, label: m.label, agentId: m.agentId }));
   }
 }
 

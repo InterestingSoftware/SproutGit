@@ -15,7 +15,7 @@ import {
   UpdateBadge,
 } from '@sproutgit/ui';
 import { GitBranch, Terminal, GitMerge, X, ChevronRight, ChevronDown, Settings, Plus, Columns2, Rows3, LayoutGrid, Pencil, PanelTop, SquareSplitHorizontal, ChevronsRight, Trash2 } from 'lucide-react';
-import type { CommitEntry, DiffFileEntry, WorktreeInfo, WorktreeSwitchHookSource } from '@sproutgit/types';
+import type { CommitEntry, DiffFileEntry, WorktreeInfo, WorktreeSwitchHookSource, AgentRoster } from '@sproutgit/types';
 import { useToast } from '../toast-context.js';
 import { useUpdateStore } from '../stores/update-store.js';
 import { useWorkspaceStore, resetWorkspaceStore } from '../stores/workspace-store.js';
@@ -105,6 +105,18 @@ function WorkspaceInner() {
   useEffect(() => {
     void api.listShells().then(setAvailableShells).catch(() => undefined);
   }, []);
+
+  // ── Coding agents ──────────────────────────────────────────────────────
+  const [agentRoster, setAgentRoster] = useState<AgentRoster>({ agents: [], defaultAgentId: null });
+
+  useEffect(() => {
+    void api.listAgents().then(setAgentRoster).catch(() => undefined);
+  }, []);
+
+  // Worktree paths that currently have a live agent-launched terminal session.
+  const worktreesWithLiveAgent = new Set(
+    terminalSessions.filter(s => s.agentId !== null).map(s => s.cwd),
+  );
 
   // ── Server state via TanStack Query ──────────────────────────────────
   const { data: workspaceStatus } = useWorkspaceStatus(workspacePath);
@@ -351,6 +363,7 @@ function WorkspaceInner() {
             cwd,
             label: makeTerminalLabel(s.terminalSessions.filter(sess => sess.cwd === cwd), label),
             pendingData: '',
+            agentId: null,
           }],
           activeTerminalId: event.terminalId,
           activeTab: 'terminal',
@@ -363,6 +376,33 @@ function WorkspaceInner() {
     });
 
     return () => { offHookTerminal(); };
+  }, []);
+
+  // ── Agent terminal launch listener ─────────────────────────────────────
+
+  useEffect(() => {
+    const offAgentTerminal = api.onAgentTerminalLaunch((event) => {
+      useWorkspaceStore.setState(s => {
+        const cwd = event.cwd;
+        return {
+          terminalSessions: [...s.terminalSessions, {
+            id: event.terminalId,
+            cwd,
+            label: makeTerminalLabel(s.terminalSessions.filter(sess => sess.cwd === cwd), event.agentName),
+            pendingData: '',
+            agentId: event.agentId,
+          }],
+          activeTerminalId: event.terminalId,
+          activeTab: 'terminal',
+          worktreeActiveTerminalId: {
+            ...s.worktreeActiveTerminalId,
+            [cwd]: event.terminalId,
+          },
+        };
+      });
+    });
+
+    return () => { offAgentTerminal(); };
   }, []);
 
   // ── Auto-update listeners ─────────────────────────────────────────────
@@ -584,6 +624,7 @@ function WorkspaceInner() {
           cwd,
           label: makeTerminalLabel(s.terminalSessions.filter(sess => sess.cwd === cwd), label ?? shellLabel),
           pendingData: '',
+          agentId: null,
         }],
         activeTerminalId: id,
         activeTab: 'terminal',
@@ -591,6 +632,14 @@ function WorkspaceInner() {
       }));
     } catch (err) {
       toast(`Failed to open terminal: ${String(err)}`, 'error');
+    }
+  }
+
+  async function launchAgent(worktreePath: string, agentId?: string) {
+    try {
+      await api.launchAgent({ workspacePath, worktreePath, ...(agentId !== undefined && { agentId }) });
+    } catch (err) {
+      toast(`Failed to launch agent: ${String(err)}`, 'error');
     }
   }
 
@@ -837,6 +886,9 @@ function WorkspaceInner() {
             onOpenHooksModal={() => setHooksModalOpen(true)}
             onOpenRunHookModal={wt => setRunHookTarget(wt)}
             onDeleteWorktree={wt => setDeleteTarget(wt)}
+            agentRoster={agentRoster}
+            worktreesWithLiveAgent={worktreesWithLiveAgent}
+            onLaunchAgent={(wtPath, agentId) => void launchAgent(wtPath, agentId)}
           />
 
           {/* Main content */}

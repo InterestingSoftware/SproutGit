@@ -1,14 +1,14 @@
 import { api } from '../api.js';
 import { useToast } from '../toast-context.js';
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import {
   ResizableSidebar,
   Spinner,
   useContextMenu,
   UpdateBadge,
 } from '@sproutgit/ui';
-import { GitBranch, RefreshCw, ArrowDownToLine, ArrowUpFromLine, Download, Plus, Sliders, Trash2, MoreHorizontal, FolderPen, FolderSearch, SquareTerminal, Play, Copy, CopyPlus } from 'lucide-react';
-import type { WorktreeInfo, WorkspaceStatus } from '@sproutgit/types';
+import { GitBranch, RefreshCw, ArrowDownToLine, ArrowUpFromLine, Download, Plus, Sliders, Trash2, MoreHorizontal, FolderPen, FolderSearch, SquareTerminal, Play, Copy, CopyPlus, Bot, ChevronDown } from 'lucide-react';
+import type { WorktreeInfo, WorkspaceStatus, AgentRoster } from '@sproutgit/types';
 import type { UpdateState } from '@sproutgit/ui';
 
 type Props = {
@@ -23,6 +23,8 @@ type Props = {
   creatingWorktree: boolean;
   pendingCreationBranch: string | null;
   updateState: UpdateState;
+  agentRoster: AgentRoster;
+  worktreesWithLiveAgent: Set<string>;
   onWorktreeSwitch: (wt: WorktreeInfo) => void;
   onFetch: () => void;
   onPull: () => void;
@@ -33,6 +35,7 @@ type Props = {
   onOpenHooksModal: () => void;
   onOpenRunHookModal: (wt: WorktreeInfo) => void;
   onDeleteWorktree: (wt: WorktreeInfo) => void;
+  onLaunchAgent: (worktreePath: string, agentId?: string) => void;
 };
 
 const iconBtn = 'inline-flex items-center justify-center p-1.5 bg-transparent border-none cursor-pointer text-(--sg-text-faint) rounded-[4px] transition-colors hover:text-(--sg-text) hover:bg-(--sg-surface-raised) disabled:opacity-40 disabled:cursor-not-allowed';
@@ -66,6 +69,8 @@ export function WorktreeSidebar({
   creatingWorktree,
   pendingCreationBranch,
   updateState,
+  agentRoster,
+  worktreesWithLiveAgent,
   onWorktreeSwitch,
   onFetch,
   onPull,
@@ -76,6 +81,7 @@ export function WorktreeSidebar({
   onOpenHooksModal,
   onOpenRunHookModal,
   onDeleteWorktree,
+  onLaunchAgent,
 }: Props) {
   const toast = useToast();
   const contextMenu = useContextMenu();
@@ -84,6 +90,29 @@ export function WorktreeSidebar({
   useEffect(() => {
     api.getHomeDir().then(setHomeDir).catch(() => {/* ignore */});
   }, []);
+
+  const defaultAgent = agentRoster.agents.find(a => a.id === agentRoster.defaultAgentId) ?? null;
+  const nonDefaultAgents = agentRoster.agents.filter(a => a.id !== defaultAgent?.id);
+
+  function agentMenuItems(worktreePath: string) {
+    if (agentRoster.agents.length === 0) return [];
+    const items: { label: string; icon: ReactNode; onClick: () => void }[] = [];
+    if (defaultAgent) {
+      items.push({
+        label: `Launch ${defaultAgent.name}`,
+        icon: <Bot size={14} />,
+        onClick: () => onLaunchAgent(worktreePath, defaultAgent.id),
+      });
+    }
+    for (const agent of nonDefaultAgents) {
+      items.push({
+        label: `Launch with ${agent.name}`,
+        icon: <Bot size={14} />,
+        onClick: () => onLaunchAgent(worktreePath, agent.id),
+      });
+    }
+    return items;
+  }
 
   const rootPath = workspaceStatus?.rootPath ?? '';
   const managedPath = workspaceStatus?.worktreesPath ?? '';
@@ -238,6 +267,7 @@ export function WorktreeSidebar({
                       icon: <SquareTerminal size={14} />,
                       onClick: () => onOpenTerminal(row.wt.path, row.wt.branch ?? row.wt.path.split('/').pop()),
                     },
+                    ...(agentMenuItems(row.wt.path).length > 0 ? ['separator' as const, ...agentMenuItems(row.wt.path)] : []),
                     'separator',
                     { label: 'Fetch', icon: <RefreshCw size={14} />, onClick: () => void api.fetch(row.wt.path).then(() => { toast('Fetched', 'success'); onRefresh(); }).catch((err: unknown) => toast(String(err), 'error')) },
                     { label: 'Pull', icon: <ArrowDownToLine size={14} />, onClick: () => void api.pull(row.wt.path).then(() => { toast('Pulled', 'success'); onRefresh(); }).catch((err: unknown) => toast(String(err), 'error')) },
@@ -280,6 +310,15 @@ export function WorktreeSidebar({
                         {changeCount}
                       </span>
                     )}
+                    {worktreesWithLiveAgent.has(row.wt.path) && (
+                      <span
+                        className="sg-agent-badge flex shrink-0 items-center justify-center rounded-full bg-(--sg-primary)/15 p-0.5 text-(--sg-primary)"
+                        data-testid="agent-badge"
+                        title="Agent running"
+                      >
+                        <Bot size={10} />
+                      </span>
+                    )}
                   </div>
                   <p className="truncate text-[10px] text-(--sg-text-dim)">
                     {isPending ? '' : tildify(row.wt.path, homeDir)}
@@ -288,6 +327,33 @@ export function WorktreeSidebar({
 
                 {/* Action buttons (shown on hover / when active) */}
                 <div className={`flex shrink-0 items-center gap-0.5 transition-opacity ${isRowBusy ? 'pointer-events-none opacity-0' : 'opacity-0 group-hover:opacity-100'} ${isActive && !isRowBusy ? 'opacity-100' : ''}`}>
+                  {defaultAgent && (
+                    <button
+                      type="button"
+                      onClick={e => { e.stopPropagation(); onLaunchAgent(row.wt.path, defaultAgent.id); }}
+                      className="sg-launch-agent-btn rounded p-1 text-(--sg-text-dim) hover:bg-(--sg-surface) hover:text-(--sg-primary) border-none cursor-pointer bg-transparent"
+                      title={`Launch ${defaultAgent.name}`}
+                      aria-label={`Launch ${defaultAgent.name}`}
+                      data-testid="btn-launch-agent"
+                    >
+                      <Bot size={13} />
+                    </button>
+                  )}
+                  {nonDefaultAgents.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={e => {
+                        e.stopPropagation();
+                        contextMenu.open(e, agentMenuItems(row.wt.path));
+                      }}
+                      className="sg-launch-agent-picker-btn rounded p-1 text-(--sg-text-dim) hover:bg-(--sg-surface) hover:text-(--sg-text) border-none cursor-pointer bg-transparent"
+                      title="Choose agent to launch"
+                      aria-label="Choose agent to launch"
+                      data-testid="btn-launch-agent-picker"
+                    >
+                      <ChevronDown size={12} />
+                    </button>
+                  )}
                   <button
                     type="button"
                     onClick={e => {
@@ -296,6 +362,7 @@ export function WorktreeSidebar({
                         { label: 'Open in Editor', icon: <FolderPen size={14} />, onClick: () => void api.openInEditor(row.wt.path).then(() => toast('Opened in editor', 'success')).catch((err: unknown) => toast(String(err), 'error')) },
                         { label: /mac/i.test(navigator.platform) ? 'Reveal in Finder' : 'Reveal in Explorer', icon: <FolderSearch size={14} />, onClick: () => void api.revealInFinder(row.wt.path).catch((err: unknown) => toast(String(err), 'error')) },
                         { label: 'Open Terminal Here', icon: <SquareTerminal size={14} />, onClick: () => onOpenTerminal(row.wt.path, row.wt.branch ?? row.wt.path.split('/').pop()) },
+                        ...(agentMenuItems(row.wt.path).length > 0 ? ['separator' as const, ...agentMenuItems(row.wt.path)] : []),
                         'separator',
                         { label: 'Run Hook…', icon: <Play size={14} />, onClick: () => onOpenRunHookModal(row.wt) },
                         'separator',
