@@ -72,6 +72,7 @@ sproutgit/
 │   ├── database/               ← Drizzle ORM + node:sqlite (config DB + workspace DB)
 │   ├── types/                  ← Shared TypeScript types + IPC channel constants
 │   ├── ui/                     ← Shared React components (WindowControls, CommitGraph, …)
+│   ├── providers/github/       ← GitHub provider integration (OAuth, repo listing)
 │   └── ts-config/              ← Shared tsconfig bases
 ├── e2e/                        ← WebdriverIO end-to-end tests
 └── website/                    ← Astro marketing site
