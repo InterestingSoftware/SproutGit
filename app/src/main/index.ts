@@ -141,7 +141,19 @@ function createWindow(): BrowserWindow {
   });
 
   win.once('ready-to-show', () => {
-    win.show();
+    if (isE2EMode) {
+      // showInactive() renders the window without activating/focusing the app,
+      // opacity 0 keeps it invisible on-screen, and ignoring mouse events stops
+      // it from hijacking clicks meant for whatever's actually on screen.
+      // CDP screenshots still work because they capture the renderer's backing
+      // store, not screen pixels. (macOS clamps off-screen x/y back on-screen,
+      // so position tricks don't work — this is the reliable alternative.)
+      win.showInactive();
+      win.setOpacity(0);
+      win.setIgnoreMouseEvents(true);
+    } else {
+      win.show();
+    }
   });
 
   // Notify the renderer when the window maximize state changes so the
