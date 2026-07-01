@@ -21,12 +21,19 @@ interface GithubRelease {
 
 let releases: GithubRelease[] = [];
 
+const githubToken = import.meta.env.GITHUB_TOKEN?.trim();
+
 try {
   const response = await fetch(RELEASES_API, {
-    headers: { Accept: 'application/vnd.github+json' },
+    headers: {
+      Accept: 'application/vnd.github+json',
+      ...(githubToken ? { Authorization: `Bearer ${githubToken}` } : {}),
+    },
+    signal: AbortSignal.timeout(8000),
   });
   if (response.ok) {
-    releases = await response.json();
+    const body = await response.json();
+    if (Array.isArray(body)) releases = body;
   }
 } catch {
   releases = [];
