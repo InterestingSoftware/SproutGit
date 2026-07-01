@@ -1,4 +1,4 @@
-import { int, primaryKey, sqliteTable, text } from 'drizzle-orm/sqlite-core';
+import { index, int, primaryKey, sqliteTable, text } from 'drizzle-orm/sqlite-core';
 
 // ─── worktree_metadata ───────────────────────────────────────────────────────
 
@@ -55,7 +55,11 @@ export const hookDefinitions = sqliteTable('hook_definitions', {
   timeoutSeconds: int('timeout_seconds').notNull().default(300),
   createdAt: int('created_at', { mode: 'timestamp_ms' }).notNull(),
   updatedAt: int('updated_at', { mode: 'timestamp_ms' }).notNull(),
-});
+}, (t) => ({
+  // Every hook-lookup query in hooks.ts filters by trigger (e.g. all
+  // "before_worktree_switch" hooks for a workspace).
+  triggerIdx: index('hook_definitions_trigger_idx').on(t.trigger),
+}));
 
 // ─── hook_dependencies ───────────────────────────────────────────────────────
 

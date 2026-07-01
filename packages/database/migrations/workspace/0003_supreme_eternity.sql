@@ -1,0 +1,1 @@
+CREATE INDEX `hook_definitions_trigger_idx` ON `hook_definitions` (`trigger`);
