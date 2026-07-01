@@ -24,7 +24,7 @@ SproutGit is an Electron-based, cross-platform Git desktop app with a **worktree
 
 | Technology | Version |
 |---|---|
-| Electron | 42 |
+| Electron | 43 |
 | electron-vite | 5 |
 | electron-builder | 26 |
 | React | 19 |

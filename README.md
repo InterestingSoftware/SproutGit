@@ -7,7 +7,7 @@
 <p align="center">
   A fast, open-source, cross-platform Git desktop app with a <strong>worktree-first</strong> workflow.<br/>
   Optimized for AI-driven software development.<br/>
-  Built with <a href="https://www.electronjs.org">Electron v42</a> · <a href="https://react.dev">React 19</a> · <a href="https://www.typescriptlang.org">TypeScript</a>
+  Built with <a href="https://www.electronjs.org">Electron v43</a> · <a href="https://react.dev">React 19</a> · <a href="https://www.typescriptlang.org">TypeScript</a>
 </p>
 
 <p align="center">
@@ -82,7 +82,7 @@ sproutgit/
 
 | Layer | Technology |
 |---|---|
-| Desktop shell | Electron v42 |
+| Desktop shell | Electron v43 |
 | Renderer | React 19 + TanStack Router v1 (hash history) |
 | Styling | Tailwind CSS v4 (`@tailwindcss/vite`) |
 | State | Zustand v5 |
