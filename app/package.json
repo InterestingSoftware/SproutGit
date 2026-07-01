@@ -21,6 +21,7 @@
   "build": {
     "appId": "com.sproutgit.app",
     "productName": "SproutGit",
+    "executableName": "SproutGit",
     "copyright": "Copyright © 2026 SproutGit contributors",
     "directories": {
       "buildResources": "build",
@@ -96,17 +97,17 @@
     "electron-log": "^5.4.4",
     "electron-updater": "^6.8.9",
     "highlight.js": "^11.11.1",
-    "lucide-react": "^1.22.0",
-    "node-pty": "1.2.0-beta.12",
+    "lucide-react": "^1.23.0",
+    "node-pty": "1.2.0-beta.14",
     "react": "^19.2.7",
     "react-dom": "^19.2.7",
     "zustand": "^5.0.14"
   },
   "devDependencies": {
-    "@electron/rebuild": "^4.0.6",
+    "@electron/rebuild": "^4.1.0",
     "@sproutgit/ts-config": "workspace:*",
     "@tailwindcss/vite": "^4.3.2",
-    "@types/node": "^26.0.1",
+    "@types/node": "^26.1.0",
     "@types/react": "^19.2.17",
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^6.0.3",
