@@ -8,6 +8,12 @@ export type WorktreeInfo = {
   head: string | null;
   branch: string | null;
   detached: boolean;
+  /**
+   * True when the worktree lives outside `<workspace>/.sproutgit/worktrees/`
+   * (and isn't the root) — e.g. one registered by an external tool such as
+   * Claude Code. Computed once in the main process so renderer and main agree.
+   */
+  isExternal: boolean;
 };
 
 export type WorktreeListResult = {

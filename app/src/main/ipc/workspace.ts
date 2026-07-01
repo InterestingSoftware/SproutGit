@@ -1,7 +1,7 @@
 import { app } from 'electron';
 import { handle } from './handle.js';
 import { IPC, type WorkspaceHookShell, type WorkspaceHookTrigger, type WorkspaceHookScope, type HookExecutionTarget } from '@sproutgit/types';
-import { openConfigDb, openWorkspaceDb, eq } from '@sproutgit/database';
+import { openConfigDb, openWorkspaceDb, eq, notInArray } from '@sproutgit/database';
 import { join } from 'path';
 import { recentWorkspaces } from '@sproutgit/database/schema/config';
 import { log } from '../telemetry.js';
@@ -121,6 +121,18 @@ export function registerWorkspaceHandlers(configDb: ConfigDb): void {
           updatedAt: now,
         },
       })
+      .run();
+  });
+
+  // Drops worktree_metadata rows for paths git no longer reports (deleted
+  // externally, or removed via `git worktree remove` outside the app). This
+  // mirrors `git worktree prune` semantics for our own bookkeeping only —
+  // it never touches the actual git worktree registration.
+  handle(IPC.WORKTREE_PRUNE_METADATA, (_e, args: { workspacePath: string; activeWorktreePaths: string[] }) => {
+    if (args.activeWorktreePaths.length === 0) return; // avoid wiping everything on a transient empty list
+    const db = getWorkspaceDb(args.workspacePath);
+    db.delete(worktreeMetadata)
+      .where(notInArray(worktreeMetadata.worktreePath, args.activeWorktreePaths))
       .run();
   });
 
