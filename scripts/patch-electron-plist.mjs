@@ -12,7 +12,7 @@
 
 import { execFileSync, execSync } from 'node:child_process';
 import { dirname, join } from 'node:path';
-import { existsSync, renameSync, readFileSync, writeFileSync, copyFileSync } from 'node:fs';
+import { existsSync, renameSync, rmSync, readFileSync, writeFileSync, copyFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
 if (process.platform !== 'darwin') process.exit(0);
@@ -45,6 +45,12 @@ for (const electronPkgDir of electronPkgDirs) {
 
   // Step 1: rename Electron.app → SproutGit.app (so macOS uses the right bundle name).
   if (existsSync(electronApp)) {
+    // A re-run of electron's own installer can re-extract a fresh Electron.app
+    // without clearing out a SproutGit.app left over from a previous patch —
+    // remove the stale bundle so the rename doesn't fail with ENOTEMPTY.
+    if (existsSync(sproutApp)) {
+      rmSync(sproutApp, { recursive: true, force: true });
+    }
     renameSync(electronApp, sproutApp);
     console.log(`patch-electron-plist: renamed Electron.app → ${APP_NAME}.app (${electronPkgDir})`);
   } else if (!existsSync(sproutApp)) {
