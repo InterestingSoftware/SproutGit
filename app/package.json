@@ -43,6 +43,13 @@
             "arm64",
             "x64"
           ]
+        },
+        {
+          "target": "dmg",
+          "arch": [
+            "arm64",
+            "x64"
+          ]
         }
       ],
       "category": "public.app-category.developer-tools",
@@ -68,6 +75,12 @@
           "arch": [
             "x64"
           ]
+        },
+        {
+          "target": "deb",
+          "arch": [
+            "x64"
+          ]
         }
       ],
       "category": "Development"
@@ -75,6 +88,28 @@
     "nsis": {
       "oneClick": false,
       "allowToChangeInstallationDirectory": true
+    },
+    "dmg": {
+      "title": "SproutGit ${version}",
+      "background": "build/background.tiff",
+      "window": {
+        "width": 540,
+        "height": 400
+      },
+      "iconSize": 96,
+      "contents": [
+        {
+          "x": 140,
+          "y": 150,
+          "type": "file"
+        },
+        {
+          "x": 400,
+          "y": 150,
+          "type": "link",
+          "path": "/Applications"
+        }
+      ]
     },
     "publish": {
       "provider": "github",
