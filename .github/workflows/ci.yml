@@ -113,6 +113,21 @@ jobs:
             ${{ runner.temp }}/electron-builder-cache
           key: electron-${{ runner.os }}-${{ hashFiles('app/package.json') }}
       - run: pnpm build --filter=!@sproutgit/app --filter=!sproutgit-website
+      # Stamp app/package.json with the version the release job will actually
+      # tag, so electron-builder embeds a matching version in the artifacts
+      # instead of the hardcoded placeholder committed to the repo.
+      - name: Set package version from ref
+        working-directory: app
+        shell: bash
+        run: |
+          if [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
+            VERSION="${GITHUB_REF_NAME#v}"
+          elif [[ "${GITHUB_REF}" == "refs/heads/main" ]]; then
+            VERSION="0.1.${GITHUB_RUN_NUMBER}"
+          else
+            VERSION="0.0.0-dev.${GITHUB_RUN_NUMBER}"
+          fi
+          npm pkg set version="$VERSION"
       - name: Package app
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: false
