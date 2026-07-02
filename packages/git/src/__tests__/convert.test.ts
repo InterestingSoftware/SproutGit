@@ -42,6 +42,10 @@ describe('convertToBareWithWorktree', () => {
     expect(existsSync(sourceDir)).toBe(false);
     expect(execSync('git config core.bare', { cwd: barePath }).toString().trim()).toBe('true');
 
+    // The old working-tree files are relocated to a backup, not deleted.
+    expect(result.backupPath).toBe(join(workspaceDir, 'pre-migration-backup', 'root'));
+    expect(existsSync(join(result.backupPath!, 'README.md'))).toBe(true);
+
     const worktreePath = join(worktreesPath, branch);
     expect(existsSync(join(worktreePath, 'README.md'))).toBe(true);
     expect(currentBranch(worktreePath)).toBe(branch);
@@ -81,8 +85,36 @@ describe('convertToBareWithWorktree', () => {
     const worktreePath = join(worktreesPath, branch);
     expect(existsSync(join(worktreePath, 'README.md'))).toBe(true);
 
-    // Nothing left over besides .sproutgit.
+    // Nothing left over at the top level besides .sproutgit — the old
+    // README.md was relocated to a backup under .sproutgit, not deleted.
     expect(readdirSync(workspaceDir)).toEqual(['.sproutgit']);
+    expect(result.backupPath).toBe(join(sproutDir, 'pre-migration-backup'));
+    expect(existsSync(join(result.backupPath!, 'README.md'))).toBe(true);
+
+    rmSync(workspaceDir, { recursive: true, force: true });
+  });
+
+  it('backs up (rather than deletes) a gitignored file the dirty check can\'t see', async () => {
+    const workspaceDir = tempDir('sg-convert-ignored-');
+    const sourceDir = join(workspaceDir, 'root');
+    createNonBareRepo(sourceDir);
+    writeFileSync(join(sourceDir, '.gitignore'), '.env\n');
+    execSync('git add .gitignore', { cwd: sourceDir, stdio: 'ignore' });
+    execSync('git commit -m "add gitignore"', { cwd: sourceDir, stdio: 'ignore' });
+    writeFileSync(join(sourceDir, '.env'), 'SECRET=shh\n');
+
+    const barePath = join(workspaceDir, 'bare');
+    const worktreesPath = join(workspaceDir, 'worktrees');
+    mkdirSync(worktreesPath, { recursive: true });
+
+    // `git status` doesn't report ignored files, so the dirty check passes —
+    // but the file must still survive the conversion, relocated rather than
+    // silently deleted along with the rest of the old working tree.
+    const result = await convertToBareWithWorktree(sourceDir, barePath, worktreesPath);
+
+    expect(result.backupPath).not.toBeNull();
+    expect(existsSync(join(result.backupPath!, '.env'))).toBe(true);
+    expect(execSync(`cat "${join(result.backupPath!, '.env')}"`).toString()).toBe('SECRET=shh\n');
 
     rmSync(workspaceDir, { recursive: true, force: true });
   });

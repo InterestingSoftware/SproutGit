@@ -54,7 +54,7 @@ export async function convertToBareWithWorktree(
   sourceRepoPath: string,
   barePath: string,
   managedWorktreesPath: string
-): Promise<{ branch: string; worktreePath: string }> {
+): Promise<{ branch: string; worktreePath: string; backupPath: string | null }> {
   const status = await getWorktreeStatus(sourceRepoPath);
   if (status.files.length > 0) {
     throw new DirtyWorkingTreeError(sourceRepoPath);
@@ -101,21 +101,38 @@ export async function convertToBareWithWorktree(
 
   const { worktreePath } = await addWorktreeForExistingBranch(barePath, managedWorktreesPath, branch);
 
-  // Clean up the leftover working-tree files. If sourceRepoPath is an
-  // ancestor of the new bare/worktrees paths (e.g. imported-in-place, where
-  // sourceRepoPath is the whole workspace), only remove its stray children —
-  // `.sproutgit` (and anything else under it) must survive. Otherwise the
-  // source directory (e.g. a legacy `workspacePath/root`) is now fully
-  // redundant and can be removed outright.
+  // Move (never delete) the leftover working-tree files into a backup
+  // directory alongside the new bare root. The dirty check above only sees
+  // what `git status` reports, which excludes gitignored files (.env,
+  // node_modules, local config, etc.) by default — those still physically
+  // exist in sourceRepoPath and must not be silently destroyed just because
+  // they're untracked-and-ignored rather than untracked-and-dirty.
+  const backupRoot = `${dirname(barePath)}/pre-migration-backup`;
+  let backupPath: string | null = null;
+
   if (isAncestorOrEqual(sourceRepoPath, barePath) || isAncestorOrEqual(sourceRepoPath, managedWorktreesPath)) {
-    const entries = await readdir(sourceRepoPath);
-    for (const entry of entries) {
-      if (entry === '.sproutgit') continue;
-      await rm(`${sourceRepoPath}/${entry}`, { recursive: true, force: true });
+    // sourceRepoPath is an ancestor of the new bare/worktrees paths (e.g.
+    // imported-in-place, where sourceRepoPath is the whole workspace) — it
+    // must keep existing, so only relocate its stray children.
+    // `.sproutgit` (and anything under it, including the backup dir itself)
+    // must survive untouched.
+    const entries = (await readdir(sourceRepoPath)).filter(entry => entry !== '.sproutgit');
+    if (entries.length > 0) {
+      await mkdir(backupRoot, { recursive: true });
+      for (const entry of entries) {
+        await moveDir(`${sourceRepoPath}/${entry}`, `${backupRoot}/${entry}`);
+      }
+      backupPath = backupRoot;
     }
   } else {
-    await rm(sourceRepoPath, { recursive: true, force: true });
+    // sourceRepoPath (e.g. a legacy `workspacePath/root`) is now fully
+    // redundant for git purposes, but may still hold gitignored files —
+    // relocate the whole directory rather than deleting it.
+    await mkdir(backupRoot, { recursive: true });
+    const destination = `${backupRoot}/${sourceRepoPath.split('/').pop()}`;
+    await moveDir(sourceRepoPath, destination);
+    backupPath = destination;
   }
 
-  return { branch, worktreePath };
+  return { branch, worktreePath, backupPath };
 }
