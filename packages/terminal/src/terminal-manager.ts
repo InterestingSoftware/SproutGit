@@ -1,5 +1,6 @@
 import * as pty from 'node-pty';
 import { randomUUID } from 'node:crypto';
+import { execFileSync } from 'node:child_process';
 import { accessSync, constants, existsSync } from 'node:fs';
 import { sep } from 'node:path';
 import { type WorkspaceHookShell } from '@sproutgit/types';
@@ -73,7 +74,16 @@ export class TerminalManager {
     const id = randomUUID();
     const { cwd, shell, args = [], command, env, cols = 80, rows = 24, resolveShell = true } = options;
 
-    const shellBin = resolveShell ? resolveShellBin(shell) : shell;
+    const resolvedShell = resolveShell ? resolveShellBin(shell) : shell;
+    // Unlike a real shell, node-pty spawns the executable directly via Win32
+    // CreateProcess, which — given a bare command name — does not search PATH
+    // or resolve PATHEXT the way cmd.exe/PowerShell do. That's invisible for
+    // hook scripts (they're typed into an already-running shell session), but
+    // an agent CLI spawned as the process itself (resolveShell: false) fails
+    // with "File not found" for anything short of a fully-qualified path —
+    // including npm-installed global shims like `claude.cmd`. Resolve to the
+    // full path via `where` first, same as resolveCommand() in system.ts.
+    const shellBin = process.platform === 'win32' ? resolveWindowsExecutable(resolvedShell) : resolvedShell;
     const safeCwd = existsSync(cwd) ? cwd : process.cwd();
 
     // Strip lifecycle variables injected by the dev-server launcher (e.g.
@@ -248,5 +258,23 @@ function resolveShellBin(shell: string): string {
         return executable;
       }
       return executable;
+  }
+}
+
+/**
+ * Resolves a bare command name (e.g. "node", "claude") to its full path on
+ * Windows via the `where` command, so it can be handed directly to node-pty.
+ * No-op for already-qualified paths (drive letter or UNC). Falls back to the
+ * original value if resolution fails, so spawn() still fails loudly with a
+ * recognizable command name instead of a raw lookup error.
+ */
+function resolveWindowsExecutable(command: string): string {
+  if (/^[A-Za-z]:[\\/]/.test(command) || command.startsWith('\\\\')) return command;
+  try {
+    const output = execFileSync('where', [command], { encoding: 'utf8' });
+    const first = output.split(/\r?\n/).find(line => line.trim().length > 0);
+    return first?.trim() || command;
+  } catch {
+    return command;
   }
 }
