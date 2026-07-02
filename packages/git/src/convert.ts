@@ -1,5 +1,5 @@
 import { mkdir, rename, rm, cp, readdir } from 'node:fs/promises';
-import { dirname, resolve, sep } from 'node:path';
+import { basename, dirname, join, resolve, sep } from 'node:path';
 import { gitForPath } from './client.js';
 import { getWorktreeStatus } from './staging.js';
 import { addWorktreeForExistingBranch, listWorktrees, canonicalize } from './worktrees.js';
@@ -83,7 +83,7 @@ export async function convertToBareWithWorktree(
     .map(w => w.path)
     .filter(path => canonicalize(path) !== sourceCanonical);
 
-  const sourceGitDir = `${sourceRepoPath}/.git`;
+  const sourceGitDir = join(sourceRepoPath, '.git');
   await mkdir(dirname(barePath), { recursive: true });
   await moveDir(sourceGitDir, barePath);
 
@@ -107,7 +107,7 @@ export async function convertToBareWithWorktree(
   // node_modules, local config, etc.) by default — those still physically
   // exist in sourceRepoPath and must not be silently destroyed just because
   // they're untracked-and-ignored rather than untracked-and-dirty.
-  const backupRoot = `${dirname(barePath)}/pre-migration-backup`;
+  const backupRoot = join(dirname(barePath), 'pre-migration-backup');
   let backupPath: string | null = null;
 
   if (isAncestorOrEqual(sourceRepoPath, barePath) || isAncestorOrEqual(sourceRepoPath, managedWorktreesPath)) {
@@ -120,7 +120,7 @@ export async function convertToBareWithWorktree(
     if (entries.length > 0) {
       await mkdir(backupRoot, { recursive: true });
       for (const entry of entries) {
-        await moveDir(`${sourceRepoPath}/${entry}`, `${backupRoot}/${entry}`);
+        await moveDir(join(sourceRepoPath, entry), join(backupRoot, entry));
       }
       backupPath = backupRoot;
     }
@@ -129,7 +129,7 @@ export async function convertToBareWithWorktree(
     // redundant for git purposes, but may still hold gitignored files —
     // relocate the whole directory rather than deleting it.
     await mkdir(backupRoot, { recursive: true });
-    const destination = `${backupRoot}/${sourceRepoPath.split('/').pop()}`;
+    const destination = join(backupRoot, basename(sourceRepoPath));
     await moveDir(sourceRepoPath, destination);
     backupPath = destination;
   }
