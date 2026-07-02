@@ -4,8 +4,8 @@ import {
   type CreateWorktreeResult,
   validateBranchName,
 } from '@sproutgit/types';
+import { canonicalize, isPathWithin } from '@sproutgit/paths';
 import { normalize, resolve, sep } from 'node:path';
-import { realpathSync } from 'node:fs';
 import { gitForPath } from './client.js';
 
 /**
@@ -119,32 +119,13 @@ export async function deleteManagedWorktree(
 // ─── Internal helpers ─────────────────────────────────────────────────────────
 
 /**
- * Resolves symlinks (e.g. macOS's /var → /private/var) so paths that refer
- * to the same directory compare equal even if one side went through a
- * symlinked temp dir and the other didn't. Falls back to a plain `resolve`
- * for paths that don't exist (already-removed worktrees, races, etc).
- *
- * Exported so other IPC handlers that compare a caller-supplied path against
- * git's own worktree list (e.g. deletion validation, hook metadata lookup)
- * use the same symlink-safe comparison instead of a plain `resolve()`.
+ * True when `childPath` is `parentPath` itself or nested inside it.
+ * Canonicalizes both sides first since one may come through git's own
+ * realpath-based reporting and the other from local path construction (e.g.
+ * macOS's /var vs /private/var).
  */
-export function canonicalize(path: string): string {
-  try {
-    return realpathSync.native(path);
-  } catch {
-    return resolve(path);
-  }
-}
-
-/**
- * True when `childPath` is `parentPath` itself or nested inside it, checked
- * on a path-separator boundary (so `worktrees-other` doesn't match `worktrees`).
- * Mirrors the boundary check used by TerminalManagerWithMeta.closeForPath.
- */
-function isPathWithin(childPath: string, parentPath: string): boolean {
-  const parent = canonicalize(parentPath);
-  const child = canonicalize(childPath);
-  return child === parent || child.startsWith(parent + sep);
+function isWithinCanonical(childPath: string, parentPath: string): boolean {
+  return isPathWithin(canonicalize(childPath), canonicalize(parentPath));
 }
 
 /** See `listWorktrees` for the classification rules this implements. */
@@ -153,9 +134,9 @@ export function classifyIsExternal(
   repoPath: string,
   managedWorktreesPath?: string
 ): boolean {
-  if (isPathWithin(worktreePath, repoPath)) return false;
+  if (isWithinCanonical(worktreePath, repoPath)) return false;
   if (!managedWorktreesPath) return false;
-  return !isPathWithin(worktreePath, managedWorktreesPath);
+  return !isWithinCanonical(worktreePath, managedWorktreesPath);
 }
 
 function parseWorktreePorcelain(

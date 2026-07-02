@@ -1,8 +1,9 @@
 import { mkdir, rename, rm, cp, readdir } from 'node:fs/promises';
-import { basename, dirname, join, resolve, sep } from 'node:path';
+import { basename, dirname, join } from 'node:path';
+import { canonicalize, isPathWithin } from '@sproutgit/paths';
 import { gitForPath } from './client.js';
 import { getWorktreeStatus } from './staging.js';
-import { addWorktreeForExistingBranch, listWorktrees, canonicalize } from './worktrees.js';
+import { addWorktreeForExistingBranch, listWorktrees } from './worktrees.js';
 
 /** Thrown when a conversion source has uncommitted changes. */
 export class DirtyWorkingTreeError extends Error {
@@ -32,12 +33,6 @@ async function moveDir(source: string, destination: string): Promise<void> {
     await cp(source, destination, { recursive: true, preserveTimestamps: true });
     await rm(source, { recursive: true, force: true });
   }
-}
-
-function isAncestorOrEqual(parent: string, child: string): boolean {
-  const resolvedParent = resolve(parent);
-  const resolvedChild = resolve(child);
-  return resolvedChild === resolvedParent || resolvedChild.startsWith(resolvedParent + sep);
 }
 
 /**
@@ -110,7 +105,7 @@ export async function convertToBareWithWorktree(
   const backupRoot = join(dirname(barePath), 'pre-migration-backup');
   let backupPath: string | null = null;
 
-  if (isAncestorOrEqual(sourceRepoPath, barePath) || isAncestorOrEqual(sourceRepoPath, managedWorktreesPath)) {
+  if (isPathWithin(barePath, sourceRepoPath) || isPathWithin(managedWorktreesPath, sourceRepoPath)) {
     // sourceRepoPath is an ancestor of the new bare/worktrees paths (e.g.
     // imported-in-place, where sourceRepoPath is the whole workspace) — it
     // must keep existing, so only relocate its stray children.

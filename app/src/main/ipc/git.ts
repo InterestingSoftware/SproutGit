@@ -1,11 +1,11 @@
 import { existsSync } from 'node:fs';
 import { IPC } from '@sproutgit/types';
+import { canonicalize } from '@sproutgit/paths';
 import { getGitInfo, isBareRepoPath } from '@sproutgit/git';
 import {
   listWorktrees,
   createManagedWorktree,
   deleteManagedWorktree,
-  canonicalize,
 } from '@sproutgit/git/worktrees';
 import { getCommitGraph, countCommits, listRefs } from '@sproutgit/git/commits';
 import {

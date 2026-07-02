@@ -1,29 +1,17 @@
 {
-  "name": "@sproutgit/git",
+  "name": "@sproutgit/paths",
   "version": "0.2.0",
   "private": true,
   "type": "module",
   "main": "./src/index.ts",
   "types": "./src/index.ts",
   "exports": {
-    ".": "./src/index.ts",
-    "./worktrees": "./src/worktrees.ts",
-    "./commits": "./src/commits.ts",
-    "./staging": "./src/staging.ts",
-    "./remote": "./src/remote.ts",
-    "./config": "./src/config.ts",
-    "./init": "./src/init.ts",
-    "./diff": "./src/diff.ts"
+    ".": "./src/index.ts"
   },
   "scripts": {
     "typecheck": "tsgo --noEmit",
     "test": "vitest run",
     "test:watch": "vitest"
-  },
-  "dependencies": {
-    "@sproutgit/paths": "workspace:*",
-    "@sproutgit/types": "workspace:*",
-    "simple-git": "^3.36.0"
   },
   "devDependencies": {
     "@sproutgit/ts-config": "workspace:*",

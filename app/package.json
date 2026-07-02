@@ -128,6 +128,7 @@
     "@fontsource/space-grotesk": "^5.2.10",
     "@sproutgit/database": "workspace:*",
     "@sproutgit/git": "workspace:*",
+    "@sproutgit/paths": "workspace:*",
     "@sproutgit/provider-github": "workspace:*",
     "@sproutgit/terminal": "workspace:*",
     "@sproutgit/types": "workspace:*",

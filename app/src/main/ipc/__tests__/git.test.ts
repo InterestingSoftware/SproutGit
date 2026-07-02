@@ -18,18 +18,16 @@ vi.mock('@sproutgit/git', async (importOriginal) => {
 });
 
 const {
-  listWorktreesMock, createManagedWorktreeMock, deleteManagedWorktreeMock, canonicalizeMock,
+  listWorktreesMock, createManagedWorktreeMock, deleteManagedWorktreeMock,
 } = vi.hoisted(() => ({
   listWorktreesMock: vi.fn(),
   createManagedWorktreeMock: vi.fn(),
   deleteManagedWorktreeMock: vi.fn(),
-  canonicalizeMock: vi.fn((p: string) => p),
 }));
 vi.mock('@sproutgit/git/worktrees', () => ({
   listWorktrees: (...a: unknown[]) => listWorktreesMock(...a),
   createManagedWorktree: (...a: unknown[]) => createManagedWorktreeMock(...a),
   deleteManagedWorktree: (...a: unknown[]) => deleteManagedWorktreeMock(...a),
-  canonicalize: (...a: [string]) => canonicalizeMock(...a),
 }));
 
 const { getCommitGraphMock, countCommitsMock, listRefsMock } = vi.hoisted(() => ({
