@@ -9,8 +9,8 @@ export type WorkspaceInitResult = {
 
 export type WorkspaceStatus = {
   workspacePath: string;
-  /** Path to use for all git operations. For cloned workspaces this is the
-   * bare repo at .sproutgit/root; for imported repos it's workspacePath itself. */
+  /** Path to use for all git operations — always the bare repo at
+   * .sproutgit/root (equal to `rootPath`) once a workspace is recognised. */
   gitRepoPath: string;
   rootPath: string;
   worktreesPath: string;

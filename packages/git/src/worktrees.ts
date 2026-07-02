@@ -62,6 +62,36 @@ export async function createManagedWorktree(
 }
 
 /**
+ * Attaches an existing branch to a new managed worktree at
+ * `<managedWorktreesPath>/<branch>`, without creating a new branch.
+ * Used when migrating a repo that already has the branch checked out
+ * elsewhere (e.g. converting an imported repo to a bare root).
+ */
+export async function addWorktreeForExistingBranch(
+  rootRepoPath: string,
+  managedWorktreesPath: string,
+  branch: string
+): Promise<CreateWorktreeResult> {
+  const branchError = validateBranchName(branch);
+  if (branchError) {
+    throw new Error(`Invalid branch name: ${branchError}`);
+  }
+
+  const git = gitForPath(rootRepoPath);
+  const worktreePath = `${managedWorktreesPath}/${branch}`;
+
+  const resolvedRoot = resolve(managedWorktreesPath) + sep;
+  const resolvedTarget = resolve(worktreePath);
+  if (!(resolvedTarget + sep).startsWith(resolvedRoot)) {
+    throw new Error('Worktree path must stay within the managed worktrees directory.');
+  }
+
+  await git.raw(['worktree', 'add', worktreePath, branch]);
+
+  return { worktreePath: normalize(worktreePath), branch, fromRef: branch };
+}
+
+/**
  * Removes a managed worktree and optionally deletes its branch.
  *
  * @param branchName - The exact branch name to delete. Must be provided when
@@ -142,8 +172,12 @@ function parseWorktreePorcelain(
     const headLine = lines.find(l => l.startsWith('HEAD '));
     const branchLine = lines.find(l => l.startsWith('branch '));
     const detached = lines.some(l => l === 'detached');
+    // The bare repo itself shows up as a `bare` pseudo-entry (no HEAD/branch,
+    // nothing checked out) — it's storage, not a worktree the app should
+    // ever surface, select, or run working-tree operations against.
+    const isBarePseudoEntry = lines.some(l => l === 'bare');
 
-    if (!pathLine) continue;
+    if (!pathLine || isBarePseudoEntry) continue;
 
     const path = normalize(pathLine.replace('worktree ', '').trim());
 
