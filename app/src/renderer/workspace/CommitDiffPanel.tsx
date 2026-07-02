@@ -114,7 +114,7 @@ export function CommitDiffPanel({ commit, files, loading, selectedFile, diffCont
           onClick={e => {
             if (e.target instanceof HTMLAnchorElement) {
               e.preventDefault();
-              void window.api.openUrl(e.target.href);
+              window.api.openUrl(e.target.href).catch(() => undefined);
             }
           }}
           dangerouslySetInnerHTML={{ __html: linkifyIssueRefs(commit.subject, issueTrackerPatterns) }}

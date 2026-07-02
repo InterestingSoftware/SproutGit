@@ -39,14 +39,18 @@ export function NewWorktreeDialog({ open, workspacePath, gitRepoPath, managedWor
   useEffect(() => {
     const url = issueMatch?.url;
     if (!url) { setIssuePreview(null); setIssuePreviewLoading(false); return; }
+    let cancelled = false;
     setIssuePreviewLoading(true);
     const timer = setTimeout(() => {
       api.fetchProviderIssue(url)
-        .then(issue => setIssuePreview(issue))
-        .catch(() => setIssuePreview(null))
-        .finally(() => setIssuePreviewLoading(false));
+        .then(issue => { if (!cancelled) setIssuePreview(issue); })
+        .catch(() => { if (!cancelled) setIssuePreview(null); })
+        .finally(() => { if (!cancelled) setIssuePreviewLoading(false); });
     }, 400);
-    return () => clearTimeout(timer);
+    // Guards against an older, slower request resolving after a newer one
+    // and clobbering its result — not just the timer, since fetchProviderIssue
+    // itself is already in flight by the time a newer URL supersedes it.
+    return () => { cancelled = true; clearTimeout(timer); };
   }, [issueMatch?.url]);
 
   function handleIssueBlur() {

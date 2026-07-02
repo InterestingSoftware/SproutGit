@@ -41,6 +41,18 @@ describe('linkifyIssueRefs', () => {
     const html = linkifyIssueRefs('Fix ABCD-123', [badPattern, jiraPattern]);
     expect(html).toBe('Fix <a href="https://my-company.atlassian.net/browse/ABCD-123">ABCD-123</a>');
   });
+
+  it('leaves a match as plain text when the resolved URL is not http(s)', () => {
+    const fileUrlPattern: IssueTrackerPattern = { label: 'Local', regex: 'LOCAL-(\\d+)', url: 'file:///issues/$1' };
+    const html = linkifyIssueRefs('Fix LOCAL-42', [fileUrlPattern]);
+    expect(html).toBe('Fix LOCAL-42');
+  });
+
+  it('leaves a match as plain text when the resolved URL is malformed', () => {
+    const malformedPattern: IssueTrackerPattern = { label: 'Bad', regex: 'BAD-(\\d+)', url: 'not a url $1' };
+    const html = linkifyIssueRefs('Fix BAD-42', [malformedPattern]);
+    expect(html).toBe('Fix BAD-42');
+  });
 });
 
 describe('matchIssueRef', () => {

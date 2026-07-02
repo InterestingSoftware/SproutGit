@@ -8,6 +8,16 @@ function escapeAttr(s: string): string {
   return escapeHtml(s).replace(/"/g, '&quot;');
 }
 
+/** Matches the http(s)-only scheme allowlist enforced by the `system:openUrl` IPC handler. */
+function isHttpUrl(url: string): boolean {
+  try {
+    const protocol = new URL(url).protocol;
+    return protocol === 'https:' || protocol === 'http:';
+  } catch {
+    return false;
+  }
+}
+
 /**
  * Turns issue references in `text` (e.g. "ABCD-123") into `<a>` tags per the
  * repo's `.issuetracker` patterns, HTML-escaping everything else. Returns an
@@ -35,6 +45,10 @@ export function linkifyIssueRefs(text: string, patterns: IssueTrackerPattern[]):
       if (segments.some(s => start < s.end && end > s.start)) continue;
 
       const url = pattern.url.replace(/\$(\d+)/g, (_, groupIdx: string) => match[Number(groupIdx)] ?? '');
+      // A link that can never open (blocked by system:openUrl's http(s)-only
+      // scheme allowlist) is confusing to render as clickable — leave the
+      // matched text as plain text instead.
+      if (!isHttpUrl(url)) continue;
       segments.push({
         start,
         end,
@@ -59,9 +73,10 @@ export function linkifyIssueRefs(text: string, patterns: IssueTrackerPattern[]):
 
 /**
  * Matches free-form text (e.g. a pasted issue ref or URL) against the repo's
- * `.issuetracker` patterns, returning the first match. Unlike `linkifyIssueRefs`
- * this tests the whole input rather than scanning within a longer string —
- * used when a user types/pastes a single issue reference into a form field.
+ * `.issuetracker` patterns, returning the first match found anywhere in the
+ * input (so pasting a full issue URL still resolves against a ref-only
+ * regex like `ABCD-(\d+)`) — used when a user types/pastes a single issue
+ * reference into a form field.
  */
 export function matchIssueRef(text: string, patterns: IssueTrackerPattern[]): IssueMatch | null {
   const trimmed = text.trim();

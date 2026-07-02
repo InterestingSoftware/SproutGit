@@ -552,7 +552,7 @@ export function CommitGraph({
                     if (e.target instanceof HTMLAnchorElement) {
                       e.preventDefault();
                       e.stopPropagation();
-                      void window.api.openUrl(e.target.href);
+                      window.api.openUrl(e.target.href).catch(() => undefined);
                     }
                   }}
                   dangerouslySetInnerHTML={{ __html: linkifyIssueRefs(row.subject, issueTrackerPatterns) }}
