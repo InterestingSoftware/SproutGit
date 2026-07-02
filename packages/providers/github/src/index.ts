@@ -3,6 +3,7 @@ import type {
   GitHubPollResult,
   GitHubEmailSuggestion,
   GitHubRepo,
+  ProviderIssue,
 } from '@sproutgit/types';
 
 export const GITHUB_CLIENT_ID = 'Ov23li7ulFUcqulDi8u8';
@@ -141,4 +142,45 @@ export async function listRepos(token: string): Promise<GitHubRepo[]> {
     page++;
   }
   return repos;
+}
+
+// ── Issue tracking ───────────────────────────────────────────────────────────
+
+/** Parses a `github.com/{owner}/{repo}/issues|pull/{number}` URL. Returns null for anything else. */
+export function parseGithubIssueUrl(url: string): { owner: string; repo: string; issueNumber: number } | null {
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    return null;
+  }
+  if (parsed.hostname !== 'github.com') return null;
+
+  const match = /^\/([^/]+)\/([^/]+)\/(?:issues|pull)\/(\d+)/.exec(parsed.pathname);
+  if (!match) return null;
+  const [, owner, repo, issueNumber] = match;
+  if (!owner || !repo || !issueNumber) return null;
+  return { owner, repo, issueNumber: Number(issueNumber) };
+}
+
+/**
+ * Fetches an issue or PR's title/description/state from GitHub's Issues API
+ * (which also serves PRs). Best-effort: returns null on any failure rather
+ * than throwing, since this is enrichment, not a critical path.
+ */
+export async function fetchGithubIssue(url: string, token: string): Promise<ProviderIssue | null> {
+  const parsedUrl = parseGithubIssueUrl(url);
+  if (!parsedUrl) return null;
+
+  const res = await ghApiFetch(`/repos/${parsedUrl.owner}/${parsedUrl.repo}/issues/${parsedUrl.issueNumber}`, token);
+  if (!res.ok) return null;
+
+  const issue = await res.json() as { title: string; body: string | null; html_url: string; state: string };
+  return {
+    id: String(parsedUrl.issueNumber),
+    title: issue.title,
+    description: issue.body,
+    url: issue.html_url,
+    state: issue.state === 'open' || issue.state === 'closed' ? issue.state : 'unknown',
+  };
 }

@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect, useMemo } from 'react';
 import { Search, ChevronUp, ChevronDown, X, GitBranch, TreePine, Tag } from 'lucide-react';
-import { type CommitEntry, type WorktreeInfo } from '@sproutgit/types';
+import { type CommitEntry, type WorktreeInfo, type IssueTrackerPattern } from '@sproutgit/types';
+import { linkifyIssueRefs } from '../issuetracker-linkify.js';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -195,6 +196,7 @@ type Props = {
   hasMore?: boolean;
   loadingMore?: boolean;
   onLoadMore?: () => void;
+  issueTrackerPatterns?: IssueTrackerPattern[];
 };
 
 // ─── Component ────────────────────────────────────────────────────────────────
@@ -214,6 +216,7 @@ export function CommitGraph({
   hasMore = false,
   loadingMore = false,
   onLoadMore,
+  issueTrackerPatterns = [],
 }: Props) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const [scrollTop, setScrollTop] = useState(0);
@@ -542,7 +545,18 @@ export function CommitGraph({
                   })}
                 </div>
                 {/* Commit subject */}
-                <span className="commit-row-subject" title={row.subject}>{row.subject}</span>
+                <span
+                  className="commit-row-subject"
+                  title={row.subject}
+                  onClick={e => {
+                    if (e.target instanceof HTMLAnchorElement) {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      window.api.openUrl(e.target.href).catch(() => undefined);
+                    }
+                  }}
+                  dangerouslySetInnerHTML={{ __html: linkifyIssueRefs(row.subject, issueTrackerPatterns) }}
+                />
                 {/* Meta columns */}
                 <span className="commit-row-hash" title={row.hash}>{row.shortHash}</span>
                 <span className="commit-row-author" title={row.authorName}>{row.authorName}</span>

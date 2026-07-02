@@ -11,6 +11,8 @@ export const worktreeMetadata = sqliteTable('worktree_metadata', {
   branch: text('branch').notNull(),
   sourceRef: text('source_ref').notNull(),
   initiatingWorktreePath: text('initiating_worktree_path'),
+  issueRef: text('issue_ref'),
+  issueTitle: text('issue_title'),
   rootRepoPath: text('root_repo_path').notNull(),
   createdAt: int('created_at', { mode: 'timestamp_ms' }).notNull(),
   updatedAt: int('updated_at', { mode: 'timestamp_ms' }).notNull(),

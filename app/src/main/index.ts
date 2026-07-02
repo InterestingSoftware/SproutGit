@@ -16,6 +16,8 @@ import { registerAgentHandlers } from './ipc/agents.js';
 import { registerCommitMessageGeneratorHandlers } from './ipc/commit-message-generator.js';
 import { registerWatchHandlers } from './ipc/watcher.js';
 import { registerUpdateHandlers, startUpdateCheck } from './ipc/update.js';
+import { registerIssueTrackerHandlers } from './ipc/issuetracker.js';
+import { registerProviderHandlers } from './ipc/providers.js';
 import { openConfigDb } from '@sproutgit/database';
 import { IPC } from '@sproutgit/types';
 
@@ -252,6 +254,9 @@ app.whenReady().then(() => {
   if (isE2EMode) log.info('[e2e] commit message generator handlers ok');
   registerWatchHandlers(getMainWindow);
   if (isE2EMode) log.info('[e2e] watch handlers ok');
+  registerIssueTrackerHandlers();
+  registerProviderHandlers(userDataPath);
+  if (isE2EMode) log.info('[e2e] issue tracker / provider handlers ok');
   // Skip update handler registration in E2E mode. On Linux CI, electron-updater
   // initialises AppImageUpdater which accesses D-Bus / libsecret and hangs for
   // ~20 s when no real session bus is available. Auto-update is irrelevant in tests.

@@ -39,6 +39,7 @@ import {
   usePush,
   useDeleteWorktree,
   useWorktreeChangeCounts,
+  useIssueTrackerPatterns,
 } from '../queries.js';
 
 // ── Search params ─────────────────────────────────────────────────────────────
@@ -139,6 +140,7 @@ function WorkspaceInner() {
   const { data: commitTotal = 0 } = useCommitCount(gitRepoPath);
   const { data: refs = [] } = useRefs(gitRepoPath);
   const { data: pushStatus } = usePushStatus(activeWorktree?.path);
+  const { data: issueTrackerPatterns = [] } = useIssueTrackerPatterns(activeWorktree?.path);
 
   const loading = worktreesLoading || commitsLoading;
 
@@ -1046,6 +1048,7 @@ function WorkspaceInner() {
                                 .catch((err: unknown) => toast(String(err), 'error'));
                             }
                           }}
+                          issueTrackerPatterns={issueTrackerPatterns}
                         />
                       </div>
                       {selectedCommit && (
@@ -1055,6 +1058,7 @@ function WorkspaceInner() {
                           loading={commitDiffLoading}
                           selectedFile={commitDiffFile}
                           diffContent={commitDiffContent}
+                          issueTrackerPatterns={issueTrackerPatterns}
                           diffLoading={commitDiffFileLoading}
                           onSelectFile={f => void loadCommitDiffFile(f)}
                           onClose={() => {
@@ -1269,6 +1273,7 @@ function WorkspaceInner() {
         gitRepoPath={gitRepoPath}
         managedWorktreesPath={workspaceStatus?.worktreesPath ?? ''}
         refs={refs}
+        issueTrackerPatterns={issueTrackerPatterns}
         onClose={() => setShowNewWorktree(false)}
         onBeforeCreate={async () => {
           await api.runTriggerHooks({

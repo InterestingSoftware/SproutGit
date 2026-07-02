@@ -8,3 +8,5 @@ export * from './agents.js';
 export * from './ipc.js';
 export * from './validation.js';
 export * from './commit-message-generator.js';
+export * from './issuetracker.js';
+export * from './providers.js';

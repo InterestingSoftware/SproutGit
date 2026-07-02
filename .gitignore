@@ -18,3 +18,4 @@ out/
 .playwright-mcp
 logs
 .astro/
+.claude/settings.local.json

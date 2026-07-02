@@ -1,7 +1,7 @@
 import { api } from '../../api.js';
-import { useEffect, useRef, useState } from 'react';
-import { Spinner, Autocomplete } from '@sproutgit/ui';
-import { validateBranchName, type RefInfo } from '@sproutgit/types';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { Spinner, Autocomplete, matchIssueRef } from '@sproutgit/ui';
+import { validateBranchName, type RefInfo, type IssueTrackerPattern, type ProviderIssue } from '@sproutgit/types';
 import { primaryBtn, secondaryBtn, fieldLabel, fieldInput } from './dialog-classes.js';
 
 type Props = {
@@ -10,13 +10,14 @@ type Props = {
   gitRepoPath: string;
   managedWorktreesPath: string;
   refs: RefInfo[];
+  issueTrackerPatterns?: IssueTrackerPattern[];
   onClose: () => void;
   onBeforeCreate?: () => Promise<void>;
   onCreated: (newWorktreePath: string) => void;
   onToast: (msg: string, variant: 'success' | 'error') => void;
 };
 
-export function NewWorktreeDialog({ open, workspacePath, gitRepoPath, managedWorktreesPath, refs, onClose, onBeforeCreate, onCreated, onToast }: Props) {
+export function NewWorktreeDialog({ open, workspacePath, gitRepoPath, managedWorktreesPath, refs, issueTrackerPatterns = [], onClose, onBeforeCreate, onCreated, onToast }: Props) {
   const dialogRef = useRef<HTMLDialogElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -25,6 +26,42 @@ export function NewWorktreeDialog({ open, workspacePath, gitRepoPath, managedWor
   const [branchType, setBranchType] = useState<'managed' | 'persistent'>('managed');
   const [creating, setCreating] = useState(false);
   const [branchNameError, setBranchNameError] = useState<string | null>(null);
+
+  const [issueInput, setIssueInput] = useState('');
+  const [issuePreview, setIssuePreview] = useState<ProviderIssue | null>(null);
+  const [issuePreviewLoading, setIssuePreviewLoading] = useState(false);
+
+  const issueMatch = useMemo(() => matchIssueRef(issueInput, issueTrackerPatterns), [issueInput, issueTrackerPatterns]);
+  // Falls back to the raw typed text as a free-form ref when it doesn't
+  // match any configured .issuetracker pattern (not every repo has one).
+  const effectiveIssueRef = issueMatch?.ref ?? (issueInput.trim() || null);
+
+  useEffect(() => {
+    const url = issueMatch?.url;
+    if (!url) { setIssuePreview(null); setIssuePreviewLoading(false); return; }
+    let cancelled = false;
+    setIssuePreviewLoading(true);
+    const timer = setTimeout(() => {
+      api.fetchProviderIssue(url)
+        .then(issue => { if (!cancelled) setIssuePreview(issue); })
+        .catch(() => { if (!cancelled) setIssuePreview(null); })
+        .finally(() => { if (!cancelled) setIssuePreviewLoading(false); });
+    }, 400);
+    // Guards against an older, slower request resolving after a newer one
+    // and clobbering its result — not just the timer, since fetchProviderIssue
+    // itself is already in flight by the time a newer URL supersedes it.
+    return () => { cancelled = true; clearTimeout(timer); };
+  }, [issueMatch?.url]);
+
+  function handleIssueBlur() {
+    if (!effectiveIssueRef) return;
+    setBranchName(prev => {
+      const trimmed = prev.trim();
+      if (!trimmed) return effectiveIssueRef;
+      if (trimmed.includes(effectiveIssueRef)) return prev;
+      return `${effectiveIssueRef}-${trimmed}`;
+    });
+  }
 
   useEffect(() => {
     const dialog = dialogRef.current;
@@ -53,10 +90,20 @@ export function NewWorktreeDialog({ open, workspacePath, gitRepoPath, managedWor
         fromRef: branchFrom || 'HEAD',
         newBranch: branchName.trim(),
       });
+      if (effectiveIssueRef) {
+        await api.setWorktreeMeta({
+          workspacePath,
+          worktreePath: result.worktreePath,
+          issueRef: effectiveIssueRef,
+          issueTitle: issuePreview?.title ?? null,
+        });
+      }
       onToast('Worktree created', 'success');
       setBranchName('');
       setBranchFrom('HEAD');
       setBranchType('managed');
+      setIssueInput('');
+      setIssuePreview(null);
       onCreated(result.worktreePath);
     } catch (err) {
       onToast(`Failed: ${String(err)}`, 'error');
@@ -100,6 +147,27 @@ export function NewWorktreeDialog({ open, workspacePath, gitRepoPath, managedWor
                 : 'Long-lived branch kept alongside others — never auto-deleted.'}
             </p>
           </div>
+          <label className="flex flex-col gap-1">
+            <span className={fieldLabel}>Issue (optional)</span>
+            <input
+              className={fieldInput}
+              value={issueInput}
+              onChange={e => setIssueInput(e.target.value)}
+              onBlur={handleIssueBlur}
+              placeholder="ABCD-123 or an issue URL"
+              disabled={creating}
+              spellCheck={false}
+              data-testid="input-new-worktree-issue"
+            />
+            {issuePreviewLoading && (
+              <span className="text-[11px] text-(--sg-text-dim) flex items-center gap-1"><Spinner size="sm" /> Looking up issue…</span>
+            )}
+            {!issuePreviewLoading && issuePreview && (
+              <span className="text-[11px] text-(--sg-text-dim)" data-testid="new-worktree-issue-preview">
+                {issuePreview.title} <span className="opacity-70">({issuePreview.state})</span>
+              </span>
+            )}
+          </label>
           <label className="flex flex-col gap-1">
             <span className={fieldLabel}>Branch name</span>
             <input

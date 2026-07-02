@@ -130,6 +130,10 @@ export const IPC = {
   EVENT_WINDOW_LEAVE_FULLSCREEN: 'event:windowLeaveFullscreen',
   // Fired by main when the OS opens a file/URL that should navigate to a workspace.
   EVENT_OPEN_WORKSPACE: 'event:openWorkspace',
+  // ── Issue tracker ────────────────────────────────────────────────────────
+  ISSUETRACKER_LIST: 'issuetracker:list',
+  // ── Providers ────────────────────────────────────────────────────────────
+  PROVIDER_FETCH_ISSUE: 'provider:fetchIssue',
 } as const;
 
 export type IpcChannel = (typeof IPC)[keyof typeof IPC];
@@ -163,6 +167,8 @@ import type { GitHubAuthStatus, DeviceCodeResponse, GitHubPollResult, GitHubEmai
 import type { TerminalInfo } from './terminal.js';
 import type { AgentRoster } from './agents.js';
 import type { CommitMessageGeneratorSettings, CommitMessageGenerateResult } from './commit-message-generator.js';
+import type { IssueTrackerPattern } from './issuetracker.js';
+import type { ProviderIssue } from './providers.js';
 
 /** Shape of one row returned by WORKTREE_GET_META / WORKTREE_SET_META. */
 export type WorktreeMetaRow = {
@@ -171,6 +177,8 @@ export type WorktreeMetaRow = {
   sourceRef: string;
   rootRepoPath: string;
   initiatingWorktreePath: string | null;
+  issueRef: string | null;
+  issueTitle: string | null;
   createdAt: Date;
   updatedAt: Date;
 };
@@ -221,7 +229,7 @@ export type IpcMap = {
   'worktree:create': { args: [args: { rootRepoPath: string; managedWorktreesPath: string; fromRef: string; newBranch: string }]; result: CreateWorktreeResult };
   'worktree:delete': { args: [args: { rootRepoPath: string; managedWorktreesPath?: string; worktreePath: string; deleteBranch: boolean; branchName?: string | null }];                      result: void };
   'worktree:getMeta':    { args: [args: { workspacePath: string; worktreePath: string }]; result: WorktreeMetaRow | null };
-  'worktree:setMeta':    { args: [args: { workspacePath: string; worktreePath: string; branch?: string; sourceRef?: string; rootRepoPath?: string }]; result: void };
+  'worktree:setMeta':    { args: [args: { workspacePath: string; worktreePath: string; branch?: string; sourceRef?: string; rootRepoPath?: string; issueRef?: string | null; issueTitle?: string | null }]; result: void };
   'worktree:pruneMetadata': { args: [args: { workspacePath: string; activeWorktreePaths: string[] }]; result: void };
   'worktree:listProvenance': { args: [workspacePath: string]; result: WorktreeProvenance[] };
   'worktree:getProvenance':  { args: [args: { workspacePath: string; worktreePath: string }]; result: WorktreeProvenance | null };
@@ -298,6 +306,10 @@ export type IpcMap = {
   'window:maximize':    { args: []; result: void };
   'window:close':       { args: []; result: void };
   'window:isMaximized': { args: []; result: boolean };
+  // ── Issue tracker ─────────────────────────────────────────────────────────
+  'issuetracker:list':  { args: [worktreePath: string]; result: IssueTrackerPattern[] };
+  // ── Providers ─────────────────────────────────────────────────────────────
+  'provider:fetchIssue': { args: [url: string]; result: ProviderIssue | null };
 };
 
 /** Union of all invoke-able channel strings. */
