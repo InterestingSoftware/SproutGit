@@ -7,9 +7,10 @@
  */
 import type { BrowserWindow } from 'electron';
 import { IPC } from '@sproutgit/types';
-import type { AgentRoster } from '@sproutgit/types';
+import type { AgentRoster, IssueTrackerPattern } from '@sproutgit/types';
 import { openWorkspaceDb, eq, getAgentRoster, saveAgentRoster, type ConfigDb } from '@sproutgit/database';
 import { worktreeMetadata } from '@sproutgit/database/schema/workspace';
+import { readIssueTrackerFile } from '@sproutgit/git';
 import { join, basename } from 'path';
 import { manager, sessionWindows } from './terminal.js';
 import { handle } from './handle.js';
@@ -19,6 +20,26 @@ function getWorkspaceDb(workspacePath: string) {
   return openWorkspaceDb(dbPath);
 }
 
+/**
+ * Resolves a stored issue ref back to a URL via the repo's `.issuetracker`
+ * patterns. Purely local (reads a file, no network) — agent launch must
+ * never block on or fail due to a live provider fetch.
+ */
+function resolveIssueUrl(issueRef: string, patterns: IssueTrackerPattern[]): string {
+  for (const pattern of patterns) {
+    let regex: RegExp;
+    try {
+      regex = new RegExp(pattern.regex);
+    } catch {
+      continue;
+    }
+    const match = regex.exec(issueRef);
+    if (!match) continue;
+    return pattern.url.replace(/\$(\d+)/g, (_, groupIdx: string) => match[Number(groupIdx)] ?? '');
+  }
+  return '';
+}
+
 export function registerAgentHandlers(configDb: ConfigDb, getWindow: () => BrowserWindow | null): void {
   handle(IPC.AGENT_LIST, () => getAgentRoster(configDb));
 
@@ -26,7 +47,7 @@ export function registerAgentHandlers(configDb: ConfigDb, getWindow: () => Brows
     saveAgentRoster(configDb, roster);
   });
 
-  handle(IPC.AGENT_LAUNCH, (_e, args: {
+  handle(IPC.AGENT_LAUNCH, async (_e, args: {
     workspacePath: string;
     worktreePath: string;
     agentId?: string;
@@ -54,6 +75,9 @@ export function registerAgentHandlers(configDb: ConfigDb, getWindow: () => Brows
       : process.platform === 'win32' ? 'windows'
       : 'linux';
 
+    const issuePatterns = await readIssueTrackerFile(args.worktreePath);
+    const issueRef = wtMeta?.issueRef ?? '';
+
     const env: Record<string, string> = {
       SPROUTGIT_WORKSPACE: args.workspacePath,
       SPROUTGIT_WORKSPACE_NAME: basename(args.workspacePath),
@@ -65,6 +89,9 @@ export function registerAgentHandlers(configDb: ConfigDb, getWindow: () => Brows
       SPROUTGIT_SOURCE_REF: wtMeta?.sourceRef ?? '',
       SPROUTGIT_OS: osName,
       SPROUTGIT_AGENT: agent.id,
+      SPROUTGIT_ISSUE_REF: issueRef,
+      SPROUTGIT_ISSUE_URL: issueRef ? resolveIssueUrl(issueRef, issuePatterns) : '',
+      SPROUTGIT_ISSUE_TITLE: wtMeta?.issueTitle ?? '',
     };
 
     // The agent binary is spawned directly (not through a shell). On POSIX,

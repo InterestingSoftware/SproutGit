@@ -9,7 +9,7 @@ import { deviceFlowStart, deviceFlowPoll, listEmails, listRepos } from '@sproutg
 // Kept here because safeStorage is Electron-specific and cannot live in a
 // plain Node.js package.
 
-type StoredCredential = { token: string; username: string | null };
+export type StoredCredential = { token: string; username: string | null };
 
 function tokenFilePath(userDataPath: string): string {
   return join(userDataPath, 'github-token.bin');
@@ -23,7 +23,7 @@ function saveToken(userDataPath: string, token: string, username: string | null)
   writeFileSync(tokenFilePath(userDataPath), encrypted);
 }
 
-function loadCredential(userDataPath: string): StoredCredential | null {
+export function getStoredGithubToken(userDataPath: string): StoredCredential | null {
   const path = tokenFilePath(userDataPath);
   if (!existsSync(path)) return null;
   try {
@@ -46,7 +46,7 @@ function deleteToken(userDataPath: string): void {
 
 export function registerGithubHandlers(userDataPath: string): void {
   ipcMain.handle(IPC.GITHUB_AUTH_STATUS, (): GitHubAuthStatus => {
-    const cred = loadCredential(userDataPath);
+    const cred = getStoredGithubToken(userDataPath);
     if (!cred) return { authenticated: false, username: null, provider: 'github' };
     return { authenticated: true, username: cred.username, provider: 'github' };
   });
@@ -68,13 +68,13 @@ export function registerGithubHandlers(userDataPath: string): void {
   });
 
   ipcMain.handle(IPC.GITHUB_LIST_EMAILS, async (): Promise<GitHubEmailSuggestion[]> => {
-    const cred = loadCredential(userDataPath);
+    const cred = getStoredGithubToken(userDataPath);
     if (!cred) return [];
     return listEmails(cred.token);
   });
 
   ipcMain.handle(IPC.GITHUB_LIST_REPOS, async () => {
-    const cred = loadCredential(userDataPath);
+    const cred = getStoredGithubToken(userDataPath);
     if (!cred) return [];
     return listRepos(cred.token);
   });

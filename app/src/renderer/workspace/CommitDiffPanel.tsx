@@ -1,5 +1,5 @@
-import { Spinner } from '@sproutgit/ui';
-import type { CommitEntry, DiffFileEntry } from '@sproutgit/types';
+import { Spinner, linkifyIssueRefs } from '@sproutgit/ui';
+import type { CommitEntry, DiffFileEntry, IssueTrackerPattern } from '@sproutgit/types';
 import { X } from 'lucide-react';
 import hljs from 'highlight.js/lib/core';
 import typescriptLang from 'highlight.js/lib/languages/typescript';
@@ -37,6 +37,7 @@ type Props = {
   diffLoading: boolean;
   onSelectFile: (f: DiffFileEntry) => void;
   onClose: () => void;
+  issueTrackerPatterns?: IssueTrackerPattern[];
 };
 
 const iconBtn = 'inline-flex items-center justify-center p-[3px] bg-transparent border-none cursor-pointer text-(--sg-text-faint) rounded-[4px] transition-colors hover:text-(--sg-text) hover:bg-(--sg-surface-raised)';
@@ -103,12 +104,21 @@ function highlightCode(code: string, language: string | null): string {
   }
 }
 
-export function CommitDiffPanel({ commit, files, loading, selectedFile, diffContent, diffLoading, onSelectFile, onClose }: Props) {
+export function CommitDiffPanel({ commit, files, loading, selectedFile, diffContent, diffLoading, onSelectFile, onClose, issueTrackerPatterns = [] }: Props) {
   return (
     <div className="border-t border-(--sg-border) flex flex-col max-h-[320px] shrink-0 bg-(--sg-surface)">
       <div className="flex items-center gap-2 px-3 py-1.5 border-b border-(--sg-border-subtle) min-h-8 shrink-0">
         <span className="font-(family-name:--sg-font-code) text-[11px] text-(--sg-primary) shrink-0">{commit.shortHash}</span>
-        <span className="text-xs font-medium text-(--sg-text) overflow-hidden text-ellipsis whitespace-nowrap flex-1 min-w-0">{commit.subject}</span>
+        <span
+          className="text-xs font-medium text-(--sg-text) overflow-hidden text-ellipsis whitespace-nowrap flex-1 min-w-0"
+          onClick={e => {
+            if (e.target instanceof HTMLAnchorElement) {
+              e.preventDefault();
+              void window.api.openUrl(e.target.href);
+            }
+          }}
+          dangerouslySetInnerHTML={{ __html: linkifyIssueRefs(commit.subject, issueTrackerPatterns) }}
+        />
         <span className="text-[11px] text-(--sg-text-dim) shrink-0">{commit.authorName}</span>
         <button className={iconBtn} style={{ marginLeft: 'auto' }} onClick={onClose} title="Close diff">
           <X size={13} />

@@ -39,6 +39,8 @@ import type {
   AgentTerminalLaunchEvent,
   CommitMessageGeneratorSettings,
   CommitMessageGenerateResult,
+  IssueTrackerPattern,
+  ProviderIssue,
 } from '@sproutgit/types';
 
 /**
@@ -238,6 +240,8 @@ const api = {
     branch?: string;
     sourceRef?: string;
     rootRepoPath?: string;
+    issueRef?: string | null;
+    issueTitle?: string | null;
   }): Promise<void> =>
     invoke(IPC.WORKTREE_SET_META, args),
 
@@ -559,6 +563,14 @@ const api = {
     ipcRenderer.on(IPC.EVENT_UPDATE_ERROR, listener);
     return () => ipcRenderer.removeListener(IPC.EVENT_UPDATE_ERROR, listener);
   },
+
+  // ── Issue tracker ──────────────────────────────────────────────────────────
+  listIssueTrackerPatterns: (worktreePath: string): Promise<IssueTrackerPattern[]> =>
+    invoke(IPC.ISSUETRACKER_LIST, worktreePath),
+
+  // ── Providers ────────────────────────────────────────────────────────────
+  fetchProviderIssue: (url: string): Promise<ProviderIssue | null> =>
+    invoke(IPC.PROVIDER_FETCH_ISSUE, url),
 };
 
 contextBridge.exposeInMainWorld('api', api);

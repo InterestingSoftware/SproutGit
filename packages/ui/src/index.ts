@@ -3,6 +3,8 @@ export type { AutocompleteOption } from './components/Autocomplete.js';
 
 export { CommitGraph } from './components/CommitGraph.js';
 
+export { linkifyIssueRefs, matchIssueRef } from './issuetracker-linkify.js';
+
 export { ConfirmDialog } from './components/ConfirmDialog.js';
 
 export { ContextMenuProvider, useContextMenu } from './components/ContextMenu.js';

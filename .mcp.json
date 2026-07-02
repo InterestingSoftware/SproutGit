@@ -1,0 +1,16 @@
+{
+  "mcpServers": {
+    "electron": {
+      "type": "stdio",
+      "command": "npx",
+      "args": [
+        "-y",
+        "electron-mcp-server"
+      ],
+      "env": {
+        "SECURITY_LEVEL": "balanced",
+        "SCREENSHOT_ENCRYPTION_KEY": "${SCREENSHOT_ENCRYPTION_KEY}"
+      }
+    }
+  }
+}

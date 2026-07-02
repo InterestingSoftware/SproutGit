@@ -18,3 +18,4 @@ export {
 } from './remote.js';
 export { getDiffFiles, getDiffContent, getWorkingDiff, getStagedDiff } from './diff.js';
 export { initBareRepo, cloneBareRepo } from './init.js';
+export { readIssueTrackerFile } from './issuetracker.js';

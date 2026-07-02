@@ -100,6 +100,8 @@ export function registerWorkspaceHandlers(configDb: ConfigDb): void {
     branch?: string;
     sourceRef?: string;
     rootRepoPath?: string;
+    issueRef?: string | null;
+    issueTitle?: string | null;
   }) => {
     const db = getWorkspaceDb(args.workspacePath);
     const now = new Date();
@@ -109,6 +111,8 @@ export function registerWorkspaceHandlers(configDb: ConfigDb): void {
         branch: args.branch ?? '',
         sourceRef: args.sourceRef ?? '',
         rootRepoPath: args.rootRepoPath ?? '',
+        issueRef: args.issueRef ?? null,
+        issueTitle: args.issueTitle ?? null,
         createdAt: now,
         updatedAt: now,
       })
@@ -118,6 +122,8 @@ export function registerWorkspaceHandlers(configDb: ConfigDb): void {
           branch: args.branch ?? '',
           sourceRef: args.sourceRef ?? '',
           rootRepoPath: args.rootRepoPath ?? '',
+          issueRef: args.issueRef ?? null,
+          issueTitle: args.issueTitle ?? null,
           updatedAt: now,
         },
       })
