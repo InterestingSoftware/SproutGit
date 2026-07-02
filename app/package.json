@@ -3,6 +3,10 @@
   "version": "0.0.1",
   "private": true,
   "homepage": "https://sproutgit.dev",
+  "author": {
+    "name": "SproutGit",
+    "email": "noreply@sproutgit.dev"
+  },
   "main": "./out/main/index.js",
   "scripts": {
     "dev": "electron-vite dev",
@@ -83,6 +87,7 @@
           ]
         }
       ],
+      "artifactName": "${productName}-${version}-${arch}.${ext}",
       "category": "Development"
     },
     "nsis": {
