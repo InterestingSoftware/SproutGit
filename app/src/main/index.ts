@@ -214,8 +214,11 @@ app.whenReady().then(() => {
   if (isE2EMode) log.info('[e2e] config db opened');
 
   // app.dock is only available after ready. In dev, Electron runs as its own
-  // binary so we override the icon; in production it's embedded in the bundle.
-  if (process.platform === 'darwin' && app.dock) {
+  // binary so we override the icon; in production it's embedded in the bundle
+  // by electron-builder, and build/icon.png isn't packaged into app.asar, so
+  // calling setIcon there would throw (and abort the rest of this callback,
+  // including createWindow()).
+  if (process.platform === 'darwin' && app.dock && !app.isPackaged) {
     // Use PNG — nativeImage.createFromPath can silently return empty for .icns.
     // Passing the path string directly is the most reliable approach.
     app.dock.setIcon(join(__dirname, '../../build/icon.png'));
