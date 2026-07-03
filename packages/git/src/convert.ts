@@ -22,17 +22,48 @@ export class DetachedHeadError extends Error {
   }
 }
 
+function errorCode(error: unknown): string | undefined {
+  return typeof error === 'object' && error !== null && 'code' in error ? (error as { code?: string }).code : undefined;
+}
+
 function isCrossDeviceError(error: unknown): boolean {
-  return typeof error === 'object' && error !== null && 'code' in error && (error as { code?: string }).code === 'EXDEV';
+  return errorCode(error) === 'EXDEV';
+}
+
+/**
+ * True for the specific Windows rename failures caused by the OS/antivirus
+ * not having released a just-exited git.exe subprocess's file handles yet —
+ * not a bug in this process, just a transient hold on the directory from
+ * outside it. This is exactly why graceful-fs/npm/yarn all retry
+ * EPERM/EBUSY on Windows renames rather than failing immediately.
+ */
+function isTransientWindowsRenameError(error: unknown): boolean {
+  const code = errorCode(error);
+  return code === 'EPERM' || code === 'EBUSY';
+}
+
+function delay(ms: number): Promise<void> {
+  return new Promise(resolve => setTimeout(resolve, ms));
 }
 
 async function moveDir(source: string, destination: string): Promise<void> {
-  try {
-    await rename(source, destination);
-  } catch (error) {
-    if (!isCrossDeviceError(error)) throw error;
-    await cp(source, destination, { recursive: true, preserveTimestamps: true });
-    await rm(source, { recursive: true, force: true });
+  const maxAttempts = 5;
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      await rename(source, destination);
+      return;
+    } catch (error) {
+      if (isCrossDeviceError(error)) {
+        await cp(source, destination, { recursive: true, preserveTimestamps: true });
+        await rm(source, { recursive: true, force: true });
+        return;
+      }
+      if (isTransientWindowsRenameError(error) && attempt < maxAttempts) {
+        await delay(attempt * 150);
+        continue;
+      }
+      throw error;
+    }
   }
 }
 
