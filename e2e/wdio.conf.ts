@@ -31,6 +31,13 @@ export const config: WebdriverIO.Config = {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       'wdio:electronServiceOptions': {
         appBinaryPath: electronBinary,
+        // Default is 10s. Observed failing on Windows CI with "Timeout
+        // exceeded to get the ContextId" — the same class of problem as
+        // waitforTimeout below (a fixed budget tuned for macOS's fast native
+        // render, too tight for slower non-macOS CI runners). Give Linux/
+        // Windows the same headroom; macOS keeps the library default since
+        // it's never hit this.
+        cdpBridgeTimeout: process.platform === 'darwin' ? 10_000 : 60_000,
         appArgs: [
           '--no-sandbox',
           '--disable-setuid-sandbox',
