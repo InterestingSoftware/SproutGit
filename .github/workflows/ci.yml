@@ -67,11 +67,46 @@ jobs:
             turbo-test-${{ runner.os }}-
       - run: pnpm test --filter=!@sproutgit/e2e
 
+  # ── Compute the version this run will build/release ───────────────────────
+  # Tag pushes use the tag itself. Main-branch pushes derive {major}.{minor}
+  # from app/package.json (the committed baseline) and auto-increment the
+  # patch by looking at existing v{major}.{minor}.* tags — so patch resets to
+  # 0 the next time major/minor is bumped in package.json, instead of growing
+  # forever off github.run_number regardless of what's actually committed.
+  version:
+    name: Compute version
+    if: github.event_name == 'pull_request' || github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      version: ${{ steps.compute.outputs.version }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0 # need full tag history to find the last patch for this major.minor
+      - name: Compute version
+        id: compute
+        shell: bash
+        run: |
+          if [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
+            VERSION="${GITHUB_REF_NAME#v}"
+          elif [[ "${GITHUB_REF}" == "refs/heads/main" ]]; then
+            MAJOR_MINOR=$(node -e "console.log(require('./app/package.json').version.split('.').slice(0,2).join('.'))")
+            ESCAPED="${MAJOR_MINOR//./\\.}"
+            LAST_PATCH=$(git tag -l "v${MAJOR_MINOR}.*" | sed -E "s/^v${ESCAPED}\.//" | grep -E '^[0-9]+$' | sort -n | tail -1)
+            NEXT_PATCH=$([ -z "$LAST_PATCH" ] && echo 0 || echo $((LAST_PATCH + 1)))
+            VERSION="${MAJOR_MINOR}.${NEXT_PATCH}"
+          else
+            VERSION="0.0.0-dev.${GITHUB_RUN_NUMBER}"
+          fi
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+
   # ── Build packages + app (all 3 platforms) ────────────────────────────────
   build:
     name: Build (${{ matrix.platform }})
     if: github.event_name == 'pull_request' || github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/')
-    needs: [lint, test]
+    needs: [lint, test, version]
     permissions:
       contents: read
     strategy:
@@ -114,20 +149,15 @@ jobs:
           key: electron-${{ runner.os }}-${{ hashFiles('app/package.json') }}
       - run: pnpm build --filter=!@sproutgit/app --filter=!sproutgit-website
       # Stamp app/package.json with the version the release job will actually
-      # tag, so electron-builder embeds a matching version in the artifacts
-      # instead of the hardcoded placeholder committed to the repo.
-      - name: Set package version from ref
+      # tag (computed once in the `version` job above, shared by every
+      # platform in this matrix), so electron-builder embeds a matching
+      # version in the artifacts instead of the placeholder committed to the repo.
+      - name: Set package version
         working-directory: app
         shell: bash
+        env:
+          VERSION: ${{ needs.version.outputs.version }}
         run: |
-          if [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
-            VERSION="${GITHUB_REF_NAME#v}"
-          elif [[ "${GITHUB_REF}" == "refs/heads/main" ]]; then
-            VERSION="0.1.${GITHUB_RUN_NUMBER}"
-          else
-            VERSION="0.0.0-dev.${GITHUB_RUN_NUMBER}"
-          fi
-          export VERSION
           node -e "
             const fs = require('fs');
             const pkg = JSON.parse(fs.readFileSync('package.json', 'utf8'));
@@ -272,7 +302,7 @@ jobs:
   release:
     name: Create release
     if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')
-    needs: [build, e2e]
+    needs: [build, e2e, version]
     runs-on: ubuntu-latest
     permissions:
       contents: write   # needed to create the GitHub Release
@@ -283,7 +313,7 @@ jobs:
           merge-multiple: true
       - uses: softprops/action-gh-release@v3
         with:
-          tag_name: ${{ github.ref == 'refs/heads/main' && format('v0.1.{0}', github.run_number) || github.ref_name }}
+          tag_name: v${{ needs.version.outputs.version }}
           files: artifacts/**
           generate_release_notes: true
           prerelease: ${{ contains(github.ref_name, '-') }}
