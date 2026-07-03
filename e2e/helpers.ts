@@ -38,16 +38,18 @@ export function createTestRepo(name = 'repo'): string {
 /**
  * Remove a temporary repo directory.
  *
- * `maxRetries`/`retryDelay` are Node's own built-in mechanism for exactly
- * this Windows scenario: closing a handle (our fs.watch, git.exe, sqlite)
- * doesn't guarantee the OS has released it by the very next synchronous
- * call — `rmSync` can still see EBUSY/EPERM for a brief window afterwards.
- * `closeAndCleanup` already closes everything we know to close first; these
- * retries cover the remaining teardown-timing gap Node's fs API doesn't let
- * us directly await.
+ * `closeAndCleanup` already closes the sqlite connection, stops the fs.watch
+ * handles, and awaits any git command still in flight against the repo
+ * before this runs — so by the time we get here, nothing left in *our*
+ * process should be holding root open. What can still transiently lock a
+ * just-written bare repo's files on Windows CI is antivirus real-time
+ * scanning, which is external to the app and only observable as EBUSY/EPERM
+ * clearing after a delay. `maxRetries`/`retryDelay` are Node's own built-in
+ * mechanism for exactly that — a generous ceiling here costs nothing on the
+ * (common) fast path and only gets used on the (rare) slow one.
  */
 export function cleanupRepo(dir: string): void {
-  rmSync(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
+  rmSync(dir, { recursive: true, force: true, maxRetries: 20, retryDelay: 250 });
 }
 
 /**

@@ -298,7 +298,7 @@ describe('Hero screenshots @screenshots', () => {
     // maxRetries/retryDelay cover the Windows teardown-timing gap (see
     // cleanupRepo's doc comment in helpers.ts) between closing handles and
     // the OS actually releasing them.
-    if (repoPath) rmSync(repoPath, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
+    if (repoPath) rmSync(repoPath, { recursive: true, force: true, maxRetries: 20, retryDelay: 250 });
   });
 
   it('captures canonical UI screenshots from the hero repo', async function () {
