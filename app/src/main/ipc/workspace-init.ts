@@ -7,7 +7,7 @@
  *     worktrees/  ← managed worktrees
  *     state.db    ← per-workspace sqlite state
  */
-import { ipcMain, BrowserWindow } from 'electron';
+import { BrowserWindow } from 'electron';
 import { IPC } from '@sproutgit/types';
 import type { WorkspaceInitResult, WorkspaceStatus, ImportRepoMode } from '@sproutgit/types';
 import { mkdirSync, existsSync } from 'fs';
@@ -15,6 +15,7 @@ import { join, dirname } from 'path';
 import { cp, mkdir, rename, rm } from 'fs/promises';
 import { initBareRepo, cloneBareRepo, convertToBareWithWorktree } from '@sproutgit/git';
 import { openWorkspaceDb } from '@sproutgit/database';
+import { handle } from './handle.js';
 
 function sproutDir(workspacePath: string) {
   return join(workspacePath, '.sproutgit');
@@ -206,7 +207,7 @@ async function inspectWorkspace(workspacePath: string): Promise<WorkspaceStatus>
 }
 
 export function registerWorkspaceInitHandlers(): void {
-  ipcMain.handle(IPC.WORKSPACE_CREATE, async (_e, args: {
+  handle(IPC.WORKSPACE_CREATE, async (_e, args: {
     workspacePath: string;
     repoUrl?: string | null;
   }) => {
@@ -219,13 +220,13 @@ export function registerWorkspaceInitHandlers(): void {
     return initWorkspace(args.workspacePath, args.repoUrl, onProgress);
   });
 
-  ipcMain.handle(IPC.WORKSPACE_IMPORT, async (_e, args: {
+  handle(IPC.WORKSPACE_IMPORT, async (_e, args: {
     sourceRepoPath: string;
     mode: ImportRepoMode;
     workspacePath?: string | null;
   }) => importByMode(args.sourceRepoPath, args.mode, args.workspacePath, BrowserWindow.fromWebContents(_e.sender)));
 
-  ipcMain.handle(IPC.WORKSPACE_INSPECT, (_e, workspacePath: string) =>
+  handle(IPC.WORKSPACE_INSPECT, (_e, workspacePath: string) =>
     inspectWorkspace(workspacePath),
   );
 }

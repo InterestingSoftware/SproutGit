@@ -5,6 +5,8 @@ import { openConfigDb, openWorkspaceDb, eq, notInArray } from '@sproutgit/databa
 import { join } from 'path';
 import { recentWorkspaces } from '@sproutgit/database/schema/config';
 import { log } from '../telemetry.js';
+import { stopWatchingPath } from './watcher.js';
+import { waitForIdleRepo } from '@sproutgit/git';
 import {
   worktreeMetadata,
   hookDefinitions,
@@ -78,12 +80,26 @@ export function registerWorkspaceHandlers(configDb: ConfigDb): void {
       .run();
   });
 
-  handle(IPC.WORKSPACE_CLOSE, (_e, workspacePath: string) => {
+  handle(IPC.WORKSPACE_CLOSE, async (_e, workspacePath: string) => {
+    const gitRepoPath = join(workspacePath, '.sproutgit', 'root');
+
+    // Background queries (issue tracker patterns, push status, change-count
+    // polling, ...) aren't cancelled just because the component that started
+    // them unmounted — wait for any git command already in flight against
+    // this repo to settle, so its process doesn't still hold a file handle
+    // on root the moment after this call returns.
+    await waitForIdleRepo(gitRepoPath);
+
     const db = workspaceDbCache.get(workspacePath);
     if (db) {
       db.close();
       workspaceDbCache.delete(workspacePath);
     }
+    // Release the fs.watch handles on root too — same reason as the DB
+    // close above: on Windows an open watch handle blocks removing the
+    // directory it's watching, so anything about to delete this workspace
+    // needs both released first.
+    stopWatchingPath(gitRepoPath);
   });
 
   // ── Worktree metadata ─────────────────────────────────────────────────────

@@ -22,10 +22,10 @@
  */
 
 import { spawnSync } from 'node:child_process';
-import { appendFileSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { appendFileSync, mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { tmpdir } from 'node:os';
-import { gotoHash } from '../helpers.js';
+import { gotoHash, rmWithRetry } from '../helpers.js';
 import { captureScreenshotVariants } from '../helpers/screenshots.js';
 
 // ── Constants ─────────────────────────────────────────────────────────────────
@@ -294,8 +294,11 @@ describe('Hero screenshots @screenshots', () => {
     ]);
   });
 
-  after(() => {
-    if (repoPath) rmSync(repoPath, { recursive: true, force: true });
+  after(async () => {
+    // rmWithRetry covers the Windows teardown-timing gap (see its doc
+    // comment in helpers.ts) between closing handles and the OS actually
+    // releasing them.
+    if (repoPath) await rmWithRetry(repoPath);
   });
 
   it('captures canonical UI screenshots from the hero repo', async function () {

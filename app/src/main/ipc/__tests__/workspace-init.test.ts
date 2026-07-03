@@ -10,6 +10,7 @@ vi.mock('electron', () => ({
   ipcMain: { handle: handleMock },
   BrowserWindow: { fromWebContents: vi.fn(() => null) },
 }));
+vi.mock('../../telemetry.js', () => ({ log: { error: vi.fn(), info: vi.fn(), warn: vi.fn() } }));
 
 const { convertToBareWithWorktreeMock, initBareRepoMock, cloneBareRepoMock } = vi.hoisted(() => ({
   convertToBareWithWorktreeMock: vi.fn(),

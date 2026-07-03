@@ -264,9 +264,14 @@ function WorkspaceInner() {
   }, [workspacePath]);
 
   // ── File watcher → invalidate queries ────────────────────────────────
+  // Wait for gitRepoPath (root, always bare) to be known before watching —
+  // starting earlier would watch the pre-migration path, and on Windows
+  // `fs.watch` holds an open handle that blocks the rename that converts a
+  // workspace to the bare-root layout (EPERM).
 
   useEffect(() => {
-    void api.startWatching(workspacePath);
+    if (!gitRepoPath) return;
+    void api.startWatching(gitRepoPath);
     const offWorktree = api.onWorktreeChanged(() => {
       void qc.invalidateQueries({ queryKey: qk.worktrees(gitRepoPath) });
     });
@@ -275,12 +280,12 @@ function WorkspaceInner() {
       void qc.invalidateQueries({ queryKey: qk.refs(gitRepoPath) });
     });
     return () => {
-      void api.stopWatching(workspacePath);
+      void api.stopWatching(gitRepoPath);
       offWorktree();
       offRefs();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [workspacePath, gitRepoPath]);
+  }, [gitRepoPath]);
 
   // ── Refresh worktrees when the window regains focus ───────────────────
   // Catches worktrees an external tool (e.g. Claude Code) registered while

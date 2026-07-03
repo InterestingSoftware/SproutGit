@@ -35,17 +35,72 @@ export function createTestRepo(name = 'repo'): string {
   return dir;
 }
 
-/** Remove a temporary repo directory. */
-export function cleanupRepo(dir: string): void {
-  rmSync(dir, { recursive: true, force: true });
+const RETRYABLE_RM_CODES = new Set(['EBUSY', 'EPERM', 'ENOTEMPTY', 'EMFILE', 'ENFILE']);
+
+function delay(ms: number): Promise<void> {
+  return new Promise(resolve => setTimeout(resolve, ms));
 }
 
 /**
- * Close a workspace's SQLite DB in the main process and navigate home.
- * Call this before cleanupRepo() on Windows to release the file lock on
- * .sproutgit/state.db before attempting to delete the directory.
+ * Removes `dir` recursively, retrying on Windows-specific transient lock
+ * errors with linear backoff.
+ *
+ * Written as our own explicit loop — rather than `rmSync`'s built-in
+ * `maxRetries`/`retryDelay` options — because CI showed the built-in option
+ * failing after a single attempt with no observable delay (the very next
+ * WebDriver command fired ~15ms later, far short of even one retryDelay),
+ * which doesn't match the documented behavior and couldn't be verified
+ * locally (Node 22, the version CI runs, wasn't reproducible in this
+ * sandbox). `rmFn` is injectable so this loop's actual retry behavior can
+ * be unit tested without depending on real OS-level file locking.
+ */
+export async function rmWithRetry(
+  dir: string,
+  { maxRetries = 20, retryDelayMs = 250, rmFn = rmSync }:
+    { maxRetries?: number; retryDelayMs?: number; rmFn?: typeof rmSync } = {}
+): Promise<void> {
+  for (let attempt = 0; ; attempt++) {
+    try {
+      rmFn(dir, { recursive: true, force: true });
+      return;
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException).code;
+      if (!code || !RETRYABLE_RM_CODES.has(code) || attempt >= maxRetries) throw error;
+      await delay(retryDelayMs * (attempt + 1));
+    }
+  }
+}
+
+/**
+ * Remove a temporary repo directory.
+ *
+ * `closeAndCleanup` already closes the sqlite connection, stops the fs.watch
+ * handles, and awaits any git command still in flight against the repo
+ * before this runs — so by the time we get here, nothing left in *our*
+ * process should be holding root open. What can still transiently lock a
+ * just-written bare repo's files on Windows CI is antivirus real-time
+ * scanning, which is external to the app and only observable as EBUSY/EPERM
+ * clearing after a delay — hence the retry.
+ */
+export async function cleanupRepo(dir: string): Promise<void> {
+  await rmWithRetry(dir);
+}
+
+/**
+ * Navigate home, close a workspace's SQLite DB in the main process, and
+ * delete its directory.
+ *
+ * Order matters here: navigate home *first* so the workspace route
+ * unmounts and every query/watcher tied to its lifecycle (useWorktrees,
+ * useCommits, the fs.watch handles, ...) actually stops. Calling
+ * closeWorkspace() before navigating away leaves the component fully
+ * mounted and live — closeWorkspace()'s wait for in-flight git operations
+ * can complete, return, and then a query still tied to the (still-mounted)
+ * component fires a *new* one it never saw, which can still be running
+ * when cleanupRepo() deletes the directory out from under it.
  */
 export async function closeAndCleanup(workspacePath: string): Promise<void> {
+  await goHome();
   // browser.execute() does NOT await Promises — use executeAsync so the
   // WebDriver call blocks until the IPC round-trip actually completes and
   // the SQLite connection is closed before we attempt to delete on Windows.
@@ -57,8 +112,7 @@ export async function closeAndCleanup(workspacePath: string): Promise<void> {
     },
     workspacePath
   );
-  await goHome();
-  cleanupRepo(workspacePath);
+  await cleanupRepo(workspacePath);
 }
 
 // ── Toast helpers ─────────────────────────────────────────────────────────────
