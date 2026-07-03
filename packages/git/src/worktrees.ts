@@ -7,6 +7,7 @@ import {
 import { canonicalize, isPathWithin } from '@sproutgit/paths';
 import { normalize, resolve, sep } from 'node:path';
 import { gitForPath } from './client.js';
+import { withWorktreeLock } from './worktree-lock.js';
 
 /**
  * Returns all worktrees for the repo at `repoPath`.
@@ -21,20 +22,19 @@ export async function listWorktrees(
   repoPath: string,
   managedWorktreesPath?: string
 ): Promise<WorktreeListResult> {
-  const git = gitForPath(repoPath);
-  // Observed on Windows CI: `fatal: failed to read 'worktrees/<name>/locked':
-  // No such file or directory` — an apparent TOCTOU race in git's own
-  // lock-reason check for a linked worktree (the file is optional; something
-  // momentarily removes it between git checking it exists and reading it).
-  // It doesn't reproduce on retry, so retry once before treating it as real.
-  let raw: string;
-  try {
-    raw = await git.raw(['worktree', 'list', '--porcelain']);
-  } catch {
-    raw = await git.raw(['worktree', 'list', '--porcelain']);
-  }
-  const worktrees = parseWorktreePorcelain(raw, repoPath, managedWorktreesPath);
-  return { repoPath, worktrees };
+  return withWorktreeLock(repoPath, async () => {
+    // Belt-and-suspenders retry: withWorktreeLock rules out races between our
+    // *own* concurrent calls, but an external tool (or an OS-level scan) can
+    // still touch this repo's worktree metadata at the same moment — see
+    // withWorktreeLock's doc comment for the exact git-internal race.
+    let raw: string;
+    try {
+      raw = await gitForPath(repoPath).raw(['worktree', 'list', '--porcelain']);
+    } catch {
+      raw = await gitForPath(repoPath).raw(['worktree', 'list', '--porcelain']);
+    }
+    return { repoPath, worktrees: parseWorktreePorcelain(raw, repoPath, managedWorktreesPath) };
+  });
 }
 
 /**
@@ -52,7 +52,6 @@ export async function createManagedWorktree(
     throw new Error(`Invalid branch name: ${branchError}`);
   }
 
-  const git = gitForPath(rootRepoPath);
   const worktreePath = `${managedWorktreesPath}/${newBranch}`;
 
   // Defense in depth: validateBranchName already rejects '..' and path
@@ -64,11 +63,12 @@ export async function createManagedWorktree(
     throw new Error('Worktree path must stay within the managed worktrees directory.');
   }
 
-  await git.raw(['worktree', 'add', '-b', newBranch, worktreePath, fromRef]);
-
-  // normalize() ensures consistent path separators on all platforms so the
-  // returned path matches what listWorktrees() returns (which also normalizes).
-  return { worktreePath: normalize(worktreePath), branch: newBranch, fromRef };
+  return withWorktreeLock(rootRepoPath, async () => {
+    await gitForPath(rootRepoPath).raw(['worktree', 'add', '-b', newBranch, worktreePath, fromRef]);
+    // normalize() ensures consistent path separators on all platforms so the
+    // returned path matches what listWorktrees() returns (which also normalizes).
+    return { worktreePath: normalize(worktreePath), branch: newBranch, fromRef };
+  });
 }
 
 /**
@@ -87,7 +87,6 @@ export async function addWorktreeForExistingBranch(
     throw new Error(`Invalid branch name: ${branchError}`);
   }
 
-  const git = gitForPath(rootRepoPath);
   const worktreePath = `${managedWorktreesPath}/${branch}`;
 
   const resolvedRoot = resolve(managedWorktreesPath) + sep;
@@ -96,9 +95,10 @@ export async function addWorktreeForExistingBranch(
     throw new Error('Worktree path must stay within the managed worktrees directory.');
   }
 
-  await git.raw(['worktree', 'add', worktreePath, branch]);
-
-  return { worktreePath: normalize(worktreePath), branch, fromRef: branch };
+  return withWorktreeLock(rootRepoPath, async () => {
+    await gitForPath(rootRepoPath).raw(['worktree', 'add', worktreePath, branch]);
+    return { worktreePath: normalize(worktreePath), branch, fromRef: branch };
+  });
 }
 
 /**
@@ -114,16 +114,18 @@ export async function deleteManagedWorktree(
   deleteBranch = true,
   branchName?: string | null
 ): Promise<void> {
-  const git = gitForPath(rootRepoPath);
-  await git.raw(['worktree', 'remove', '--force', worktreePath]);
+  await withWorktreeLock(rootRepoPath, async () => {
+    const git = gitForPath(rootRepoPath);
+    await git.raw(['worktree', 'remove', '--force', worktreePath]);
 
-  if (deleteBranch && branchName) {
-    try {
-      await git.raw(['branch', '-D', branchName]);
-    } catch {
-      // Branch may already be gone — not fatal.
+    if (deleteBranch && branchName) {
+      try {
+        await git.raw(['branch', '-D', branchName]);
+      } catch {
+        // Branch may already be gone — not fatal.
+      }
     }
-  }
+  });
 }
 
 // ─── Internal helpers ─────────────────────────────────────────────────────────

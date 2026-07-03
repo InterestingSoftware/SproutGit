@@ -4,6 +4,7 @@ import { canonicalize, isPathWithin } from '@sproutgit/paths';
 import { gitForPath } from './client.js';
 import { getWorktreeStatus } from './staging.js';
 import { addWorktreeForExistingBranch, listWorktrees } from './worktrees.js';
+import { withWorktreeLock } from './worktree-lock.js';
 
 /** Thrown when a conversion source has uncommitted changes. */
 export class DirtyWorkingTreeError extends Error {
@@ -91,7 +92,7 @@ export async function convertToBareWithWorktree(
   }
 
   if (otherWorktreePaths.length > 0) {
-    await bareGit.raw(['worktree', 'repair', ...otherWorktreePaths]);
+    await withWorktreeLock(barePath, () => bareGit.raw(['worktree', 'repair', ...otherWorktreePaths]));
   }
 
   const { worktreePath } = await addWorktreeForExistingBranch(barePath, managedWorktreesPath, branch);
