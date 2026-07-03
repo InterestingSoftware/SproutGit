@@ -35,6 +35,42 @@ export function createTestRepo(name = 'repo'): string {
   return dir;
 }
 
+const RETRYABLE_RM_CODES = new Set(['EBUSY', 'EPERM', 'ENOTEMPTY', 'EMFILE', 'ENFILE']);
+
+function delay(ms: number): Promise<void> {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+/**
+ * Removes `dir` recursively, retrying on Windows-specific transient lock
+ * errors with linear backoff.
+ *
+ * Written as our own explicit loop — rather than `rmSync`'s built-in
+ * `maxRetries`/`retryDelay` options — because CI showed the built-in option
+ * failing after a single attempt with no observable delay (the very next
+ * WebDriver command fired ~15ms later, far short of even one retryDelay),
+ * which doesn't match the documented behavior and couldn't be verified
+ * locally (Node 22, the version CI runs, wasn't reproducible in this
+ * sandbox). `rmFn` is injectable so this loop's actual retry behavior can
+ * be unit tested without depending on real OS-level file locking.
+ */
+export async function rmWithRetry(
+  dir: string,
+  { maxRetries = 20, retryDelayMs = 250, rmFn = rmSync }:
+    { maxRetries?: number; retryDelayMs?: number; rmFn?: typeof rmSync } = {}
+): Promise<void> {
+  for (let attempt = 0; ; attempt++) {
+    try {
+      rmFn(dir, { recursive: true, force: true });
+      return;
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException).code;
+      if (!code || !RETRYABLE_RM_CODES.has(code) || attempt >= maxRetries) throw error;
+      await delay(retryDelayMs * (attempt + 1));
+    }
+  }
+}
+
 /**
  * Remove a temporary repo directory.
  *
@@ -44,12 +80,10 @@ export function createTestRepo(name = 'repo'): string {
  * process should be holding root open. What can still transiently lock a
  * just-written bare repo's files on Windows CI is antivirus real-time
  * scanning, which is external to the app and only observable as EBUSY/EPERM
- * clearing after a delay. `maxRetries`/`retryDelay` are Node's own built-in
- * mechanism for exactly that — a generous ceiling here costs nothing on the
- * (common) fast path and only gets used on the (rare) slow one.
+ * clearing after a delay — hence the retry.
  */
-export function cleanupRepo(dir: string): void {
-  rmSync(dir, { recursive: true, force: true, maxRetries: 20, retryDelay: 250 });
+export async function cleanupRepo(dir: string): Promise<void> {
+  await rmWithRetry(dir);
 }
 
 /**
@@ -78,7 +112,7 @@ export async function closeAndCleanup(workspacePath: string): Promise<void> {
     },
     workspacePath
   );
-  cleanupRepo(workspacePath);
+  await cleanupRepo(workspacePath);
 }
 
 // ── Toast helpers ─────────────────────────────────────────────────────────────
