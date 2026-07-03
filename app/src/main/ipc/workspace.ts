@@ -5,6 +5,7 @@ import { openConfigDb, openWorkspaceDb, eq, notInArray } from '@sproutgit/databa
 import { join } from 'path';
 import { recentWorkspaces } from '@sproutgit/database/schema/config';
 import { log } from '../telemetry.js';
+import { stopWatchingPath } from './watcher.js';
 import {
   worktreeMetadata,
   hookDefinitions,
@@ -84,6 +85,11 @@ export function registerWorkspaceHandlers(configDb: ConfigDb): void {
       db.close();
       workspaceDbCache.delete(workspacePath);
     }
+    // Release the fs.watch handles on root too — same reason as the DB
+    // close above: on Windows an open watch handle blocks removing the
+    // directory it's watching, so anything about to delete this workspace
+    // needs both released first.
+    stopWatchingPath(join(workspacePath, '.sproutgit', 'root'));
   });
 
   // ── Worktree metadata ─────────────────────────────────────────────────────

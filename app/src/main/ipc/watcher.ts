@@ -78,6 +78,24 @@ function watchPath(
   return watchers;
 }
 
+/**
+ * Closes and forgets any active watchers for `repoPath`. Exported so other
+ * IPC handlers that fully tear down a workspace (e.g. closing it before its
+ * directory gets deleted) can release these handles too — on Windows an
+ * open `fs.watch` handle blocks removing the directory it's watching, the
+ * same class of lock `WORKSPACE_CLOSE` already releases for the sqlite
+ * connection.
+ */
+export function stopWatchingPath(repoPath: string): void {
+  const normalised = resolve(repoPath);
+  const watchers = activeWatchers.get(normalised);
+  if (!watchers) return;
+  for (const w of watchers) {
+    try { w.close(); } catch { /* ignore */ }
+  }
+  activeWatchers.delete(normalised);
+}
+
 export function registerWatchHandlers(getWindow: () => BrowserWindow | null): void {
   ipcMain.handle(IPC.WATCH_START, (_e, repoPath: string) => {
     const normalised = resolve(repoPath);
@@ -93,12 +111,6 @@ export function registerWatchHandlers(getWindow: () => BrowserWindow | null): vo
   });
 
   ipcMain.handle(IPC.WATCH_STOP, (_e, repoPath: string) => {
-    const normalised = resolve(repoPath);
-    const watchers = activeWatchers.get(normalised);
-    if (!watchers) return;
-    for (const w of watchers) {
-      try { w.close(); } catch { /* ignore */ }
-    }
-    activeWatchers.delete(normalised);
+    stopWatchingPath(repoPath);
   });
 }
