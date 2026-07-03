@@ -26,15 +26,30 @@ export async function listWorktrees(
     // Belt-and-suspenders retry: withWorktreeLock rules out races between our
     // *own* concurrent calls, but an external tool (or an OS-level scan) can
     // still touch this repo's worktree metadata at the same moment — see
-    // withWorktreeLock's doc comment for the exact git-internal race.
+    // withWorktreeLock's doc comment for the exact git-internal race. Only
+    // retry that specific, known-transient failure; anything else propagates
+    // immediately so a genuine error isn't masked or silently doubled up.
     let raw: string;
     try {
       raw = await gitForPath(repoPath).raw(['worktree', 'list', '--porcelain']);
-    } catch {
+    } catch (error) {
+      if (!isTransientWorktreeListError(error)) throw error;
       raw = await gitForPath(repoPath).raw(['worktree', 'list', '--porcelain']);
     }
     return { repoPath, worktrees: parseWorktreePorcelain(raw, repoPath, managedWorktreesPath) };
   });
+}
+
+/**
+ * True only for the specific TOCTOU race in git's own `worktree_lock_reason()`
+ * (checks the `locked` marker file exists, then reads it as a separate step —
+ * see withWorktreeLock's doc comment). Deliberately narrow: any other error
+ * from `git worktree list` should propagate immediately rather than being
+ * silently retried and potentially masked.
+ */
+function isTransientWorktreeListError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error);
+  return /failed to read '.*\/locked': no such file or directory/i.test(message);
 }
 
 /**

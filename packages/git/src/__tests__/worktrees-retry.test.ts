@@ -38,11 +38,20 @@ describe('listWorktrees retry', () => {
     expect(result.worktrees[0]?.branch).toBe('bugfix/login-crash');
   });
 
-  it('propagates the error when it fails twice in a row', async () => {
+  it('propagates the error when the transient message happens twice in a row', async () => {
+    rawMock.mockRejectedValue(new Error(
+      "fatal: failed to read 'worktrees/login-crash/locked': No such file or directory"
+    ));
+
+    await expect(listWorktrees('/repo/.sproutgit/root')).rejects.toThrow(/failed to read/);
+    expect(rawMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('does not retry an unrelated failure — propagates immediately', async () => {
     rawMock.mockRejectedValue(new Error('fatal: not a git repository'));
 
     await expect(listWorktrees('/repo/.sproutgit/root')).rejects.toThrow('fatal: not a git repository');
-    expect(rawMock).toHaveBeenCalledTimes(2);
+    expect(rawMock).toHaveBeenCalledTimes(1);
   });
 
   it('does not retry when the first call already succeeds', async () => {
