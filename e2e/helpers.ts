@@ -53,11 +53,20 @@ export function cleanupRepo(dir: string): void {
 }
 
 /**
- * Close a workspace's SQLite DB in the main process and navigate home.
- * Call this before cleanupRepo() on Windows to release the file lock on
- * .sproutgit/state.db before attempting to delete the directory.
+ * Navigate home, close a workspace's SQLite DB in the main process, and
+ * delete its directory.
+ *
+ * Order matters here: navigate home *first* so the workspace route
+ * unmounts and every query/watcher tied to its lifecycle (useWorktrees,
+ * useCommits, the fs.watch handles, ...) actually stops. Calling
+ * closeWorkspace() before navigating away leaves the component fully
+ * mounted and live — closeWorkspace()'s wait for in-flight git operations
+ * can complete, return, and then a query still tied to the (still-mounted)
+ * component fires a *new* one it never saw, which can still be running
+ * when cleanupRepo() deletes the directory out from under it.
  */
 export async function closeAndCleanup(workspacePath: string): Promise<void> {
+  await goHome();
   // browser.execute() does NOT await Promises — use executeAsync so the
   // WebDriver call blocks until the IPC round-trip actually completes and
   // the SQLite connection is closed before we attempt to delete on Windows.
@@ -69,7 +78,6 @@ export async function closeAndCleanup(workspacePath: string): Promise<void> {
     },
     workspacePath
   );
-  await goHome();
   cleanupRepo(workspacePath);
 }
 
