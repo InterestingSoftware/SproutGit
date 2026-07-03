@@ -1,7 +1,15 @@
 /**
  * File-system watcher that emits IPC events when git HEAD or refs change.
- * Uses Node's built-in `fs.watch` on .git/HEAD and .git/refs to detect
- * branch switches and new commits.
+ * Uses Node's built-in `fs.watch` on HEAD and refs to detect branch switches
+ * and new commits.
+ *
+ * `repoPath` here is always the bare root itself (`gitRepoPath`, e.g.
+ * `<workspace>/.sproutgit/root`) — root is always bare, so HEAD/refs/
+ * FETCH_HEAD live directly under it, not under a `.git` subdirectory.
+ * Callers must not start watching before root exists (i.e. before any
+ * bare-root migration has finished): on Windows, `fs.watch` holds an open
+ * handle on the watched path, and starting a watch on a not-yet-converted
+ * repo's `.git` would block the rename that converts it (EPERM).
  */
 import { ipcMain, type BrowserWindow } from 'electron';
 import { IPC } from '@sproutgit/types';
@@ -25,9 +33,9 @@ function watchPath(
   };
 
   try {
-    // Watch .git/HEAD for branch switches
+    // Watch HEAD for branch switches
     const headWatcher = watch(
-      join(repoPath, '.git', 'HEAD'),
+      join(repoPath, 'HEAD'),
       { persistent: false },
       () => emitWorktreeChanged(),
     );
@@ -35,9 +43,9 @@ function watchPath(
   } catch { /* path may not exist */ }
 
   try {
-    // Watch .git/refs recursively for new commits / remote updates
+    // Watch refs recursively for new commits / remote updates
     const refsWatcher = watch(
-      join(repoPath, '.git', 'refs'),
+      join(repoPath, 'refs'),
       { persistent: false, recursive: true },
       () => emitRefsChanged(),
     );
@@ -47,7 +55,7 @@ function watchPath(
   try {
     // FETCH_HEAD changes after git fetch
     const fetchHeadWatcher = watch(
-      join(repoPath, '.git', 'FETCH_HEAD'),
+      join(repoPath, 'FETCH_HEAD'),
       { persistent: false },
       () => emitRefsChanged(),
     );
@@ -60,12 +68,12 @@ function watchPath(
     // (run by us or an external tool like Claude Code) shows up, regardless
     // of where the actual worktree checkout lives on disk.
     const worktreesAdminWatcher = watch(
-      join(repoPath, '.sproutgit', 'root', 'worktrees'),
+      join(repoPath, 'worktrees'),
       { persistent: false, recursive: true },
       () => emitWorktreeChanged(),
     );
     watchers.push(worktreesAdminWatcher);
-  } catch { /* path may not exist (imported, non-sproutgit repos) */ }
+  } catch { /* path may not exist */ }
 
   return watchers;
 }
