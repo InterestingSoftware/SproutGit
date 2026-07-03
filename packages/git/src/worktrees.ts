@@ -22,7 +22,17 @@ export async function listWorktrees(
   managedWorktreesPath?: string
 ): Promise<WorktreeListResult> {
   const git = gitForPath(repoPath);
-  const raw = await git.raw(['worktree', 'list', '--porcelain']);
+  // Observed on Windows CI: `fatal: failed to read 'worktrees/<name>/locked':
+  // No such file or directory` — an apparent TOCTOU race in git's own
+  // lock-reason check for a linked worktree (the file is optional; something
+  // momentarily removes it between git checking it exists and reading it).
+  // It doesn't reproduce on retry, so retry once before treating it as real.
+  let raw: string;
+  try {
+    raw = await git.raw(['worktree', 'list', '--porcelain']);
+  } catch {
+    raw = await git.raw(['worktree', 'list', '--porcelain']);
+  }
   const worktrees = parseWorktreePorcelain(raw, repoPath, managedWorktreesPath);
   return { repoPath, worktrees };
 }
