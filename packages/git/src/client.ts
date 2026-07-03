@@ -3,6 +3,7 @@ import type { SimpleGit } from 'simple-git';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { type GitInfo } from '@sproutgit/types';
+import { trackGitOperation } from './pending-ops.js';
 
 const execFileAsync = promisify(execFile);
 
@@ -13,6 +14,11 @@ const IS_DEV = process.env['NODE_ENV'] === 'development';
  * All operations timeout after 60 s to prevent hanging on network calls.
  * In development, all git commands are logged to the console with timing via
  * the simple-git outputHandler.
+ *
+ * Wrapped in a Proxy so every method call is tracked via `trackGitOperation`
+ * — this is what lets `waitForIdleRepo()` know whether any git command
+ * against `cwd` is still running, regardless of which higher-level function
+ * (status, commit, diff, worktree list, ...) issued it.
  */
 export function gitForPath(cwd: string): SimpleGit {
   const git = simpleGit({
@@ -38,7 +44,16 @@ export function gitForPath(cwd: string): SimpleGit {
     });
   }
 
-  return git;
+  return new Proxy(git, {
+    get(target, prop, receiver) {
+      const original = Reflect.get(target, prop, receiver) as unknown;
+      if (typeof original !== 'function') return original;
+      return (...args: unknown[]) => {
+        const result = (original as (...a: unknown[]) => unknown).apply(target, args);
+        return result instanceof Promise ? trackGitOperation(cwd, result) : result;
+      };
+    },
+  }) as SimpleGit;
 }
 
 /**

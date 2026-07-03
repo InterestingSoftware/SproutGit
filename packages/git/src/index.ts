@@ -26,3 +26,4 @@ export { initBareRepo, cloneBareRepo } from './init.js';
 export { convertToBareWithWorktree, DirtyWorkingTreeError, DetachedHeadError } from './convert.js';
 export { isBareRepoPath } from './bare.js';
 export { readIssueTrackerFile } from './issuetracker.js';
+export { waitForIdleRepo } from './pending-ops.js';
