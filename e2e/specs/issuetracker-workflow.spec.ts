@@ -35,6 +35,10 @@ describe('.issuetracker support', () => {
     // would make the two sides of a worktreePath comparison disagree.
     testRepo = realpathSync.native(createTestRepo('issuetracker'));
     writeFileSync(join(testRepo, '.issuetracker'), ISSUETRACKER_FILE);
+    // Commit it — import converts the repo to a bare root, which refuses to
+    // run against a dirty working tree.
+    execSync('git add .issuetracker', { cwd: testRepo });
+    execSync('git commit -m "add .issuetracker"', { cwd: testRepo });
   });
 
   afterEach(async () => {

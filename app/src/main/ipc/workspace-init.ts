@@ -3,7 +3,7 @@
  *
  * A SproutGit workspace lives at `workspacePath` and contains:
  *   .sproutgit/
- *     root/       ← the bare git repo (or a clone)
+ *     root/       ← the bare git repo — always bare, never checked out
  *     worktrees/  ← managed worktrees
  *     state.db    ← per-workspace sqlite state
  */
@@ -13,7 +13,7 @@ import type { WorkspaceInitResult, WorkspaceStatus, ImportRepoMode } from '@spro
 import { mkdirSync, existsSync } from 'fs';
 import { join, dirname } from 'path';
 import { cp, mkdir, rename, rm } from 'fs/promises';
-import { initBareRepo, cloneBareRepo } from '@sproutgit/git';
+import { initBareRepo, cloneBareRepo, convertToBareWithWorktree } from '@sproutgit/git';
 import { openWorkspaceDb } from '@sproutgit/database';
 
 function sproutDir(workspacePath: string) {
@@ -68,20 +68,24 @@ async function initWorkspace(
   };
 }
 
-/** Import an existing non-bare repo in place (no file moves). */
+/**
+ * Import an existing non-bare repo in place (no file moves).
+ *
+ * The source repo's `.git` is converted to a bare repo at `.sproutgit/root`
+ * and its currently-checked-out branch is recreated as a managed worktree —
+ * root is never left as a live checkout, same as a freshly cloned/init'd
+ * workspace. Throws `DirtyWorkingTreeError`/`DetachedHeadError` (surfaced to
+ * the user as-is) if the source isn't in a state that can be converted.
+ */
 async function importInPlace(sourceRepoPath: string): Promise<WorkspaceInitResult> {
-  // Treat the source repo directory as the workspace. We convert it so that
-  // .sproutgit/root is a symlink or reference pointing to the source's .git,
-  // but the simplest approach: init the workspace at the same path, and let
-  // the user's existing .git stay as the "root".
-  //
-  // For now we create the .sproutgit structure next to the .git folder.
-  const root = join(sourceRepoPath, '.git');
+  const root = rootPath(sourceRepoPath);
   const wt = worktreesPath(sourceRepoPath);
   const meta = metadataPath(sourceRepoPath);
 
   mkdirSync(wt, { recursive: true });
   mkdirSync(meta, { recursive: true });
+
+  await convertToBareWithWorktree(sourceRepoPath, root, wt);
 
   // Run migrations to ensure state.db is ready, then release the connection.
   // workspace.ts will open its own cached connection on first IPC access.
@@ -146,61 +150,56 @@ async function importByMode(
   return importInPlace(trimmedWorkspacePath);
 }
 
-function inspectWorkspace(workspacePath: string): WorkspaceStatus {
+/**
+ * Detects a pre-existing on-disk layout with a live working tree at "root"
+ * and folds it into the bare-root layout, in place, the first time it's
+ * seen — every layout SproutGit has ever produced converges to a single
+ * bare-root + managed-worktrees shape. Two shapes qualify:
+ *
+ *   Legacy Rust layout:            workspacePath/root/.git (main worktree)
+ *   Imported in-place (old code):  workspacePath/.git
+ *
+ * No-op once `.sproutgit/root` already exists. Propagates
+ * `DirtyWorkingTreeError`/`DetachedHeadError` unchanged if the source can't
+ * be converted yet — the workspace is left untouched and callers should
+ * surface the error to the user (commit/stash, or check out a branch).
+ */
+async function migrateLegacyLayoutIfNeeded(workspacePath: string): Promise<void> {
+  const newRoot = rootPath(workspacePath);
+  if (existsSync(newRoot)) return;
+
+  const legacyRoot = join(workspacePath, 'root');
+  const sourceRepoPath = existsSync(join(legacyRoot, '.git'))
+    ? legacyRoot
+    : existsSync(join(workspacePath, '.git'))
+      ? workspacePath
+      : null;
+  if (!sourceRepoPath) return;
+
+  const newWt = worktreesPath(workspacePath);
+  mkdirSync(newWt, { recursive: true });
+  await convertToBareWithWorktree(sourceRepoPath, newRoot, newWt);
+}
+
+async function inspectWorkspace(workspacePath: string): Promise<WorkspaceStatus> {
+  await migrateLegacyLayoutIfNeeded(workspacePath);
+
   const sprout = sproutDir(workspacePath);
-
-  // ── Layout detection ─────────────────────────────────────────────────────
-  // New Electron layout:  workspacePath/.sproutgit/root  (bare repo)
-  //                       workspacePath/.sproutgit/worktrees
-  // Legacy Rust layout:   workspacePath/root              (main worktree, has .git/)
-  //                       workspacePath/worktrees
-  // Imported in-place:    workspacePath/.git
-
-  const newRoot = rootPath(workspacePath);          // .sproutgit/root
-  const newWt   = worktreesPath(workspacePath);     // .sproutgit/worktrees
-  const legacyRoot = join(workspacePath, 'root');   // root/
-  const legacyWt   = join(workspacePath, 'worktrees'); // worktrees/
-
-  let resolvedRoot: string;
-  let resolvedWt: string;
-  let gitRepoPath: string;
-
-  if (existsSync(newRoot)) {
-    // New Electron layout — bare repo at .sproutgit/root
-    resolvedRoot = newRoot;
-    resolvedWt   = newWt;
-    gitRepoPath  = newRoot;
-  } else if (existsSync(join(legacyRoot, '.git'))) {
-    // Legacy Rust layout — main worktree at workspacePath/root
-    resolvedRoot = legacyRoot;
-    resolvedWt   = legacyWt;
-    gitRepoPath  = legacyRoot;
-  } else if (existsSync(join(workspacePath, '.git'))) {
-    // Imported in-place — workspace IS the git repo.
-    // If .sproutgit exists (created by importInPlace), use its worktrees dir.
-    resolvedRoot = join(workspacePath, '.git');
-    resolvedWt   = existsSync(join(sproutDir(workspacePath), 'worktrees')) ? newWt : legacyWt;
-    gitRepoPath  = workspacePath;
-  } else {
-    // No recognisable git repo — return empty so queries stay disabled
-    resolvedRoot = newRoot;
-    resolvedWt   = newWt;
-    gitRepoPath  = '';
-  }
-
+  const root = rootPath(workspacePath);
+  const wt = worktreesPath(workspacePath);
   const meta = metadataPath(workspacePath);
-  const db   = stateDbPath(workspacePath);
+  const db = stateDbPath(workspacePath);
 
   return {
     workspacePath,
-    gitRepoPath,
-    rootPath: resolvedRoot,
-    worktreesPath: resolvedWt,
+    gitRepoPath: existsSync(root) ? root : '',
+    rootPath: root,
+    worktreesPath: wt,
     metadataPath: meta,
     stateDbPath: db,
     isSproutgitProject: existsSync(sprout),
-    rootExists: existsSync(resolvedRoot),
-    worktreesExists: existsSync(resolvedWt),
+    rootExists: existsSync(root),
+    worktreesExists: existsSync(wt),
     metadataExists: existsSync(meta),
     stateDbExists: existsSync(db),
   };

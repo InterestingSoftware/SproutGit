@@ -1,4 +1,5 @@
 import { gotoHash, createTestRepo, closeAndCleanup, monitorErrors, waitForToast } from '../helpers.js';
+import { execSync } from 'child_process';
 import { writeFileSync } from 'fs';
 import { join } from 'path';
 
@@ -16,12 +17,25 @@ describe('commit workflow', () => {
   it('stages a file and creates a commit', async () => {
     const assertNoErrors = monitorErrors();
 
-    // Create an unstaged file.
-    writeFileSync(join(testRepo, 'hello.txt'), 'hello world\n');
+    // Opening the workspace converts testRepo's `.git` into a bare root and
+    // recreates this branch as a managed worktree — capture the branch now
+    // so we can find that worktree's on-disk path afterwards.
+    const defaultBranch = execSync('git symbolic-ref --short HEAD', { cwd: testRepo }).toString().trim();
 
     // Open the workspace.
     await gotoHash(`/workspace?path=${encodeURIComponent(testRepo)}`);
     await expect($('//*[contains(@class,"sg-tab") and contains(.,"Graph")]')).toBeDisplayed();
+
+    // Wait for the migrated worktree to actually appear in the sidebar —
+    // the "Graph" tab renders immediately on mount, well before the async
+    // bare-root conversion finishes creating the worktree directory on
+    // disk, so writing into it right after the tab check is a race
+    // (harmless on a fast machine, but real on a slower one).
+    await expect($(`[data-testid="worktree-item"][data-branch="${defaultBranch}"]`)).toBeDisplayed();
+
+    // Create an unstaged file inside the worktree created for defaultBranch
+    // (testRepo itself is no longer a checkout after the bare-root conversion).
+    writeFileSync(join(testRepo, '.sproutgit', 'worktrees', defaultBranch, 'hello.txt'), 'hello world\n');
 
     // Switch to the staging tab.
     await $('//*[contains(@class,"sg-tab") and contains(.,"Changes")]').click();

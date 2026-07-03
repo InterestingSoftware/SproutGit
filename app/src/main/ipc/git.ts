@@ -1,11 +1,11 @@
 import { existsSync } from 'node:fs';
 import { IPC } from '@sproutgit/types';
-import { getGitInfo } from '@sproutgit/git';
+import { canonicalize } from '@sproutgit/paths';
+import { getGitInfo, isBareRepoPath } from '@sproutgit/git';
 import {
   listWorktrees,
   createManagedWorktree,
   deleteManagedWorktree,
-  canonicalize,
 } from '@sproutgit/git/worktrees';
 import { getCommitGraph, countCommits, listRefs } from '@sproutgit/git/commits';
 import {
@@ -19,6 +19,18 @@ import {
 import { fetchWorktree, pullWorktree, pushWorktreeBranch, getWorktreePushStatus } from '@sproutgit/git/remote';
 import { getDiffFiles, getDiffContent, getWorkingDiff } from '@sproutgit/git/diff';
 import { handle } from './handle.js';
+
+/**
+ * Root is always bare, so git itself already refuses working-tree operations
+ * there. This is defense-in-depth against our own bug: if a worktree path
+ * resolves to root by mistake, fail with a clear internal error instead of
+ * surfacing git's raw "not a work tree" fatal.
+ */
+function assertWorkingTreePath(worktreePath: string): void {
+  if (isBareRepoPath(worktreePath)) {
+    throw new Error(`Refusing to run a working-tree git operation against a bare repo path: ${worktreePath}`);
+  }
+}
 
 export function registerGitHandlers(): void {
   // ── git info ──────────────────────────────────────────────────────────────
@@ -93,22 +105,27 @@ export function registerGitHandlers(): void {
 
   // ── staging ───────────────────────────────────────────────────────────────
   handle(IPC.GIT_STATUS, async (_e, worktreePath: string) => {
+    assertWorkingTreePath(worktreePath);
     return getWorktreeStatus(worktreePath);
   });
 
   handle(IPC.GIT_STAGE, async (_e, args: { worktreePath: string; paths: string[] }) => {
+    assertWorkingTreePath(args.worktreePath);
     return stageFiles(args.worktreePath, args.paths);
   });
 
   handle(IPC.GIT_UNSTAGE, async (_e, args: { worktreePath: string; paths: string[] }) => {
+    assertWorkingTreePath(args.worktreePath);
     return unstageFiles(args.worktreePath, args.paths);
   });
 
   handle(IPC.GIT_COMMIT, async (_e, args: { worktreePath: string; message: string }) => {
+    assertWorkingTreePath(args.worktreePath);
     return createCommit(args.worktreePath, args.message);
   });
 
   handle(IPC.GIT_CHECKOUT, async (_e, args: { worktreePath: string; targetRef: string }) => {
+    assertWorkingTreePath(args.worktreePath);
     return checkoutWorktree(args.worktreePath, args.targetRef);
   });
 
@@ -117,23 +134,28 @@ export function registerGitHandlers(): void {
     targetRef: string;
     mode: 'soft' | 'mixed' | 'hard';
   }) => {
+    assertWorkingTreePath(args.worktreePath);
     return resetWorktreeBranch(args.worktreePath, args.targetRef, args.mode);
   });
 
   // ── remote ────────────────────────────────────────────────────────────────
   handle(IPC.GIT_FETCH, async (_e, worktreePath: string) => {
+    // Safe against a bare repo — fetch only touches refs/objects.
     return fetchWorktree(worktreePath);
   });
 
   handle(IPC.GIT_PULL, async (_e, worktreePath: string) => {
+    assertWorkingTreePath(worktreePath);
     return pullWorktree(worktreePath);
   });
 
   handle(IPC.GIT_PUSH, async (_e, args: { worktreePath: string; remote?: string }) => {
+    assertWorkingTreePath(args.worktreePath);
     return pushWorktreeBranch(args.worktreePath, args.remote);
   });
 
   handle(IPC.GIT_PUSH_STATUS, async (_e, worktreePath: string) => {
+    assertWorkingTreePath(worktreePath);
     return getWorktreePushStatus(worktreePath);
   });
 
@@ -167,6 +189,7 @@ export function registerGitHandlers(): void {
     file?: string;
   }) => {
     if (!args.worktreePath || !existsSync(args.worktreePath)) return '';
+    assertWorkingTreePath(args.worktreePath);
     const result = await getWorkingDiff(args.worktreePath, args.file);
     return result.diff;
   });

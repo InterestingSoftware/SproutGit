@@ -7,9 +7,10 @@
 import { ipcMain, type BrowserWindow } from 'electron';
 import { IPC } from '@sproutgit/types';
 import type { WorkspaceHookTrigger, WorkspaceHookShell, HookProgressEvent, WorktreeSwitchHookSource } from '@sproutgit/types';
+import { canonicalize } from '@sproutgit/paths';
 import { openWorkspaceDb, eq } from '@sproutgit/database';
 import { hookDefinitions, worktreeMetadata } from '@sproutgit/database/schema/workspace';
-import { listWorktrees, canonicalize } from '@sproutgit/git/worktrees';
+import { listWorktrees } from '@sproutgit/git/worktrees';
 import { join, basename, normalize } from 'path';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';

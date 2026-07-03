@@ -153,8 +153,12 @@ describe('daily workflow', () => {
   it('deletes a merged bugfix worktree while keeping the feature worktree', async () => {
     const assertNoErrors = monitorErrors();
     const repoDir = createFreshRepo('delete');
+    // Import converts repoDir's `.git` into a bare root and recreates this
+    // branch as a managed worktree — repoDir itself is no longer a git repo
+    // afterwards, so capture the branch now to find that worktree later.
+    const defaultBranch = execSync('git symbolic-ref --short HEAD', { cwd: repoDir }).toString().trim();
     try {
-      const { workspacePath, worktreesPath } = await importAndNavigate(repoDir);
+      const { worktreesPath } = await importAndNavigate(repoDir);
 
       await createWorktree('feature/ongoing');
       await createWorktree('bugfix/merged-fix');
@@ -165,9 +169,9 @@ describe('daily workflow', () => {
       execSync('git add fix.txt', { cwd: bugfixPath });
       execSync('git commit -m "fix: merged-fix"', { cwd: bugfixPath });
 
-      // Merge bugfix/merged-fix into the root branch (so it's "fully merged").
+      // Merge bugfix/merged-fix into the default branch's worktree (so it's "fully merged").
       execSync('git merge --no-ff bugfix/merged-fix -m "Merge bugfix/merged-fix"', {
-        cwd: workspacePath,
+        cwd: join(worktreesPath, defaultBranch),
       });
 
       // Right-click the bugfix item to open the context menu.

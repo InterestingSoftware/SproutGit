@@ -1,6 +1,6 @@
 {
   "name": "@sproutgit/git",
-  "version": "0.0.1",
+  "version": "0.2.0",
   "private": true,
   "type": "module",
   "main": "./src/index.ts",
@@ -21,6 +21,7 @@
     "test:watch": "vitest"
   },
   "dependencies": {
+    "@sproutgit/paths": "workspace:*",
     "@sproutgit/types": "workspace:*",
     "simple-git": "^3.36.0"
   },

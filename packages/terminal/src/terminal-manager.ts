@@ -2,8 +2,8 @@ import * as pty from 'node-pty';
 import { randomUUID } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
 import { accessSync, constants, existsSync } from 'node:fs';
-import { sep } from 'node:path';
 import { type WorkspaceHookShell } from '@sproutgit/types';
+import { isPathWithin } from '@sproutgit/paths';
 
 export type TerminalDataCallback = (sessionId: string, data: string) => void;
 export type TerminalExitCallback = (sessionId: string, exitCode: number) => void;
@@ -187,12 +187,11 @@ export class TerminalManagerWithMeta extends TerminalManager {
   }
 
   override closeForPath(pathPrefix: string): void {
-    // Require a path-separator boundary (or an exact match) so removing
-    // "worktrees/foo" doesn't also close a terminal cwd'd into the sibling
-    // directory "worktrees/foobar".
-    const prefixWithSep = pathPrefix.endsWith(sep) ? pathPrefix : pathPrefix + sep;
+    // isPathWithin requires a path-separator boundary (or an exact match) so
+    // removing "worktrees/foo" doesn't also close a terminal cwd'd into the
+    // sibling directory "worktrees/foobar".
     for (const [id, m] of this.meta) {
-      if (m.cwd === pathPrefix || m.cwd.startsWith(prefixWithSep)) {
+      if (isPathWithin(m.cwd, pathPrefix)) {
         this.close(id);
       }
     }

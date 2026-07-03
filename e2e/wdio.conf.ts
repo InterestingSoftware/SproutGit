@@ -56,13 +56,16 @@ export const config: WebdriverIO.Config = {
   bail: 0,
 
   // On Linux the renderer can be slow to initialise (QEMU emulation on CI or
-  // amd64 runners without hardware GPU acceleration). Use 4× the base timeout
-  // so QEMU-based Docker runs and real CI both stay reliable.
-  // On macOS/Windows native builds the app renders in <2s so the limit is
-  // never reached for passing tests.
-  waitforTimeout: process.platform === 'linux' ? 60_000 : 15_000,
+  // amd64 runners without hardware GPU acceleration). On Windows, opening a
+  // not-yet-migrated workspace runs several git subprocess spawns plus
+  // directory moves to convert it to the bare-root layout — Windows CI
+  // (subprocess spawn overhead, Defender scanning each spawn) is measurably
+  // slower at that than macOS, sometimes past the 15s budget that's fine
+  // for macOS's <2s native render. Give both the same 4× headroom; macOS
+  // keeps the tight budget since it never needs it.
+  waitforTimeout: process.platform === 'darwin' ? 15_000 : 60_000,
 
-  connectionRetryTimeout: process.platform === 'linux' ? 60_000 : 20_000,
+  connectionRetryTimeout: process.platform === 'darwin' ? 20_000 : 60_000,
   connectionRetryCount: 3,
 
   services: ['electron'],
@@ -74,8 +77,12 @@ export const config: WebdriverIO.Config = {
     ui: 'bdd',
     // Safety-net timeout per test; individual element waits are capped by waitforTimeout.
     // Screenshot pipeline runs 5 shots × 2 themes and can take up to 2 minutes.
-    // Linux gets 4× headroom for QEMU emulation (Docker) and CPU-limited CI runners.
-    timeout: process.env['CAPTURE_SCREENSHOTS'] ? 120_000 : process.platform === 'linux' ? 120_000 : 30_000,
+    // Linux/Windows get 4× headroom (QEMU/CPU-limited CI runners on Linux;
+    // slower git-subprocess-heavy first-open migration on Windows) — a test
+    // can chain several waitforTimeout-bounded waits, so this needs the same
+    // multiple applied to it or the outer mocha timeout could cut a test off
+    // before its own per-element retries get a chance to succeed.
+    timeout: process.env['CAPTURE_SCREENSHOTS'] ? 120_000 : process.platform === 'darwin' ? 30_000 : 120_000,
   },
 
   // Always build the Electron app before running tests so the test binary is

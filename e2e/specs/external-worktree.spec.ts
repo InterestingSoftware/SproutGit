@@ -95,7 +95,11 @@ describe('external worktrees', () => {
       await waitForToast('success');
 
       // The branch itself must still exist — an external tool owns it.
-      const branches = execSync('git branch --list claude/adopted-feature', { cwd: repoDir }).toString();
+      // repoDir's `.git` was converted to a bare root at import time, so
+      // read refs from there rather than repoDir itself.
+      const branches = execSync('git branch --list claude/adopted-feature', {
+        cwd: join(repoDir, '.sproutgit', 'root'),
+      }).toString();
       expect(branches).toContain('claude/adopted-feature');
 
       await assertNoErrors();

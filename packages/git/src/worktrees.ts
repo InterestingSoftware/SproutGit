@@ -4,8 +4,8 @@ import {
   type CreateWorktreeResult,
   validateBranchName,
 } from '@sproutgit/types';
+import { canonicalize, isPathWithin } from '@sproutgit/paths';
 import { normalize, resolve, sep } from 'node:path';
-import { realpathSync } from 'node:fs';
 import { gitForPath } from './client.js';
 
 /**
@@ -62,6 +62,36 @@ export async function createManagedWorktree(
 }
 
 /**
+ * Attaches an existing branch to a new managed worktree at
+ * `<managedWorktreesPath>/<branch>`, without creating a new branch.
+ * Used when migrating a repo that already has the branch checked out
+ * elsewhere (e.g. converting an imported repo to a bare root).
+ */
+export async function addWorktreeForExistingBranch(
+  rootRepoPath: string,
+  managedWorktreesPath: string,
+  branch: string
+): Promise<CreateWorktreeResult> {
+  const branchError = validateBranchName(branch);
+  if (branchError) {
+    throw new Error(`Invalid branch name: ${branchError}`);
+  }
+
+  const git = gitForPath(rootRepoPath);
+  const worktreePath = `${managedWorktreesPath}/${branch}`;
+
+  const resolvedRoot = resolve(managedWorktreesPath) + sep;
+  const resolvedTarget = resolve(worktreePath);
+  if (!(resolvedTarget + sep).startsWith(resolvedRoot)) {
+    throw new Error('Worktree path must stay within the managed worktrees directory.');
+  }
+
+  await git.raw(['worktree', 'add', worktreePath, branch]);
+
+  return { worktreePath: normalize(worktreePath), branch, fromRef: branch };
+}
+
+/**
  * Removes a managed worktree and optionally deletes its branch.
  *
  * @param branchName - The exact branch name to delete. Must be provided when
@@ -89,32 +119,13 @@ export async function deleteManagedWorktree(
 // ─── Internal helpers ─────────────────────────────────────────────────────────
 
 /**
- * Resolves symlinks (e.g. macOS's /var → /private/var) so paths that refer
- * to the same directory compare equal even if one side went through a
- * symlinked temp dir and the other didn't. Falls back to a plain `resolve`
- * for paths that don't exist (already-removed worktrees, races, etc).
- *
- * Exported so other IPC handlers that compare a caller-supplied path against
- * git's own worktree list (e.g. deletion validation, hook metadata lookup)
- * use the same symlink-safe comparison instead of a plain `resolve()`.
+ * True when `childPath` is `parentPath` itself or nested inside it.
+ * Canonicalizes both sides first since one may come through git's own
+ * realpath-based reporting and the other from local path construction (e.g.
+ * macOS's /var vs /private/var).
  */
-export function canonicalize(path: string): string {
-  try {
-    return realpathSync.native(path);
-  } catch {
-    return resolve(path);
-  }
-}
-
-/**
- * True when `childPath` is `parentPath` itself or nested inside it, checked
- * on a path-separator boundary (so `worktrees-other` doesn't match `worktrees`).
- * Mirrors the boundary check used by TerminalManagerWithMeta.closeForPath.
- */
-function isPathWithin(childPath: string, parentPath: string): boolean {
-  const parent = canonicalize(parentPath);
-  const child = canonicalize(childPath);
-  return child === parent || child.startsWith(parent + sep);
+function isWithinCanonical(childPath: string, parentPath: string): boolean {
+  return isPathWithin(canonicalize(childPath), canonicalize(parentPath));
 }
 
 /** See `listWorktrees` for the classification rules this implements. */
@@ -123,9 +134,9 @@ export function classifyIsExternal(
   repoPath: string,
   managedWorktreesPath?: string
 ): boolean {
-  if (isPathWithin(worktreePath, repoPath)) return false;
+  if (isWithinCanonical(worktreePath, repoPath)) return false;
   if (!managedWorktreesPath) return false;
-  return !isPathWithin(worktreePath, managedWorktreesPath);
+  return !isWithinCanonical(worktreePath, managedWorktreesPath);
 }
 
 function parseWorktreePorcelain(
@@ -142,8 +153,12 @@ function parseWorktreePorcelain(
     const headLine = lines.find(l => l.startsWith('HEAD '));
     const branchLine = lines.find(l => l.startsWith('branch '));
     const detached = lines.some(l => l === 'detached');
+    // The bare repo itself shows up as a `bare` pseudo-entry (no HEAD/branch,
+    // nothing checked out) — it's storage, not a worktree the app should
+    // ever surface, select, or run working-tree operations against.
+    const isBarePseudoEntry = lines.some(l => l === 'bare');
 
-    if (!pathLine) continue;
+    if (!pathLine || isBarePseudoEntry) continue;
 
     const path = normalize(pathLine.replace('worktree ', '').trim());
 
