@@ -8,8 +8,8 @@ import {
   useContextMenu,
   UpdateBadge,
 } from '@sproutgit/ui';
-import { GitBranch, RefreshCw, ArrowDownToLine, ArrowUpFromLine, Download, Plus, Sliders, Trash2, MoreHorizontal, FolderPen, FolderSearch, SquareTerminal, Play, Copy, CopyPlus, Bot, ChevronDown, Link2, Rocket, PanelLeftClose, PanelLeftOpen } from 'lucide-react';
-import type { WorktreeInfo, WorkspaceStatus, AgentRoster } from '@sproutgit/types';
+import { GitBranch, RefreshCw, ArrowDownToLine, ArrowUpFromLine, Download, Plus, Sliders, Trash2, MoreHorizontal, FolderPen, FolderSearch, SquareTerminal, Play, Copy, CopyPlus, Bot, Link2, Rocket, PanelLeftClose, PanelLeftOpen } from 'lucide-react';
+import type { WorktreeInfo, WorkspaceStatus } from '@sproutgit/types';
 import type { UpdateState } from '@sproutgit/ui';
 
 type Props = {
@@ -24,7 +24,8 @@ type Props = {
   creatingWorktree: boolean;
   pendingCreationBranch: string | null;
   updateState: UpdateState;
-  agentRoster: AgentRoster;
+  /** Whether an AI agent command is configured (Settings → AI Agent) — gates the launch button/menu item. */
+  agentConfigured: boolean;
   worktreesWithLiveAgent: Set<string>;
   /** Whether the sidebar is collapsed to a slim icon rail. */
   collapsed?: boolean;
@@ -41,7 +42,7 @@ type Props = {
   onOpenRunHookModal: (wt: WorktreeInfo) => void;
   onRunCreateHooks: (wt: WorktreeInfo) => void;
   onDeleteWorktree: (wt: WorktreeInfo) => void;
-  onLaunchAgent: (worktreePath: string, agentId?: string) => void;
+  onLaunchAgent: (worktreePath: string) => void;
 };
 
 const iconBtn = 'inline-flex items-center justify-center p-1.5 bg-transparent border-none cursor-pointer text-(--sg-text-faint) rounded-[4px] transition-colors hover:text-(--sg-text) hover:bg-(--sg-surface-raised) disabled:opacity-40 disabled:cursor-not-allowed';
@@ -75,7 +76,7 @@ export function WorktreeSidebar({
   creatingWorktree,
   pendingCreationBranch,
   updateState,
-  agentRoster,
+  agentConfigured,
   worktreesWithLiveAgent,
   collapsed = false,
   onToggleCollapsed,
@@ -100,27 +101,13 @@ export function WorktreeSidebar({
     api.getHomeDir().then(setHomeDir).catch(() => {/* ignore */});
   }, []);
 
-  const defaultAgent = agentRoster.agents.find(a => a.id === agentRoster.defaultAgentId) ?? null;
-  const nonDefaultAgents = agentRoster.agents.filter(a => a.id !== defaultAgent?.id);
-
   function agentMenuItems(worktreePath: string) {
-    if (agentRoster.agents.length === 0) return [];
-    const items: { label: string; icon: ReactNode; onClick: () => void }[] = [];
-    if (defaultAgent) {
-      items.push({
-        label: `Launch ${defaultAgent.name}`,
-        icon: <Bot size={14} />,
-        onClick: () => onLaunchAgent(worktreePath, defaultAgent.id),
-      });
-    }
-    for (const agent of nonDefaultAgents) {
-      items.push({
-        label: `Launch with ${agent.name}`,
-        icon: <Bot size={14} />,
-        onClick: () => onLaunchAgent(worktreePath, agent.id),
-      });
-    }
-    return items;
+    if (!agentConfigured) return [];
+    return [{
+      label: 'Launch AI Agent',
+      icon: <Bot size={14} />,
+      onClick: () => onLaunchAgent(worktreePath),
+    }];
   }
 
   const rootPath = workspaceStatus?.rootPath ?? '';
@@ -419,31 +406,16 @@ export function WorktreeSidebar({
 
                 {/* Action buttons (shown on hover / when active) */}
                 <div className={`flex shrink-0 items-center gap-0.5 transition-opacity ${isRowBusy ? 'pointer-events-none opacity-0' : 'opacity-0 group-hover:opacity-100'} ${isActive && !isRowBusy ? 'opacity-100' : ''}`}>
-                  {defaultAgent && (
+                  {agentConfigured && (
                     <button
                       type="button"
-                      onClick={e => { e.stopPropagation(); onLaunchAgent(row.wt.path, defaultAgent.id); }}
+                      onClick={e => { e.stopPropagation(); onLaunchAgent(row.wt.path); }}
                       className="sg-launch-agent-btn rounded p-1 text-(--sg-text-dim) hover:bg-(--sg-surface) hover:text-(--sg-primary) border-none cursor-pointer bg-transparent"
-                      title={`Launch ${defaultAgent.name}`}
-                      aria-label={`Launch ${defaultAgent.name}`}
+                      title="Launch AI Agent"
+                      aria-label="Launch AI Agent"
                       data-testid="btn-launch-agent"
                     >
                       <Bot size={13} />
-                    </button>
-                  )}
-                  {nonDefaultAgents.length > 0 && (
-                    <button
-                      type="button"
-                      onClick={e => {
-                        e.stopPropagation();
-                        contextMenu.open(e, agentMenuItems(row.wt.path));
-                      }}
-                      className="sg-launch-agent-picker-btn rounded p-1 text-(--sg-text-dim) hover:bg-(--sg-surface) hover:text-(--sg-text) border-none cursor-pointer bg-transparent"
-                      title="Choose agent to launch"
-                      aria-label="Choose agent to launch"
-                      data-testid="btn-launch-agent-picker"
-                    >
-                      <ChevronDown size={12} />
                     </button>
                   )}
                   <button

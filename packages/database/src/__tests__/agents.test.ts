@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { eq } from 'drizzle-orm';
 import { openConfigDb } from '../config-db.js';
-import { getAgentRoster, saveAgentRoster, getDefaultAgentPresets } from '../agents.js';
+import { getAgentConfig, saveAgentConfig, getDefaultAgentConfig } from '../agents.js';
 import { settings } from '../schema/config.js';
 
 describe('agents', () => {
@@ -21,60 +21,54 @@ describe('agents', () => {
     rmSync(tmpDir, { recursive: true, force: true });
   });
 
-  it('seeds the built-in presets on first read', () => {
-    const roster = getAgentRoster(db);
-    expect(roster.agents).toEqual(getDefaultAgentPresets());
-    expect(roster.defaultAgentId).toBe('claude-code');
+  it('seeds the default agent config on first read', () => {
+    const config = getAgentConfig(db);
+    expect(config).toEqual(getDefaultAgentConfig());
   });
 
-  it('persists the seeded presets so a second read does not re-seed over user edits', () => {
-    getAgentRoster(db);
+  it('persists the seeded config so a second read does not re-seed over user edits', () => {
+    getAgentConfig(db);
 
-    const edited = {
-      agents: getDefaultAgentPresets().filter(a => a.id !== 'kiro'),
-      defaultAgentId: 'codex',
-    };
-    saveAgentRoster(db, edited);
+    const edited = { command: 'codex', args: ['exec'], mode: 'terminal' as const };
+    saveAgentConfig(db, edited);
 
-    const roster = getAgentRoster(db);
-    expect(roster.agents.some(a => a.id === 'kiro')).toBe(false);
-    expect(roster.defaultAgentId).toBe('codex');
+    const config = getAgentConfig(db);
+    expect(config).toEqual(edited);
   });
 
-  it('round-trips a custom agent roster', () => {
-    const custom = {
-      agents: [{ id: 'my-agent', name: 'My Agent', command: 'my-agent-cli', args: ['--flag'] }],
-      defaultAgentId: 'my-agent',
-    };
-    saveAgentRoster(db, custom);
+  it('round-trips a custom agent config', () => {
+    const custom = { command: 'my-agent-cli', args: ['--flag'], mode: 'terminal' as const };
+    saveAgentConfig(db, custom);
 
-    const roster = getAgentRoster(db);
-    expect(roster).toEqual(custom);
-  });
-
-  it('clears the default agent id when set to null', () => {
-    saveAgentRoster(db, { agents: getDefaultAgentPresets(), defaultAgentId: 'claude-code' });
-    saveAgentRoster(db, { agents: getDefaultAgentPresets(), defaultAgentId: null });
-
-    const roster = getAgentRoster(db);
-    expect(roster.defaultAgentId).toBeNull();
+    const config = getAgentConfig(db);
+    expect(config).toEqual(custom);
   });
 
   it('re-seeds and persists the fix when the stored value is invalid JSON', () => {
-    db.insert(settings).values({ key: 'codingAgents', value: 'not json{' }).run();
+    db.insert(settings).values({ key: 'agentConfig', value: 'not json{' }).run();
 
-    const roster = getAgentRoster(db);
-    expect(roster.agents).toEqual(getDefaultAgentPresets());
+    const config = getAgentConfig(db);
+    expect(config).toEqual(getDefaultAgentConfig());
 
     // The recovery should have been persisted, not just returned in-memory.
-    const row = db.select().from(settings).where(eq(settings.key, 'codingAgents')).get();
-    expect(row?.value ? JSON.parse(row.value) : null).toEqual(getDefaultAgentPresets());
+    const row = db.select().from(settings).where(eq(settings.key, 'agentConfig')).get();
+    expect(row?.value ? JSON.parse(row.value) : null).toEqual(getDefaultAgentConfig());
   });
 
   it('re-seeds when the stored value is valid JSON but the wrong shape', () => {
-    db.insert(settings).values({ key: 'codingAgents', value: JSON.stringify([{ id: 'bad' }]) }).run();
+    db.insert(settings).values({ key: 'agentConfig', value: JSON.stringify({ foo: 'bad' }) }).run();
 
-    const roster = getAgentRoster(db);
-    expect(roster.agents).toEqual(getDefaultAgentPresets());
+    const config = getAgentConfig(db);
+    expect(config).toEqual(getDefaultAgentConfig());
+  });
+
+  it('re-seeds when the stored mode is not a recognized value', () => {
+    db.insert(settings).values({
+      key: 'agentConfig',
+      value: JSON.stringify({ command: 'claude', args: [], mode: 'bogus' }),
+    }).run();
+
+    const config = getAgentConfig(db);
+    expect(config).toEqual(getDefaultAgentConfig());
   });
 });

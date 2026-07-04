@@ -1,151 +1,146 @@
-import { Bot, Plus, Trash2, Star } from 'lucide-react';
+import { Bot } from 'lucide-react';
 import { api } from '../api.js';
 import { useEffect, useState } from 'react';
-import type { AgentRoster, CodingAgent } from '@sproutgit/types';
+import type { AgentConfig, AgentInvocationMode } from '@sproutgit/types';
 import type { ToastData } from '@sproutgit/ui';
+import { SettingsToolRow, type ToolPreset } from './SettingsToolRow.js';
 
 interface Props {
   onToast: (msg: string, variant?: ToastData['variant']) => void;
 }
 
-function randomId() {
-  // crypto.randomUUID() gives stable, collision-resistant IDs (important as
-  // React list keys); fall back to Math.random() only if it's unavailable.
-  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
-    return `agent-${crypto.randomUUID()}`;
-  }
-  return `agent-${Math.random().toString(36).slice(2, 10)}`;
+/** Known agent CLI presets — quick-pick buttons in the row's Edit panel. */
+const AGENT_PRESETS: { id: string; name: string; command: string; supportsIntegrated: boolean }[] = [
+  { id: 'claude-code', name: 'Claude Code', command: 'claude', supportsIntegrated: true },
+  { id: 'kiro', name: 'Kiro', command: 'kiro', supportsIntegrated: false },
+  { id: 'cursor', name: 'Cursor', command: 'cursor-agent', supportsIntegrated: false },
+  { id: 'codex', name: 'Codex CLI', command: 'codex', supportsIntegrated: false },
+  { id: 'gemini', name: 'Gemini CLI', command: 'gemini', supportsIntegrated: false },
+];
+
+/** Mirrors the main process's commandSupportsIntegratedMode() — only Claude Code, for now. */
+function commandSupportsIntegratedMode(command: string): boolean {
+  const trimmed = command.trim().replace(/^["']|["']$/g, '');
+  const token = trimmed.split(/\s+/)[0]?.split(/[\\/]/).pop()?.toLowerCase() ?? '';
+  return token === 'claude' || token === 'claude-code';
+}
+
+function commandLabel(config: AgentConfig): string {
+  if (!config.command.trim()) return '(not set)';
+  const preset = AGENT_PRESETS.find(p => p.command === config.command.trim());
+  const base = preset?.name ?? config.command;
+  const argsText = config.args.length > 0 ? ` ${config.args.join(' ')}` : '';
+  return `${base}${argsText}`;
 }
 
 export function AgentsSection({ onToast }: Props) {
-  const [roster, setRoster] = useState<AgentRoster>({ agents: [], defaultAgentId: null });
+  const [config, setConfig] = useState<AgentConfig>({ command: '', args: [], mode: 'terminal' });
+  const [customCommand, setCustomCommand] = useState('');
   const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
 
   useEffect(() => {
-    void api.listAgents().then(setRoster).catch(() => undefined).finally(() => setLoading(false));
+    void api.getAgentConfig().then(c => {
+      setConfig(c);
+      setCustomCommand([c.command, ...c.args].filter(Boolean).join(' '));
+    }).catch(() => undefined).finally(() => setLoading(false));
   }, []);
 
-  function updateAgent(id: string, patch: Partial<CodingAgent>) {
-    setRoster(r => ({ ...r, agents: r.agents.map(a => a.id === id ? { ...a, ...patch } : a) }));
-  }
+  const integratedSupported = commandSupportsIntegratedMode(config.command);
 
-  function addAgent() {
-    const id = randomId();
-    setRoster(r => ({
-      ...r,
-      agents: [...r.agents, { id, name: 'New Agent', command: '', args: [] }],
-      defaultAgentId: r.defaultAgentId ?? id,
-    }));
-  }
-
-  function removeAgent(id: string) {
-    setRoster(r => ({
-      agents: r.agents.filter(a => a.id !== id),
-      defaultAgentId: r.defaultAgentId === id ? (r.agents.find(a => a.id !== id)?.id ?? null) : r.defaultAgentId,
-    }));
-  }
-
-  function setDefault(id: string) {
-    setRoster(r => ({ ...r, defaultAgentId: id }));
-  }
-
-  async function save() {
-    setSaving(true);
+  async function persist(next: AgentConfig) {
+    // Integrated mode is only valid for a recognized command — fall back to
+    // Terminal automatically if the newly selected/typed command doesn't
+    // support structured streaming output.
+    const safeMode: AgentInvocationMode = commandSupportsIntegratedMode(next.command) ? next.mode : 'terminal';
+    const toSave: AgentConfig = { ...next, mode: safeMode };
+    setConfig(toSave);
     try {
-      await api.saveAgents(roster);
-      onToast('Coding agents saved', 'success');
+      await api.saveAgentConfig(toSave);
+      onToast('AI agent saved', 'success');
     } catch (err) {
       onToast(String(err), 'error');
-    } finally {
-      setSaving(false);
     }
   }
 
+  function selectPreset(id: string) {
+    const preset = AGENT_PRESETS.find(p => p.id === id);
+    if (!preset) return;
+    setCustomCommand(preset.command);
+    void persist({ ...config, command: preset.command, args: [] });
+  }
+
+  function saveCustomCommand() {
+    const parts = customCommand.trim().split(/\s+/).filter(Boolean);
+    const [command = '', ...args] = parts;
+    void persist({ ...config, command, args });
+  }
+
+  function setMode(mode: AgentInvocationMode) {
+    void persist({ ...config, mode });
+  }
+
+  const presets: ToolPreset[] = AGENT_PRESETS.map(p => ({
+    id: p.id,
+    name: p.name,
+    active: config.command.trim() === p.command,
+  }));
+
   return (
-    <section className="rounded-lg border border-(--sg-border) bg-(--sg-surface) p-5" data-testid="agents-section">
-      <div className="mb-3 flex items-center justify-between">
+    <section className="rounded-lg border border-(--sg-border) bg-(--sg-surface)" data-testid="agents-section">
+      <div className="border-b border-(--sg-border) px-5 py-4">
         <h2 className="sg-heading text-sm font-semibold text-(--sg-primary) flex items-center gap-1.5">
-          <Bot size={15} /> Coding Agents
+          <Bot size={15} /> AI Agent
         </h2>
-        <button
-          type="button"
-          className="sg-add-agent-btn inline-flex items-center gap-1 rounded-md border border-(--sg-border) bg-transparent px-2 py-1 text-[11px] text-(--sg-text-dim) hover:bg-(--sg-surface-raised) cursor-pointer"
-          onClick={addAgent}
-          data-testid="btn-add-agent"
-        >
-          <Plus size={12} /> Add agent
-        </button>
+        <p className="mt-1 text-xs text-(--sg-text-faint)">
+          Configure the single AI coding agent SproutGit launches for you — same as your editor or diff tool.
+        </p>
       </div>
 
       {loading ? (
-        <div className="text-xs text-(--sg-text-dim)">Loading…</div>
+        <div className="px-5 py-5 text-xs text-(--sg-text-dim)">Loading…</div>
       ) : (
-        <div className="flex flex-col gap-2">
-          {roster.agents.map(agent => (
-            <div key={agent.id} className="sg-agent-row flex flex-col gap-1.5 rounded-md border border-(--sg-border) p-2.5" data-testid="agent-row">
-              <div className="flex items-center gap-2">
+        <SettingsToolRow
+          testId="agent-row"
+          icon={<Bot size={13} />}
+          title="Agent Command"
+          currentValueLabel={commandLabel(config)}
+          presets={presets}
+          onSelectPreset={selectPreset}
+          customValue={customCommand}
+          onCustomValueChange={setCustomCommand}
+          customPlaceholder="Command and args, e.g. claude"
+          onSaveCustom={saveCustomCommand}
+          onTest={() => api.testAgent()}
+          belowSummary={
+            <div className="mt-2 flex items-center gap-2" data-testid="agent-mode-toggle">
+              <span className="text-[11px] font-medium text-(--sg-text-faint)">Mode:</span>
+              <div className="inline-flex rounded-md border border-(--sg-border) p-0.5">
                 <button
                   type="button"
-                  onClick={() => setDefault(agent.id)}
-                  className="shrink-0 border-none bg-transparent cursor-pointer p-0.5"
-                  title={roster.defaultAgentId === agent.id ? 'Default agent' : 'Set as default'}
-                  aria-label="Set as default agent"
-                  data-testid="btn-set-default-agent"
+                  className={`rounded px-2 py-0.5 text-[11px] cursor-pointer ${config.mode === 'integrated' ? 'bg-(--sg-primary) text-white' : 'text-(--sg-text-dim)'} ${!integratedSupported ? 'opacity-40 cursor-not-allowed' : ''}`}
+                  onClick={() => integratedSupported && setMode('integrated')}
+                  disabled={!integratedSupported}
+                  data-testid="btn-agent-mode-integrated"
+                  title={integratedSupported ? 'Structured chat in the Chat tab' : 'Only available for Claude Code'}
                 >
-                  <Star size={13} className={roster.defaultAgentId === agent.id ? 'fill-(--sg-warning) text-(--sg-warning)' : 'text-(--sg-text-faint)'} />
+                  Integrated
                 </button>
-                <input
-                  value={agent.name}
-                  onChange={e => updateAgent(agent.id, { name: e.target.value })}
-                  placeholder="Name"
-                  className="min-w-0 flex-1 rounded border border-(--sg-border) bg-(--sg-input-bg) px-2 py-1 text-xs text-(--sg-text)"
-                  data-testid="input-agent-name"
-                />
                 <button
                   type="button"
-                  onClick={() => removeAgent(agent.id)}
-                  className="shrink-0 rounded p-1 text-(--sg-text-dim) hover:text-(--sg-danger) border-none cursor-pointer bg-transparent"
-                  title="Remove agent"
-                  aria-label="Remove agent"
-                  data-testid="btn-remove-agent"
+                  className={`rounded px-2 py-0.5 text-[11px] cursor-pointer ${config.mode === 'terminal' ? 'bg-(--sg-primary) text-white' : 'text-(--sg-text-dim)'}`}
+                  onClick={() => setMode('terminal')}
+                  data-testid="btn-agent-mode-terminal"
+                  title="Raw terminal session"
                 >
-                  <Trash2 size={13} />
+                  Terminal
                 </button>
               </div>
-              <div className="flex items-center gap-2">
-                <input
-                  value={agent.command}
-                  onChange={e => updateAgent(agent.id, { command: e.target.value })}
-                  placeholder="Command (e.g. claude)"
-                  className="min-w-0 flex-1 rounded border border-(--sg-border) bg-(--sg-input-bg) px-2 py-1 text-xs font-mono text-(--sg-text)"
-                  data-testid="input-agent-command"
-                />
-                <input
-                  value={agent.args.join(' ')}
-                  onChange={e => updateAgent(agent.id, { args: e.target.value.split(/\s+/).filter(Boolean) })}
-                  placeholder="Args (space-separated)"
-                  className="min-w-0 flex-1 rounded border border-(--sg-border) bg-(--sg-input-bg) px-2 py-1 text-xs font-mono text-(--sg-text)"
-                  data-testid="input-agent-args"
-                />
-              </div>
+              {!integratedSupported && (
+                <span className="text-[10px] text-(--sg-text-faint)">Integrated mode currently requires Claude Code.</span>
+              )}
             </div>
-          ))}
-
-          {roster.agents.length === 0 && (
-            <p className="text-[11px] text-(--sg-text-faint)">No agents configured yet.</p>
-          )}
-
-          <button
-            type="button"
-            onClick={() => void save()}
-            disabled={saving}
-            className="mt-1 inline-flex w-fit items-center gap-1 rounded-md bg-(--sg-primary) px-3 py-1.5 text-xs font-medium text-white hover:bg-(--sg-primary-hover) disabled:opacity-50 cursor-pointer border-none"
-            data-testid="btn-save-agents"
-          >
-            {saving ? 'Saving…' : 'Save Changes'}
-          </button>
-        </div>
+          }
+        />
       )}
     </section>
   );

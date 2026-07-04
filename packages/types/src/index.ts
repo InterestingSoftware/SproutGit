@@ -10,3 +10,4 @@ export * from './validation.js';
 export * from './commit-message-generator.js';
 export * from './issuetracker.js';
 export * from './providers.js';
+export * from './chat.js';

@@ -54,10 +54,23 @@ export const IPC = {
   SETTINGS_DELETE: 'settings:delete',
   SETTINGS_GET_ALL: 'settings:getAll',
   // ── Coding agents ────────────────────────────────────────────────────────
-  AGENT_LIST: 'agent:list',
+  AGENT_GET: 'agent:get',
   AGENT_SAVE: 'agent:save',
   AGENT_LAUNCH: 'agent:launch',
+  AGENT_TEST: 'agent:test',
   EVENT_AGENT_TERMINAL_LAUNCH: 'event:agentTerminalLaunch',
+  // ── Chat (Integrated agent mode) ────────────────────────────────────────
+  CHAT_START: 'chat:start',
+  CHAT_SEND: 'chat:send',
+  CHAT_STOP: 'chat:stop',
+  EVENT_CHAT_STREAM: 'event:chatStream',
+  EVENT_CHAT_EXIT: 'event:chatExit',
+  // ── Settings tool tests (editor / diff / merge / shell / commit-msg-gen) ──
+  TOOLTEST_EDITOR: 'tooltest:editor',
+  TOOLTEST_DIFF_TOOL: 'tooltest:diffTool',
+  TOOLTEST_MERGE_TOOL: 'tooltest:mergeTool',
+  TOOLTEST_SHELL: 'tooltest:shell',
+  TOOLTEST_COMMIT_MESSAGE_GENERATOR: 'tooltest:commitMessageGenerator',
   // ── Git config ───────────────────────────────────────────────────────────
   GIT_GET_CONFIG: 'git:getConfig',
   GIT_SET_CONFIG: 'git:setConfig',
@@ -163,10 +176,10 @@ import type {
   WorkspaceHookShell,
   WorktreeSwitchHookSource,
 } from './hooks.js';
-import type { EditorInfo, GitToolInfo } from './tools.js';
+import type { EditorInfo, GitToolInfo, ToolTestResult } from './tools.js';
 import type { GitHubAuthStatus, DeviceCodeResponse, GitHubPollResult, GitHubEmailSuggestion, GitHubRepo } from './github.js';
 import type { TerminalInfo } from './terminal.js';
-import type { AgentRoster } from './agents.js';
+import type { AgentConfig } from './agents.js';
 import type { CommitMessageGeneratorSettings, CommitMessageGenerateResult } from './commit-message-generator.js';
 import type { IssueTrackerPattern } from './issuetracker.js';
 import type { ProviderIssue } from './providers.js';
@@ -275,9 +288,20 @@ export type IpcMap = {
   'settings:delete': { args: [key: string];                                  result: void };
   'settings:getAll': { args: [];                                             result: { key: string; value: string }[] };
   // ── Coding agents ─────────────────────────────────────────────────────────
-  'agent:list':   { args: [];                                                          result: AgentRoster };
-  'agent:save':   { args: [roster: AgentRoster];                                       result: void };
-  'agent:launch': { args: [args: { workspacePath: string; worktreePath: string; agentId?: string }]; result: string };
+  'agent:get':    { args: [];                                                          result: AgentConfig };
+  'agent:save':   { args: [config: AgentConfig];                                       result: void };
+  'agent:launch': { args: [args: { workspacePath: string; worktreePath: string }];     result: string };
+  'agent:test':   { args: [];                                                          result: ToolTestResult };
+  // ── Chat (Integrated agent mode) ─────────────────────────────────────────
+  'chat:start': { args: [args: { worktreePath: string; prompt: string }]; result: string };
+  'chat:send':  { args: [args: { sessionId: string; prompt: string }];    result: void };
+  'chat:stop':  { args: [sessionId: string];                              result: void };
+  // ── Settings tool tests ──────────────────────────────────────────────────
+  'tooltest:editor':    { args: [command: string];                                    result: ToolTestResult };
+  'tooltest:diffTool':  { args: [command: string];                                    result: ToolTestResult };
+  'tooltest:mergeTool': { args: [command: string];                                    result: ToolTestResult };
+  'tooltest:shell':     { args: [shellPath: string];                                  result: ToolTestResult };
+  'tooltest:commitMessageGenerator': { args: [settings: CommitMessageGeneratorSettings]; result: ToolTestResult };
   // ── System ────────────────────────────────────────────────────────────────
   'system:appVersion':    { args: [];             result: string };
   'system:listShells':    { args: [];             result: { name: string; path: string }[] };

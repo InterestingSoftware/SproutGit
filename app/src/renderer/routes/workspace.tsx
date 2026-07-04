@@ -14,12 +14,13 @@ import {
   WindowControls,
   UpdateBadge,
 } from '@sproutgit/ui';
-import { GitBranch, Terminal, GitMerge, X, ChevronRight, ChevronDown, Settings, Plus, Columns2, Rows3, LayoutGrid, Pencil, PanelTop, SquareSplitHorizontal, ChevronsRight, Trash2 } from 'lucide-react';
-import type { CommitEntry, DiffFileEntry, WorktreeInfo, WorktreeSwitchHookSource, AgentRoster } from '@sproutgit/types';
+import { GitBranch, Terminal, GitMerge, X, ChevronRight, ChevronDown, Settings, Plus, Columns2, Rows3, LayoutGrid, Pencil, PanelTop, SquareSplitHorizontal, ChevronsRight, Trash2, Bot } from 'lucide-react';
+import type { CommitEntry, DiffFileEntry, WorktreeInfo, WorktreeSwitchHookSource, AgentConfig } from '@sproutgit/types';
 import { useToast } from '../toast-context.js';
 import { useUpdateStore } from '../stores/update-store.js';
 import { useWorkspaceStore, resetWorkspaceStore } from '../stores/workspace-store.js';
 import { WorktreeSidebar } from '../workspace/WorktreeSidebar.js';
+import { ChatPanel } from '../workspace/ChatPanel.js';
 import { CommitDiffPanel } from '../workspace/CommitDiffPanel.js';
 import { NewWorktreeDialog } from '../workspace/dialogs/NewWorktreeDialog.js';
 import { DeleteWorktreeDialog } from '../workspace/dialogs/DeleteWorktreeDialog.js';
@@ -109,12 +110,13 @@ function WorkspaceInner() {
     void api.listShells().then(setAvailableShells).catch(() => undefined);
   }, []);
 
-  // ── Coding agents ──────────────────────────────────────────────────────
-  const [agentRoster, setAgentRoster] = useState<AgentRoster>({ agents: [], defaultAgentId: null });
+  // ── Coding agent ──────────────────────────────────────────────────────
+  const [agentConfig, setAgentConfig] = useState<AgentConfig | null>(null);
 
   useEffect(() => {
-    void api.listAgents().then(setAgentRoster).catch(() => undefined);
+    void api.getAgentConfig().then(setAgentConfig).catch(() => undefined);
   }, []);
+  const agentConfigured = !!agentConfig?.command.trim();
 
   // Worktree paths that currently have a live agent-launched terminal session.
   const worktreesWithLiveAgent = new Set(
@@ -322,10 +324,13 @@ function WorkspaceInner() {
 
   // ── Auto-switch tab if activeTab becomes disabled ─────────────────────
   useEffect(() => {
-    if (!activeWorktree && (activeTab === 'staging' || activeTab === 'terminal')) {
+    if (!activeWorktree && (activeTab === 'staging' || activeTab === 'terminal' || activeTab === 'chat')) {
       useWorkspaceStore.setState({ activeTab: 'graph' });
     }
-  }, [activeWorktree, activeTab]);
+    if (activeTab === 'chat' && agentConfig && agentConfig.mode !== 'integrated') {
+      useWorkspaceStore.setState({ activeTab: 'graph' });
+    }
+  }, [activeWorktree, activeTab, agentConfig]);
 
   useEffect(() => {
     sessionStorage.setItem('sg_active_tab', activeTab);
@@ -447,9 +452,9 @@ function WorkspaceInner() {
           terminalSessions: [...s.terminalSessions, {
             id: event.terminalId,
             cwd,
-            label: makeTerminalLabel(s.terminalSessions.filter(sess => sess.cwd === cwd), event.agentName),
+            label: makeTerminalLabel(s.terminalSessions.filter(sess => sess.cwd === cwd), 'AI Agent'),
             pendingData: '',
-            agentId: event.agentId,
+            agentId: 'agent',
           }],
           activeTerminalId: event.terminalId,
           activeTab: 'terminal',
@@ -717,9 +722,9 @@ function WorkspaceInner() {
     }
   }
 
-  async function launchAgent(worktreePath: string, agentId?: string) {
+  async function launchAgent(worktreePath: string) {
     try {
-      await api.launchAgent({ workspacePath, worktreePath, ...(agentId !== undefined && { agentId }) });
+      await api.launchAgent({ workspacePath, worktreePath });
     } catch (err) {
       toast(`Failed to launch agent: ${String(err)}`, 'error');
     }
@@ -971,9 +976,9 @@ function WorkspaceInner() {
             onOpenRunHookModal={wt => setRunHookTarget(wt)}
             onRunCreateHooks={wt => void runCreateHooksFor(wt)}
             onDeleteWorktree={wt => setDeleteTarget(wt)}
-            agentRoster={agentRoster}
+            agentConfigured={agentConfigured}
             worktreesWithLiveAgent={worktreesWithLiveAgent}
-            onLaunchAgent={(wtPath, agentId) => void launchAgent(wtPath, agentId)}
+            onLaunchAgent={wtPath => void launchAgent(wtPath)}
           />
 
           {/* Main content */}
@@ -1018,6 +1023,19 @@ function WorkspaceInner() {
               >
                 <Terminal size={12} /> Terminal{visibleSessions.length > 1 ? ` (${visibleSessions.length})` : ''}
               </button>
+              {agentConfig?.mode === 'integrated' && (
+                <button
+                  className={tabCls(activeTab === 'chat', !activeWorktree)}
+                  onClick={() => {
+                    if (!activeWorktree) return;
+                    useWorkspaceStore.setState({ activeTab: 'chat' });
+                  }}
+                  disabled={!activeWorktree}
+                  data-testid="tab-chat"
+                >
+                  <Bot size={12} /> Chat
+                </button>
+              )}
             </div>
 
             {/* Tab content */}
@@ -1290,6 +1308,11 @@ function WorkspaceInner() {
                         ))}
                       </div>
                     </div>
+                  )}
+
+                  {/* Chat tab (Integrated AI agent mode) */}
+                  {activeTab === 'chat' && activeWorktree && agentConfig?.mode === 'integrated' && (
+                    <ChatPanel worktreePath={activeWorktree.path} />
                   )}
                 </>
               )}
