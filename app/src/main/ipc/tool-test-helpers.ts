@@ -5,6 +5,8 @@
  * command plus truncated output so the row can show more than pass/fail.
  */
 import { execFile, spawn } from 'node:child_process';
+import { access } from 'node:fs/promises';
+import { isAbsolute } from 'node:path';
 import { promisify } from 'node:util';
 import type { ToolTestResult } from '@sproutgit/types';
 
@@ -25,6 +27,19 @@ const SAFE_PATH = [
 export async function resolveCommandPath(cmd: string): Promise<string | null> {
   const trimmed = cmd.trim();
   if (!trimmed) return null;
+  if (isAbsolute(trimmed)) {
+    // Already a fully-qualified path (e.g. a quoted GUI-app path from the
+    // editor/diff/merge-tool settings, or process.execPath in tests) —
+    // confirm it exists instead of re-resolving it through which/where,
+    // which unreliably reports literal absolute paths as not found on
+    // Windows even when the file is right there.
+    try {
+      await access(trimmed);
+      return trimmed;
+    } catch {
+      return null;
+    }
+  }
   const whichCmd = process.platform === 'win32' ? 'where' : 'which';
   const envOpts = process.platform !== 'win32' ? { env: { ...process.env, PATH: SAFE_PATH } } : {};
   try {
