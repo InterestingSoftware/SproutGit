@@ -11,13 +11,20 @@ import TsWorker from 'monaco-editor/esm/vs/language/typescript/ts.worker?worker'
 
 loader.config({ monaco: monacoApi });
 
+// `MonacoEnvironment` isn't part of the standard `Window & typeof globalThis`
+// typing, so `self.MonacoEnvironment` needs an explicit typed cast rather than
+// an untyped property access.
+type MonacoEnvironmentShape = { getWorker: (workerId: string, label: string) => Worker };
+type GlobalWithMonacoEnvironment = typeof globalThis & { MonacoEnvironment?: MonacoEnvironmentShape };
+
 // Without this, Monaco falls back to running language services on the main
 // thread (console warning: "You must define a function
 // MonacoEnvironment.getWorkerUrl or MonacoEnvironment.getWorker"), which can
 // jank the UI on large files. Vite's `?worker` import produces a proper
 // Worker constructor for each of Monaco's bundled language workers.
-if (typeof self !== 'undefined' && !self.MonacoEnvironment) {
-  self.MonacoEnvironment = {
+const globalSelf = typeof self !== 'undefined' ? (self as GlobalWithMonacoEnvironment) : undefined;
+if (globalSelf && !globalSelf.MonacoEnvironment) {
+  globalSelf.MonacoEnvironment = {
     getWorker(_workerId: string, label: string) {
       switch (label) {
         case 'json':

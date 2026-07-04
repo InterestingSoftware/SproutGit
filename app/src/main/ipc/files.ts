@@ -14,7 +14,8 @@ import { promises as fs } from 'node:fs';
 import { join, relative, resolve, sep } from 'node:path';
 import { canonicalize, isPathWithin } from '@sproutgit/paths';
 import { watchRecursive, closeWatcher, type RecursiveWatchEvent } from '../lib/recursive-watch.js';
-import type { FSWatcher } from 'chokidar';
+
+type Closable = { close: () => void | Promise<void> };
 
 // Directories that are never shown in the tree / never watched, regardless of
 // .gitignore contents — keeps VCS internals and dependency trees out of view.
@@ -183,7 +184,7 @@ async function buildTree(worktreeRoot: string): Promise<FileTreeNode[]> {
 // covers the working tree's file *content* so open editor tabs can detect
 // external edits (e.g. an AI agent or another tool writing to a file).
 
-const activeFileWatchers = new Map<string, FSWatcher>();
+const activeFileWatchers = new Map<string, Closable>();
 
 function isAlwaysIgnoredPath(path: string): boolean {
   return path.split(/[\\/]+/).some(segment => ALWAYS_IGNORED_DIRS.has(segment));
@@ -206,7 +207,7 @@ function startFileWatch(worktreePath: string, win: BrowserWindow): void {
     },
     isAlwaysIgnoredPath,
   );
-  activeFileWatchers.set(root, watcher);
+  if (watcher) activeFileWatchers.set(root, watcher); // null if the worktree path doesn't exist (yet) on macOS/Windows
 }
 
 function stopFileWatch(worktreePath: string): void {

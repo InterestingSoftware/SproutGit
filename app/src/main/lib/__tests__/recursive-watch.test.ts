@@ -137,7 +137,14 @@ describe('watchRecursive / closeWatcher', () => {
     }
   }, 15_000);
 
-  it('can watch a root that does not exist yet, and later picks up files added under it', async () => {
+  // Only the Linux (chokidar) path lazily picks up a root created after
+  // watchRecursive() is called. macOS/Windows use native fs.watch, which
+  // throws synchronously for a non-existent path — watchRecursive returns
+  // null there, matching this project's pre-existing "path may not exist"
+  // behavior on those platforms.
+  const itOnLinux = process.platform === 'linux' ? it : it.skip;
+
+  itOnLinux('can watch a root that does not exist yet, and later picks up files added under it', async () => {
     const parent = tempDir('sg-watch-lazy-parent-');
     dirsToClean.push(parent);
     const root = join(parent, 'not-yet-created');
@@ -160,6 +167,18 @@ describe('watchRecursive / closeWatcher', () => {
       closeWatcher(watcher);
     }
   }, 10_000);
+
+  const itOnNativeRecursive = process.platform === 'win32' || process.platform === 'darwin' ? it : it.skip;
+
+  itOnNativeRecursive('returns null (rather than lazily picking up the root) when watching a path that does not exist yet', () => {
+    const parent = tempDir('sg-watch-native-missing-parent-');
+    dirsToClean.push(parent);
+    const root = join(parent, 'not-yet-created');
+
+    const watcher = watchRecursive(root, () => undefined);
+    expect(watcher).toBeNull();
+    closeWatcher(watcher); // no-ops on null; asserts the guard doesn't throw
+  });
 
   it('closeWatcher() swallows errors thrown synchronously by watcher.close()', () => {
     const throwingWatcher = {

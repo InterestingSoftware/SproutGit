@@ -349,15 +349,18 @@ function WorkspaceInner() {
       if (gitRepoPath) void qc.invalidateQueries({ queryKey: qk.worktreeChangeCounts(gitRepoPath) });
 
       const key = tabKey(worktreePath, event.relativePath);
-      const tab = useEditorStore.getState().tabs[key];
-      if (!tab) return;
+      if (!useEditorStore.getState().tabs[key]) return;
 
       if (event.type === 'deleted') return; // leave the buffer as-is; save will recreate the file
 
       api.readFile(worktreePath, event.relativePath)
         .then(result => {
-          // Ignore stale events for a version we already know about.
-          if (result.mtimeMs <= tab.knownMtimeMs) return;
+          // Re-read the tab's current state rather than the one captured
+          // before this async read started — it may have been saved,
+          // reloaded, or closed while the read was in flight.
+          const currentTab = useEditorStore.getState().tabs[key];
+          if (!currentTab) return;
+          if (result.mtimeMs <= currentTab.knownMtimeMs) return;
           handleExternalChange(key, result.content, result.mtimeMs);
         })
         .catch(() => undefined);
@@ -774,7 +777,11 @@ function WorkspaceInner() {
     const key = openOrFocusTab(worktreePath, relativePath);
     useWorkspaceStore.setState({ activeTab: 'files' });
     const tab = useEditorStore.getState().tabs[key];
-    if (!tab || (!tab.loading && tab.content !== '')) return; // already loaded
+    if (!tab) return;
+    // "already loaded" means a load previously succeeded, not that the
+    // content happens to be non-empty — an actually-empty file would
+    // otherwise get re-read every time the tab is reopened/focused.
+    if (!tab.loading && !tab.error) return;
     try {
       const result = await api.readFile(worktreePath, relativePath);
       setTabLoaded(key, result.content, result.mtimeMs);

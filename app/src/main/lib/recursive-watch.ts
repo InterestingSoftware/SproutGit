@@ -12,6 +12,7 @@
  * emulates recursion with per-directory watches instead of throwing.
  */
 import { watch as fsWatch } from 'node:fs';
+import { stat } from 'node:fs/promises';
 import { join } from 'node:path';
 import chokidar, { type FSWatcher as ChokidarWatcher } from 'chokidar';
 
@@ -41,11 +42,17 @@ export function watchRecursive(
         if (!filename) return;
         const absolutePath = join(root, filename);
         if (ignored?.(absolutePath)) return;
-        // Native fs.watch only distinguishes 'rename' (create/delete/rename)
-        // vs 'change' (content write) — coarser than chokidar's add/change/
-        // unlink, but every current caller only cares that *something*
-        // changed, not the precise kind.
-        onEvent(eventType === 'rename' ? 'add' : 'change', absolutePath);
+        if (eventType === 'change') {
+          onEvent('change', absolutePath);
+          return;
+        }
+        // 'rename' covers create/delete/rename — native fs.watch doesn't say
+        // which, so disambiguate with a stat check (mirrors this project's
+        // pre-chokidar approach for file-content watching).
+        void stat(absolutePath).then(
+          () => onEvent('add', absolutePath),
+          () => onEvent('unlink', absolutePath),
+        );
       });
     } catch {
       return null; // path doesn't exist (yet) — same as the old behavior here
@@ -61,8 +68,9 @@ export function watchRecursive(
   return watcher;
 }
 
-/** Closes a watcher returned by `watchRecursive` (or a plain `node:fs` FSWatcher), swallowing errors either way. */
-export function closeWatcher(watcher: Closable): void {
+/** Closes a watcher returned by `watchRecursive` (or a plain `node:fs` FSWatcher), swallowing errors either way. No-ops on `null`/`undefined` since `watchRecursive` can return `null`. */
+export function closeWatcher(watcher: Closable | null | undefined): void {
+  if (!watcher) return;
   try {
     const result = watcher.close();
     if (result && typeof (result as Promise<void>).catch === 'function') {
