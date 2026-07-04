@@ -2,8 +2,9 @@
  * File-system watcher that emits IPC events when git HEAD or refs change.
  * Watches HEAD and FETCH_HEAD (single files) with Node's built-in
  * `fs.watch`; watches `refs/` and `worktrees/` (which need to recurse into
- * subdirectories) via the cross-platform `watchRecursive` helper, since
- * native `fs.watch({recursive: true})` isn't supported on Linux.
+ * subdirectories) via the cross-platform `watchRecursive` helper — native
+ * recursive `fs.watch` on macOS/Windows (unchanged from before), chokidar
+ * only on Linux, where native recursive watching isn't supported at all.
  *
  * `repoPath` here is always the bare root itself (`gitRepoPath`, e.g.
  * `<workspace>/.sproutgit/root`) — root is always bare, so HEAD/refs/
@@ -47,10 +48,11 @@ function watchPath(
     watchers.push(headWatcher);
   } catch { /* path may not exist */ }
 
-  // Watch refs recursively for new commits / remote updates. Uses chokidar
-  // (via watchRecursive) rather than native fs.watch({recursive:true}), which
-  // throws ERR_FEATURE_UNAVAILABLE_ON_PLATFORM on Linux.
-  watchers.push(watchRecursive(join(repoPath, 'refs'), () => emitRefsChanged()));
+  // Watch refs recursively for new commits / remote updates. Uses the
+  // cross-platform watchRecursive helper (native fs.watch on macOS/Windows,
+  // chokidar on Linux, where native recursive watching throws).
+  const refsWatcher = watchRecursive(join(repoPath, 'refs'), () => emitRefsChanged());
+  if (refsWatcher) watchers.push(refsWatcher);
 
   try {
     // FETCH_HEAD changes after git fetch
@@ -66,9 +68,9 @@ function watchPath(
   // <bare root>/worktrees/<name> — this is where `git worktree add/remove`
   // (run by us or an external tool like Claude Code) shows up, regardless
   // of where the actual worktree checkout lives on disk. This directory may
-  // not exist yet (no worktree has ever been added) — chokidar picks it up
-  // once created instead of requiring a fresh watch to be started later.
-  watchers.push(watchRecursive(join(repoPath, 'worktrees'), () => emitWorktreeChanged()));
+  // not exist yet (no worktree has ever been added).
+  const worktreesWatcher = watchRecursive(join(repoPath, 'worktrees'), () => emitWorktreeChanged());
+  if (worktreesWatcher) watchers.push(worktreesWatcher);
 
   return watchers;
 }
