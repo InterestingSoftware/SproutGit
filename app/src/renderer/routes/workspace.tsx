@@ -14,14 +14,30 @@ import {
   WindowControls,
   UpdateBadge,
 } from '@sproutgit/ui';
-import { GitBranch, Terminal, GitMerge, X, ChevronRight, ChevronDown, Settings, Plus, Columns2, Rows3, LayoutGrid, Pencil, PanelTop, SquareSplitHorizontal, ChevronsRight, Trash2, Bot } from 'lucide-react';
-import type { CommitEntry, DiffFileEntry, WorktreeInfo, WorktreeSwitchHookSource, AgentConfig } from '@sproutgit/types';
+import { GitBranch, Terminal, GitMerge, X, ChevronRight, ChevronDown, Settings, Plus, Columns2, Rows3, LayoutGrid, Pencil, PanelTop, SquareSplitHorizontal, ChevronsRight, Trash2, Bot, FileCode2 } from 'lucide-react';
+import type { CommitEntry, DiffFileEntry, WorktreeInfo, WorktreeSwitchHookSource, AgentConfig, FileChangedEvent } from '@sproutgit/types';
 import { useToast } from '../toast-context.js';
 import { useUpdateStore } from '../stores/update-store.js';
 import { useWorkspaceStore, resetWorkspaceStore } from '../stores/workspace-store.js';
+import {
+  useEditorStore,
+  tabKey,
+  openOrFocusTab,
+  setTabLoaded,
+  setTabError,
+  setTabContent,
+  setTabSaved,
+  handleExternalChange,
+  resolveConflictReload,
+  resolveConflictKeepMine,
+  closeTab as closeEditorTab,
+  setActiveTab as setActiveEditorTab,
+} from '../stores/editor-store.js';
 import { WorktreeSidebar } from '../workspace/WorktreeSidebar.js';
 import { ChatPanel } from '../workspace/ChatPanel.js';
 import { CommitDiffPanel } from '../workspace/CommitDiffPanel.js';
+import { FileTreePanel } from '../workspace/FileTreePanel.js';
+import { FileEditorPanel } from '../workspace/FileEditorPanel.js';
 import { NewWorktreeDialog } from '../workspace/dialogs/NewWorktreeDialog.js';
 import { DeleteWorktreeDialog } from '../workspace/dialogs/DeleteWorktreeDialog.js';
 import { PublishDialog } from '../workspace/dialogs/PublishDialog.js';
@@ -42,6 +58,7 @@ import {
   useDeleteWorktree,
   useWorktreeChangeCounts,
   useIssueTrackerPatterns,
+  useFileTree,
 } from '../queries.js';
 
 // ── Search params ─────────────────────────────────────────────────────────────
@@ -102,6 +119,18 @@ function WorkspaceInner() {
   // their PTYs running in the background and reappear when you switch back.
   const visibleSessions = terminalSessions.filter(s => s.cwd === activeWorktree?.path);
 
+  // ── File editor tabs (Zustand) ─────────────────────────────────────────
+  const editorTabs = useEditorStore(s => s.tabs);
+  const editorTabOrder = useEditorStore(s => s.tabOrder);
+  const editorActiveTabKeyRaw = useEditorStore(s => s.activeTabKey);
+  const editorTabsForActiveWorktree = editorTabOrder
+    .map(k => editorTabs[k])
+    .filter((t): t is NonNullable<typeof t> => !!t && t.worktreePath === activeWorktree?.path);
+  const editorActiveTabKey = editorTabsForActiveWorktree.some(t => tabKey(t.worktreePath, t.relativePath) === editorActiveTabKeyRaw)
+    ? editorActiveTabKeyRaw
+    : null;
+  const activeEditorTab = editorTabsForActiveWorktree.find(t => tabKey(t.worktreePath, t.relativePath) === editorActiveTabKey) ?? null;
+
   // ── Shell picker ──────────────────────────────────────────────────────
   const [availableShells, setAvailableShells] = useState<{ name: string; path: string }[]>([]);
   const [showShellPicker, setShowShellPicker] = useState(false);
@@ -144,6 +173,7 @@ function WorkspaceInner() {
   const { data: refs = [] } = useRefs(gitRepoPath);
   const { data: pushStatus } = usePushStatus(activeWorktree?.path);
   const { data: issueTrackerPatterns = [] } = useIssueTrackerPatterns(activeWorktree?.path);
+  const { data: fileTree = [], isLoading: fileTreeLoading } = useFileTree(activeWorktree?.path);
 
   const loading = worktreesLoading || commitsLoading;
 
@@ -296,6 +326,52 @@ function WorkspaceInner() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [gitRepoPath]);
 
+  // ── File content watcher (active worktree) → file tree + open tab live-sync ──
+  // Distinct from the workspace-level watcher above (which only tracks .git/*
+  // for branch/ref changes) — this one covers the working tree's file
+  // *contents* so the file browser refreshes and open editor tabs pick up
+  // external edits (e.g. an AI agent or another tool writing to a file).
+  //
+  // It also doubles as a fast path for the Changes tab's status query: any
+  // content change likely means `git status` changed too, so invalidate it
+  // immediately instead of waiting on its 15s poll (kept as a fallback for
+  // changes this watcher can't see, e.g. an index/stash operation from
+  // another tool with no working-tree file write).
+  useEffect(() => {
+    const worktreePath = activeWorktree?.path;
+    if (!worktreePath) return;
+
+    void api.startFileWatching(worktreePath);
+    const offFileChanged = api.onFileChanged((event: FileChangedEvent) => {
+      if (event.worktreePath !== worktreePath) return;
+      void qc.invalidateQueries({ queryKey: qk.fileTree(worktreePath) });
+      void qc.invalidateQueries({ queryKey: qk.worktreeStatus(worktreePath) });
+      if (gitRepoPath) void qc.invalidateQueries({ queryKey: qk.worktreeChangeCounts(gitRepoPath) });
+
+      const key = tabKey(worktreePath, event.relativePath);
+      if (!useEditorStore.getState().tabs[key]) return;
+
+      if (event.type === 'deleted') return; // leave the buffer as-is; save will recreate the file
+
+      api.readFile(worktreePath, event.relativePath)
+        .then(result => {
+          // Re-read the tab's current state rather than the one captured
+          // before this async read started — it may have been saved,
+          // reloaded, or closed while the read was in flight.
+          const currentTab = useEditorStore.getState().tabs[key];
+          if (!currentTab) return;
+          if (result.mtimeMs <= currentTab.knownMtimeMs) return;
+          handleExternalChange(key, result.content, result.mtimeMs);
+        })
+        .catch(() => undefined);
+    });
+
+    return () => {
+      void api.stopFileWatching(worktreePath);
+      offFileChanged();
+    };
+  }, [activeWorktree?.path, gitRepoPath, qc]);
+
   // ── Refresh worktrees when the window regains focus ───────────────────
   // Catches worktrees an external tool (e.g. Claude Code) registered while
   // this window was unfocused, on top of the filesystem watcher above.
@@ -324,7 +400,7 @@ function WorkspaceInner() {
 
   // ── Auto-switch tab if activeTab becomes disabled ─────────────────────
   useEffect(() => {
-    if (!activeWorktree && (activeTab === 'staging' || activeTab === 'terminal' || activeTab === 'chat')) {
+    if (!activeWorktree && (activeTab === 'staging' || activeTab === 'terminal' || activeTab === 'chat' || activeTab === 'files')) {
       useWorkspaceStore.setState({ activeTab: 'graph' });
     }
     if (activeTab === 'chat' && agentConfig && agentConfig.mode !== 'integrated') {
@@ -693,6 +769,49 @@ function WorkspaceInner() {
     }
   }
 
+  // ── File editor tabs ──────────────────────────────────────────────────
+
+  async function openFile(relativePath: string) {
+    if (!activeWorktree) return;
+    const worktreePath = activeWorktree.path;
+    const key = openOrFocusTab(worktreePath, relativePath);
+    useWorkspaceStore.setState({ activeTab: 'files' });
+    const tab = useEditorStore.getState().tabs[key];
+    if (!tab) return;
+    // "already loaded" means a load previously succeeded, not that the
+    // content happens to be non-empty — an actually-empty file would
+    // otherwise get re-read every time the tab is reopened/focused.
+    if (!tab.loading && !tab.error) return;
+    try {
+      const result = await api.readFile(worktreePath, relativePath);
+      setTabLoaded(key, result.content, result.mtimeMs);
+    } catch (err) {
+      setTabError(key, `Failed to read file: ${String(err)}`);
+    }
+  }
+
+  async function saveFile(key: string) {
+    const tab = useEditorStore.getState().tabs[key];
+    if (!tab || !tab.dirty) return;
+    try {
+      const result = await api.writeFile(tab.worktreePath, tab.relativePath, tab.content);
+      setTabSaved(key, tab.content, result.mtimeMs);
+    } catch (err) {
+      toast(`Failed to save ${tab.relativePath}: ${String(err)}`, 'error');
+    }
+  }
+
+  async function reloadFileFromDisk(key: string) {
+    const tab = useEditorStore.getState().tabs[key];
+    if (!tab) return;
+    try {
+      const result = await api.readFile(tab.worktreePath, tab.relativePath);
+      resolveConflictReload(key, result.content, result.mtimeMs);
+    } catch (err) {
+      toast(`Failed to reload ${tab.relativePath}: ${String(err)}`, 'error');
+    }
+  }
+
   async function openTerminal(cwd: string, label?: string, shellOverride?: string) {
     try {
       const terminalArgs: {
@@ -1036,6 +1155,17 @@ function WorkspaceInner() {
                   <Bot size={12} /> Chat
                 </button>
               )}
+              <button
+                className={tabCls(activeTab === 'files', !activeWorktree)}
+                onClick={() => {
+                  if (!activeWorktree) return;
+                  useWorkspaceStore.setState({ activeTab: 'files' });
+                }}
+                disabled={!activeWorktree}
+                data-testid="tab-files"
+              >
+                <FileCode2 size={12} /> Files
+              </button>
             </div>
 
             {/* Tab content */}
@@ -1313,6 +1443,34 @@ function WorkspaceInner() {
                   {/* Chat tab (Integrated AI agent mode) */}
                   {activeTab === 'chat' && activeWorktree && agentConfig?.mode === 'integrated' && (
                     <ChatPanel worktreePath={activeWorktree.path} />
+                  )}
+
+                  {/* Files tab */}
+                  {activeTab === 'files' && activeWorktree && (
+                    <div className="flex h-full">
+                      <div className="w-56 shrink-0 border-r border-(--sg-border)">
+                        <FileTreePanel
+                          tree={fileTree}
+                          loading={fileTreeLoading}
+                          activeRelativePath={activeEditorTab?.relativePath ?? null}
+                          onOpenFile={rel => void openFile(rel)}
+                          onRefresh={() => void qc.invalidateQueries({ queryKey: qk.fileTree(activeWorktree.path) })}
+                        />
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <FileEditorPanel
+                          tabs={editorTabsForActiveWorktree}
+                          activeTabKey={editorActiveTabKey}
+                          keyOf={t => tabKey(t.worktreePath, t.relativePath)}
+                          onSelectTab={key => setActiveEditorTab(key)}
+                          onCloseTab={key => closeEditorTab(key)}
+                          onChange={(key, content) => setTabContent(key, content)}
+                          onSave={key => void saveFile(key)}
+                          onReloadFromDisk={key => void reloadFileFromDisk(key)}
+                          onKeepMine={key => resolveConflictKeepMine(key)}
+                        />
+                      </div>
+                    </div>
                   )}
                 </>
               )}

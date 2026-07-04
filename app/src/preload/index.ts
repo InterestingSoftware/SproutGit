@@ -45,6 +45,9 @@ import type {
   ToolTestResult,
   ChatSessionEvent,
   ChatSessionExitEvent,
+  FileTreeNode,
+  FileReadResult,
+  FileChangedEvent,
 } from '@sproutgit/types';
 
 /**
@@ -606,6 +609,28 @@ const api = {
     const listener = (_e: Electron.IpcRendererEvent, message: string) => cb(message);
     ipcRenderer.on(IPC.EVENT_UPDATE_ERROR, listener);
     return () => ipcRenderer.removeListener(IPC.EVENT_UPDATE_ERROR, listener);
+  },
+
+  // ── File browser / editor ─────────────────────────────────────────────────
+  listFileTree: (worktreePath: string): Promise<FileTreeNode[]> =>
+    invoke(IPC.FILE_LIST_TREE, worktreePath),
+
+  readFile: (worktreePath: string, relativePath: string): Promise<FileReadResult> =>
+    invoke(IPC.FILE_READ, { worktreePath, relativePath }),
+
+  writeFile: (worktreePath: string, relativePath: string, content: string): Promise<{ mtimeMs: number }> =>
+    invoke(IPC.FILE_WRITE, { worktreePath, relativePath, content }),
+
+  startFileWatching: (worktreePath: string): Promise<void> =>
+    invoke(IPC.FILE_WATCH_START, worktreePath),
+
+  stopFileWatching: (worktreePath: string): Promise<void> =>
+    invoke(IPC.FILE_WATCH_STOP, worktreePath),
+
+  onFileChanged: (callback: (event: FileChangedEvent) => void) => {
+    const handler = (_e: Electron.IpcRendererEvent, payload: FileChangedEvent) => callback(payload);
+    ipcRenderer.on(IPC.EVENT_FILE_CHANGED, handler);
+    return () => ipcRenderer.off(IPC.EVENT_FILE_CHANGED, handler);
   },
 
   // ── Issue tracker ──────────────────────────────────────────────────────────
