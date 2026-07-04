@@ -25,7 +25,10 @@ export function watchRecursive(
   ignored?: (path: string) => boolean,
 ): FSWatcher {
   const watcher = chokidar.watch(root, {
-    persistent: true,
+    // Matches the rest of this file's fs.watch calls (persistent: false) —
+    // an open handle shouldn't keep the main-process event loop alive if a
+    // shutdown path skips WATCH_STOP.
+    persistent: false,
     ignoreInitial: true,
     ...(ignored ? { ignored } : {}),
   });

@@ -271,7 +271,14 @@ export function WorktreeSidebar({
                     },
                     ...(agentMenuItems(row.wt.path).length > 0 ? ['separator' as const, ...agentMenuItems(row.wt.path)] : []),
                     'separator',
-                    { label: 'Fetch', icon: <RefreshCw size={14} />, onClick: () => void api.fetch(row.wt.path).then((summary) => { toast(describeFetchSummary(summary), summary.hadNoRemotes ? 'info' : 'success'); onRefresh(); }).catch((err: unknown) => toast(`Fetch failed: ${String(err)}`, 'error')) },
+                    { label: 'Fetch', icon: <RefreshCw size={14} />, onClick: () => void api.fetch(row.wt.path).then((summary) => {
+                      toast(describeFetchSummary(summary), summary.hadNoRemotes ? 'info' : 'success');
+                      // Nothing to refresh when there was nothing to fetch (no remotes) or
+                      // nothing changed — matches useFetch's no-op check in queries.ts, avoiding
+                      // a pointless refetch on every click of a no-op fetch.
+                      if (summary.hadNoRemotes || (summary.updatedRefCount === 0 && summary.prunedRefCount === 0)) return;
+                      onRefresh();
+                    }).catch((err: unknown) => toast(`Fetch failed: ${String(err)}`, 'error')) },
                     { label: 'Pull', icon: <ArrowDownToLine size={14} />, onClick: () => void api.pull(row.wt.path).then(() => { toast('Pulled', 'success'); onRefresh(); }).catch((err: unknown) => toast(String(err), 'error')) },
                     { label: 'Push', icon: <ArrowUpFromLine size={14} />, onClick: () => void api.push(row.wt.path).then(() => { toast('Pushed', 'success'); }).catch((err: unknown) => toast(String(err), 'error')) },
                     'separator',
