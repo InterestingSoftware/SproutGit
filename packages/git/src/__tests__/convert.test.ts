@@ -186,4 +186,77 @@ describe('convertToBareWithWorktree', () => {
 
     rmSync(workspaceDir, { recursive: true, force: true });
   });
+
+  // Regression test for the incident where a migration that failed after
+  // relocating `.git` and flipping `core.bare` (but before a worktree was
+  // ever checked out) left the workspace stranded as a bare repo with no
+  // worktree and no way back. `convertToBareWithWorktree` must instead treat
+  // "worktree checked out" as the actual point of no return and roll
+  // everything before it back on failure.
+  it('rolls back the move and core.bare flip when the worktree checkout fails', async () => {
+    const workspaceDir = tempDir('sg-convert-rollback-');
+    const sourceDir = join(workspaceDir, 'root');
+    createNonBareRepo(sourceDir);
+    const branch = currentBranch(sourceDir);
+
+    const barePath = join(workspaceDir, 'bare');
+    const worktreesPath = join(workspaceDir, 'worktrees');
+    mkdirSync(worktreesPath, { recursive: true });
+
+    // Pre-create a plain file at the exact path `git worktree add` would use
+    // for the branch, so the checkout step fails deterministically *after*
+    // the `.git` move and `core.bare` flip have already happened — the same
+    // failure window as the real incident.
+    writeFileSync(join(worktreesPath, branch), 'blocking file\n');
+
+    await expect(convertToBareWithWorktree(sourceDir, barePath, worktreesPath)).rejects.toThrow();
+
+    // Rollback must have restored the source repo exactly as it was:
+    // `.git` back in place, no bare repo left dangling, ref/branch intact.
+    expect(existsSync(join(sourceDir, '.git'))).toBe(true);
+    expect(existsSync(barePath)).toBe(false);
+    expect(currentBranch(sourceDir)).toBe(branch);
+    expect(execSync('git status --porcelain', { cwd: sourceDir }).toString()).toBe('');
+    expect(execSync('git config core.bare', { cwd: sourceDir }).toString().trim()).toBe('false');
+
+    // The original commit history must still be reachable — nothing about
+    // the aborted conversion should have touched refs.
+    const log = execSync('git log --oneline', { cwd: sourceDir }).toString().trim();
+    expect(log).toContain('initial commit');
+
+    rmSync(workspaceDir, { recursive: true, force: true });
+  });
+
+  // Same incident, different failure point: `git worktree repair` (for a
+  // pre-existing linked worktree) fails *after* the `.git` move and
+  // `core.bare` flip, but before the new worktree checkout. Rollback must
+  // still trigger from this earlier failure point too.
+  it('rolls back the move and core.bare flip when repairing a stale linked worktree fails', async () => {
+    const workspaceDir = tempDir('sg-convert-repair-fail-');
+    const sourceDir = join(workspaceDir, 'root');
+    createNonBareRepo(sourceDir);
+    const branch = currentBranch(sourceDir);
+
+    const worktreesPath = join(workspaceDir, '.sproutgit', 'worktrees');
+    mkdirSync(worktreesPath, { recursive: true });
+
+    // Register a linked worktree, then delete its directory out from under
+    // git — `git worktree repair` will fail to repair a target path that no
+    // longer exists, simulating a stale/corrupted registration.
+    const otherWorktreePath = join(worktreesPath, 'feature-a');
+    execSync(`git worktree add -b feature-a "${otherWorktreePath}"`, { cwd: sourceDir, stdio: 'ignore' });
+    rmSync(otherWorktreePath, { recursive: true, force: true });
+
+    const barePath = join(workspaceDir, '.sproutgit', 'root');
+
+    await expect(convertToBareWithWorktree(sourceDir, barePath, worktreesPath)).rejects.toThrow();
+
+    // Rollback must have restored the source repo exactly as it was.
+    expect(existsSync(join(sourceDir, '.git'))).toBe(true);
+    expect(existsSync(barePath)).toBe(false);
+    expect(currentBranch(sourceDir)).toBe(branch);
+    expect(execSync('git config core.bare', { cwd: sourceDir }).toString().trim()).toBe('false');
+
+    rmSync(workspaceDir, { recursive: true, force: true });
+  });
 });

@@ -68,6 +68,32 @@ async function moveDir(source: string, destination: string): Promise<void> {
 }
 
 /**
+ * Thrown when conversion fails after the point of no return and the
+ * automatic rollback itself could not put the source repo back the way it
+ * was. The original error is preserved as `.cause`; `sourceRepoPath` and
+ * `barePath` are included so the caller can tell the user exactly where to
+ * look. This should be rare — rollback only undoes an in-progress directory
+ * rename/config write — but if it happens the workspace needs manual repair.
+ */
+export class ConversionRollbackFailedError extends Error {
+  constructor(
+    public readonly sourceRepoPath: string,
+    public readonly barePath: string,
+    public readonly originalError: unknown,
+    public readonly rollbackError: unknown,
+  ) {
+    super(
+      `Failed to convert "${sourceRepoPath}" to a bare repo, and the automatic rollback also failed. ` +
+      `The repo may be left partially migrated at "${barePath}". Manual repair is required. ` +
+      `Original error: ${originalError instanceof Error ? originalError.message : String(originalError)}. ` +
+      `Rollback error: ${rollbackError instanceof Error ? rollbackError.message : String(rollbackError)}.`,
+      { cause: originalError },
+    );
+    this.name = 'ConversionRollbackFailedError';
+  }
+}
+
+/**
  * Converts an existing non-bare repo at `sourceRepoPath` into a bare repo at
  * `barePath`, then recreates its currently-checked-out branch as a managed
  * worktree under `managedWorktreesPath`. Used both for importing an existing
@@ -76,6 +102,20 @@ async function moveDir(source: string, destination: string): Promise<void> {
  * Refuses to touch anything if the source is dirty or has a detached HEAD —
  * callers should surface `DirtyWorkingTreeError`/`DetachedHeadError` to the
  * user rather than attempting to carry over uncommitted state.
+ *
+ * Safety/atomicity: nothing here is considered "done" until a worktree has
+ * actually been checked out for the branch. Up to and including that step,
+ * every action taken (moving `.git` to `barePath`, flipping `core.bare`,
+ * repairing other worktrees) is recorded so it can be undone. If any of
+ * those steps throws, we roll back everything already applied — moving
+ * `barePath` back to `sourceGitDir` and clearing any config changes — so a
+ * failed conversion leaves the source repo exactly as it was, rather than a
+ * bare repo with no worktree and no way back (see incident: root relocated
+ * to `.sproutgit/root`, `core.bare` set, ref history disturbed, but no
+ * worktree ever checked out because the process aborted partway through).
+ * Only after the worktree checkout succeeds do we touch the leftover
+ * working-tree files (backup step), since that point is the actual
+ * point-of-no-return for this operation.
  */
 export async function convertToBareWithWorktree(
   sourceRepoPath: string,
@@ -114,19 +154,55 @@ export async function convertToBareWithWorktree(
   await mkdir(dirname(barePath), { recursive: true });
   await moveDir(sourceGitDir, barePath);
 
+  // From this point on, `barePath` holds the repo and `sourceGitDir` is gone.
+  // Anything that throws before the worktree checkout completes must be
+  // rolled back by undoing exactly that: restore `core.bare` to `false`
+  // (a plain `.git` dir with a live working tree is never bare) *before*
+  // moving the directory back, then move it back to `sourceGitDir` — order
+  // matters, since after the move `gitForPath(barePath)` no longer points
+  // anywhere valid.
+  const rollback = async (originalError: unknown): Promise<never> => {
+    try {
+      try {
+        await gitForPath(barePath).raw(['config', 'core.bare', 'false']);
+      } catch {
+        // If config-writing itself failed, the directory may not even be a
+        // valid git dir any more — fall through and still attempt the move
+        // back so at least the files aren't left orphaned at `barePath`.
+      }
+      await moveDir(barePath, sourceGitDir);
+    } catch (rollbackError) {
+      throw new ConversionRollbackFailedError(sourceRepoPath, barePath, originalError, rollbackError);
+    }
+    throw originalError;
+  };
+
   const bareGit = gitForPath(barePath);
-  await bareGit.raw(['config', 'core.bare', 'true']);
   try {
-    await bareGit.raw(['config', '--unset', 'core.worktree']);
-  } catch {
-    // Not set — nothing to unset.
+    await bareGit.raw(['config', 'core.bare', 'true']);
+    try {
+      await bareGit.raw(['config', '--unset', 'core.worktree']);
+    } catch {
+      // Not set — nothing to unset.
+    }
+
+    if (otherWorktreePaths.length > 0) {
+      await withWorktreeLock(barePath, () => bareGit.raw(['worktree', 'repair', ...otherWorktreePaths]));
+    }
+  } catch (error) {
+    return rollback(error);
   }
 
-  if (otherWorktreePaths.length > 0) {
-    await withWorktreeLock(barePath, () => bareGit.raw(['worktree', 'repair', ...otherWorktreePaths]));
+  let worktreePath: string;
+  try {
+    ({ worktreePath } = await addWorktreeForExistingBranch(barePath, managedWorktreesPath, branch));
+  } catch (error) {
+    return rollback(error);
   }
 
-  const { worktreePath } = await addWorktreeForExistingBranch(barePath, managedWorktreesPath, branch);
+  // Past this point the worktree checkout has succeeded — the migration is
+  // committed and no longer rolled back. Only the (non-destructive, purely
+  // additive) backup-relocation of leftover files remains.
 
   // Move (never delete) the leftover working-tree files into a backup
   // directory alongside the new bare root. The dirty check above only sees
