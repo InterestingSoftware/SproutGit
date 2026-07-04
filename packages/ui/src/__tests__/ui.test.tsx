@@ -4,6 +4,7 @@ import userEvent from '@testing-library/user-event';
 import { Spinner } from '../components/Spinner.js';
 import { Toast, type ToastData } from '../components/Toast.js';
 import { Autocomplete } from '../components/Autocomplete.js';
+import { ResizableSidebar } from '../components/ResizableSidebar.js';
 
 // Ensure DOM is cleaned between tests even without globals mode.
 afterEach(() => { cleanup(); });
@@ -76,5 +77,104 @@ describe('Autocomplete', () => {
     await user.click(screen.getByRole('button'));
     await user.click(screen.getByText('develop'));
     expect(selected).toBe('dev');
+  });
+});
+
+// ─── ResizableSidebar ───────────────────────────────────────────────────────────
+
+describe('ResizableSidebar', () => {
+  it('renders children and is backward-compatible when collapsible/collapsed are omitted', () => {
+    // This mirrors the home page's usage (app/src/renderer/routes/index.tsx),
+    // which only passes initialWidth/minWidth/maxWidth — no collapse props at all.
+    render(
+      <ResizableSidebar initialWidth={240} minWidth={180} maxWidth={400}>
+        <div>Home sidebar content</div>
+      </ResizableSidebar>
+    );
+    expect(screen.getByText('Home sidebar content')).toBeTruthy();
+    // Still resizable — the drag handle separator should be present.
+    expect(screen.getByRole('separator', { name: /resize sidebar/i })).toBeTruthy();
+  });
+
+  it('does not collapse when collapsed=true but collapsible is not set', () => {
+    // Guards against a future regression where `collapsed` alone (without
+    // opting into `collapsible`) would unexpectedly hide children.
+    render(
+      <ResizableSidebar collapsed railContent={<div>Rail</div>}>
+        <div>Children</div>
+      </ResizableSidebar>
+    );
+    expect(screen.getByText('Children')).toBeTruthy();
+    expect(screen.queryByText('Rail')).toBeNull();
+  });
+
+  it('renders children (not railContent) when collapsible but not collapsed', () => {
+    render(
+      <ResizableSidebar collapsible collapsed={false} railContent={<div>Rail</div>}>
+        <div>Children</div>
+      </ResizableSidebar>
+    );
+    expect(screen.getByText('Children')).toBeTruthy();
+    expect(screen.queryByText('Rail')).toBeNull();
+  });
+
+  it('renders railContent (not children) when collapsible and collapsed', () => {
+    render(
+      <ResizableSidebar collapsible collapsed railContent={<div>Rail</div>}>
+        <div>Children</div>
+      </ResizableSidebar>
+    );
+    expect(screen.getByText('Rail')).toBeTruthy();
+    expect(screen.queryByText('Children')).toBeNull();
+  });
+
+  it('falls back to rendering children when collapsed but no railContent is given', () => {
+    render(
+      <ResizableSidebar collapsible collapsed>
+        <div>Children</div>
+      </ResizableSidebar>
+    );
+    expect(screen.getByText('Children')).toBeTruthy();
+  });
+
+  it('hides the resize handle while collapsed', () => {
+    render(
+      <ResizableSidebar collapsible collapsed railContent={<div>Rail</div>}>
+        <div>Children</div>
+      </ResizableSidebar>
+    );
+    expect(screen.queryByRole('separator', { name: /resize sidebar/i })).toBeNull();
+  });
+
+  it('applies collapsedWidth to the container when collapsed', () => {
+    const { container } = render(
+      <ResizableSidebar collapsible collapsed collapsedWidth={64} railContent={<div>Rail</div>}>
+        <div>Children</div>
+      </ResizableSidebar>
+    );
+    const root = container.firstElementChild as HTMLElement;
+    expect(root.style.width).toBe('64px');
+    expect(root.getAttribute('data-collapsed')).toBe('true');
+  });
+
+  it('defaults collapsedWidth to 48px when not specified', () => {
+    const { container } = render(
+      <ResizableSidebar collapsible collapsed railContent={<div>Rail</div>}>
+        <div>Children</div>
+      </ResizableSidebar>
+    );
+    const root = container.firstElementChild as HTMLElement;
+    expect(root.style.width).toBe('48px');
+  });
+
+  it('uses initialWidth (not collapsedWidth) when not collapsed', () => {
+    const { container } = render(
+      <ResizableSidebar collapsible collapsed={false} initialWidth={330} collapsedWidth={48}>
+        <div>Children</div>
+      </ResizableSidebar>
+    );
+    const root = container.firstElementChild as HTMLElement;
+    expect(root.style.width).toBe('330px');
+    expect(root.getAttribute('data-collapsed')).toBe('false');
   });
 });
