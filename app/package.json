@@ -126,6 +126,7 @@
     "@fontsource/fira-code": "^5.2.7",
     "@fontsource/plus-jakarta-sans": "^5.2.8",
     "@fontsource/space-grotesk": "^5.2.10",
+    "chokidar": "^4.0.3",
     "@sproutgit/database": "workspace:*",
     "@sproutgit/git": "workspace:*",
     "@sproutgit/paths": "workspace:*",

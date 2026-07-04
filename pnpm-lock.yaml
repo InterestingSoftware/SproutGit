@@ -67,6 +67,9 @@ importers:
       '@tanstack/react-router':
         specifier: ^1.170.16
         version: 1.170.16(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
+      chokidar:
+        specifier: ^4.0.3
+        version: 4.0.3
       electron-log:
         specifier: ^5.4.4
         version: 5.4.4
