@@ -150,7 +150,11 @@ export function registerAgentHandlers(configDb: ConfigDb, getWindow: () => Brows
   // ── Test ──────────────────────────────────────────────────────────────
   // Actually runs the configured agent command with a small fixed real
   // prompt and confirms non-empty, non-error stdout comes back — not just
-  // `<cmd> --version`.
+  // `<cmd> --version`. Only Claude Code's non-interactive prompt flag (-p)
+  // is known (same invocation chat.ts's spawnClaudeTurn uses); any other
+  // configured command would likely just hang waiting for interactive
+  // input on a bare positional prompt, so we confirm the binary resolves
+  // and stop there rather than guessing at a flag.
   handle(IPC.AGENT_TEST, async (): Promise<ToolTestResult> => {
     const agent = getAgentConfig(configDb);
     const { bin, args: leadingArgs } = splitCommand(agent.command);
@@ -159,8 +163,12 @@ export function registerAgentHandlers(configDb: ConfigDb, getWindow: () => Brows
     const resolved = await resolveCommandPath(bin);
     if (!resolved) return errResult(bin, `Command not found on PATH: ${bin}`);
 
+    if (!commandSupportsIntegratedMode(agent.command)) {
+      return okResult(resolved, `Found ${resolved}. This command's non-interactive prompt flag isn't known, so a live prompt test wasn't run — only Claude Code supports that right now.`);
+    }
+
     const prompt = 'Reply with only the word OK.';
-    const testArgs = [...leadingArgs, ...agent.args, prompt];
+    const testArgs = [...leadingArgs, ...agent.args, '-p', prompt];
     const resolvedCommand = `${resolved} ${testArgs.join(' ')}`;
 
     return new Promise(resolve => {

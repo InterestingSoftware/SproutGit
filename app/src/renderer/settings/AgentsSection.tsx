@@ -25,6 +25,31 @@ function commandSupportsIntegratedMode(command: string): boolean {
   return token === 'claude' || token === 'claude-code';
 }
 
+/**
+ * Splits a stored command string into a binary + args, honoring a leading
+ * quoted path (e.g. `"C:\Program Files\Claude\claude.exe" --flag`) — mirrors
+ * the main process's splitCommand() in tool-test-helpers.ts (duplicated here
+ * since the renderer can't import main-process code across the IPC
+ * boundary). A naive whitespace split on the whole string would otherwise
+ * break any command path containing spaces, common on Windows.
+ */
+function splitCommand(raw: string): { command: string; args: string[] } {
+  const trimmed = raw.trim();
+  if (!trimmed) return { command: '', args: [] };
+  const quotedMatch = /^"([^"]+)"\s*(.*)$/.exec(trimmed) ?? /^'([^']+)'\s*(.*)$/.exec(trimmed);
+  if (quotedMatch) {
+    const rest = (quotedMatch[2] ?? '').trim();
+    return { command: quotedMatch[1]!, args: rest ? rest.split(/\s+/) : [] };
+  }
+  const parts = trimmed.split(/\s+/);
+  return { command: parts[0]!, args: parts.slice(1) };
+}
+
+/** Quotes `command` if it contains whitespace, so re-parsing it with splitCommand() round-trips correctly. */
+function quoteIfNeeded(command: string): string {
+  return command.includes(' ') ? `"${command}"` : command;
+}
+
 function commandLabel(config: AgentConfig): string {
   if (!config.command.trim()) return '(not set)';
   const preset = AGENT_PRESETS.find(p => p.command === config.command.trim());
@@ -41,7 +66,7 @@ export function AgentsSection({ onToast }: Props) {
   useEffect(() => {
     void api.getAgentConfig().then(c => {
       setConfig(c);
-      setCustomCommand([c.command, ...c.args].filter(Boolean).join(' '));
+      setCustomCommand([quoteIfNeeded(c.command), ...c.args].filter(Boolean).join(' '));
     }).catch(() => undefined).finally(() => setLoading(false));
   }, []);
 
@@ -70,8 +95,7 @@ export function AgentsSection({ onToast }: Props) {
   }
 
   function saveCustomCommand() {
-    const parts = customCommand.trim().split(/\s+/).filter(Boolean);
-    const [command = '', ...args] = parts;
+    const { command, args } = splitCommand(customCommand);
     void persist({ ...config, command, args });
   }
 

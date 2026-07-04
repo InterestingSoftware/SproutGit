@@ -88,14 +88,17 @@ export function CommitMessageGeneratorSection({ onToast }: Props) {
             currentValueLabel={commandLabel(currentSettings())}
             presets={presets}
             onSelectPreset={selectPreset}
-            customValue={[command, ...argsText.split('\n').filter(Boolean)].join(' ')}
+            // Command only -- args (which can contain multi-word prompt text
+            // with internal spaces) are edited exclusively via the one-per-line
+            // textarea below. Joining command+args into one line and
+            // re-splitting on whitespace would silently shred any arg
+            // containing a space, e.g. the preset prompt text itself.
+            customValue={command}
             onCustomValueChange={value => {
-              const [cmd = '', ...rest] = value.trim().split(/\s+/);
               setPresetId('custom');
-              setCommand(cmd);
-              setArgsText(rest.join('\n'));
+              setCommand(value);
             }}
-            customPlaceholder="e.g. claude -p &quot;...&quot;"
+            customPlaceholder="e.g. claude"
             onSaveCustom={() => save()}
             onTest={() => api.testCommitMessageGenerator(currentSettings())}
             onToast={onToast}

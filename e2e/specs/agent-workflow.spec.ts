@@ -171,12 +171,14 @@ describe('agent settings', () => {
     await assertNoErrors();
   });
 
-  it('clicking Test against a working agent command shows a pass result and a success toast', async () => {
-    // The real AGENT_TEST handler spawns the configured command with a real
-    // fixed prompt appended and checks for non-empty stdout, so the
-    // configured command here must actually exit with output (unlike
-    // seedTestAgent()'s idling terminal-launch fixture, which would hang
-    // until AGENT_TEST's 15s timeout and report failure instead).
+  it('clicking Test against a resolvable but unrecognized agent command reports success without spawning a live prompt', async () => {
+    // Only Claude Code's non-interactive prompt flag (-p) is known, so a
+    // command not recognized as Claude Code (e.g. this `node` invocation)
+    // is expected to resolve and stop there, rather than attempting a live
+    // prompt spawn that would hang until AGENT_TEST's 15s timeout on a CLI
+    // whose non-interactive flag isn't known (see AGENT_TEST's unit tests
+    // in app/src/main/ipc/__tests__/agent-test.test.ts for the Claude-Code
+    // path, which needs a real `claude` CLI this e2e environment doesn't have).
     const assertNoErrors = monitorErrors();
     await gotoHash(`/settings?workspace=${encodeURIComponent(testRepo)}`);
 
@@ -192,6 +194,7 @@ describe('agent settings', () => {
     await expect($('[data-testid="agent-row-test-result"]')).toBeDisplayed();
     const resultText = await $('[data-testid="agent-row-test-result"]').getText();
     expect(resultText).toContain('Test passed');
+    expect(resultText).not.toContain('-p');
 
     await assertNoErrors();
   });
