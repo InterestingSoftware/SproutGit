@@ -12,6 +12,7 @@ import { IPC } from '@sproutgit/types';
 import type { FileTreeNode, FileReadResult, FileChangedEvent } from '@sproutgit/types';
 import { promises as fs } from 'node:fs';
 import { join, relative, resolve, sep } from 'node:path';
+import { canonicalize, isPathWithin } from '@sproutgit/paths';
 import { watchRecursive, closeWatcher, type RecursiveWatchEvent } from '../lib/recursive-watch.js';
 import type { FSWatcher } from 'chokidar';
 
@@ -26,6 +27,12 @@ const MAX_TREE_ENTRIES = 20_000;
 /**
  * Resolves `relativePath` against `worktreeRoot` and throws if the result
  * escapes the root. Returns the absolute, resolved path on success.
+ *
+ * Compares canonicalized (realpath'd) paths rather than a plain lexical
+ * `resolve()`, so a symlink that lives inside the root but points outside it
+ * (e.g. `<root>/escape-link -> /etc`) is rejected instead of silently
+ * followed — same approach as the worktree-path checks in ipc/git.ts and
+ * ipc/hooks.ts (see `@sproutgit/paths`).
  */
 function resolveSafePath(worktreeRoot: string, relativePath: string): string {
   const root = resolve(worktreeRoot);
@@ -33,6 +40,11 @@ function resolveSafePath(worktreeRoot: string, relativePath: string): string {
   // from the root rather than trusting an absolute-looking input.
   const candidate = resolve(root, relativePath);
   if (candidate !== root && !candidate.startsWith(root + sep)) {
+    throw new Error(`Path escapes worktree root: ${relativePath}`);
+  }
+  const canonicalRoot = canonicalize(root);
+  const canonicalCandidate = canonicalize(candidate);
+  if (!isPathWithin(canonicalCandidate, canonicalRoot)) {
     throw new Error(`Path escapes worktree root: ${relativePath}`);
   }
   return candidate;
