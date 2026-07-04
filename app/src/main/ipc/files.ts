@@ -10,8 +10,10 @@
 import { ipcMain, type BrowserWindow } from 'electron';
 import { IPC } from '@sproutgit/types';
 import type { FileTreeNode, FileReadResult, FileChangedEvent } from '@sproutgit/types';
-import { promises as fs, watch, type FSWatcher } from 'node:fs';
+import { promises as fs } from 'node:fs';
 import { join, relative, resolve, sep } from 'node:path';
+import { watchRecursive, closeWatcher, type RecursiveWatchEvent } from '../lib/recursive-watch.js';
+import type { FSWatcher } from 'chokidar';
 
 // Directories that are never shown in the tree / never watched, regardless of
 // .gitignore contents — keeps VCS internals and dependency trees out of view.
@@ -163,52 +165,43 @@ async function buildTree(worktreeRoot: string): Promise<FileTreeNode[]> {
 }
 
 // ── Per-worktree external-change watcher ─────────────────────────────────────
-// Recursive fs.watch keyed by worktree root, mirroring the style of
-// ipc/watcher.ts (which watches .git/* for ref changes). This watcher instead
+// Uses the same cross-platform watchRecursive() helper as ipc/watcher.ts
+// (which watches .git/* for ref changes) rather than native
+// fs.watch({recursive: true}), which throws on Linux. This watcher instead
 // covers the working tree's file *content* so open editor tabs can detect
 // external edits (e.g. an AI agent or another tool writing to a file).
 
 const activeFileWatchers = new Map<string, FSWatcher>();
 
+function isAlwaysIgnoredPath(path: string): boolean {
+  return path.split(/[\\/]+/).some(segment => ALWAYS_IGNORED_DIRS.has(segment));
+}
+
 function startFileWatch(worktreePath: string, win: BrowserWindow): void {
   const root = resolve(worktreePath);
   if (activeFileWatchers.has(root)) return;
 
-  try {
-    const watcher = watch(root, { persistent: false, recursive: true }, (eventType, filename) => {
-      if (!filename) return;
-      const relPath = filename.split(sep).join('/');
-      // Ignore anything under always-ignored directories.
-      const firstSegment = relPath.split('/')[0];
-      if (firstSegment && ALWAYS_IGNORED_DIRS.has(firstSegment)) return;
+  const watcher = watchRecursive(
+    root,
+    (event: RecursiveWatchEvent, absolutePath: string) => {
+      if (event === 'addDir' || event === 'unlinkDir') return; // only file content changes matter here
+      if (isAlwaysIgnoredPath(absolutePath)) return;
 
-      const absolutePath = join(root, filename);
-      // fs.watch doesn't tell us created/changed/deleted directly — 'rename'
-      // covers create/delete/rename, 'change' covers content writes. We
-      // disambiguate created vs deleted with a stat check.
-      void fs.stat(absolutePath).then(
-        () => {
-          const type = eventType === 'rename' ? 'created' : 'changed';
-          const event: FileChangedEvent = { worktreePath: root, relativePath: relPath, absolutePath, type };
-          win.webContents.send(IPC.EVENT_FILE_CHANGED, event);
-        },
-        () => {
-          const event: FileChangedEvent = { worktreePath: root, relativePath: relPath, absolutePath, type: 'deleted' };
-          win.webContents.send(IPC.EVENT_FILE_CHANGED, event);
-        },
-      );
-    });
-    activeFileWatchers.set(root, watcher);
-  } catch {
-    /* path may not exist, or recursive watch unsupported on this platform */
-  }
+      const relPath = toRelative(root, absolutePath);
+      const type: FileChangedEvent['type'] = event === 'unlink' ? 'deleted' : event === 'add' ? 'created' : 'changed';
+      const fileEvent: FileChangedEvent = { worktreePath: root, relativePath: relPath, absolutePath, type };
+      win.webContents.send(IPC.EVENT_FILE_CHANGED, fileEvent);
+    },
+    isAlwaysIgnoredPath,
+  );
+  activeFileWatchers.set(root, watcher);
 }
 
 function stopFileWatch(worktreePath: string): void {
   const root = resolve(worktreePath);
   const watcher = activeFileWatchers.get(root);
   if (!watcher) return;
-  try { watcher.close(); } catch { /* ignore */ }
+  closeWatcher(watcher);
   activeFileWatchers.delete(root);
 }
 

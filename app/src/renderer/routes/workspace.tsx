@@ -331,6 +331,12 @@ function WorkspaceInner() {
   // for branch/ref changes) — this one covers the working tree's file
   // *contents* so the file browser refreshes and open editor tabs pick up
   // external edits (e.g. an AI agent or another tool writing to a file).
+  //
+  // It also doubles as a fast path for the Changes tab's status query: any
+  // content change likely means `git status` changed too, so invalidate it
+  // immediately instead of waiting on its 15s poll (kept as a fallback for
+  // changes this watcher can't see, e.g. an index/stash operation from
+  // another tool with no working-tree file write).
   useEffect(() => {
     const worktreePath = activeWorktree?.path;
     if (!worktreePath) return;
@@ -339,6 +345,8 @@ function WorkspaceInner() {
     const offFileChanged = api.onFileChanged((event: FileChangedEvent) => {
       if (event.worktreePath !== worktreePath) return;
       void qc.invalidateQueries({ queryKey: qk.fileTree(worktreePath) });
+      void qc.invalidateQueries({ queryKey: qk.worktreeStatus(worktreePath) });
+      if (gitRepoPath) void qc.invalidateQueries({ queryKey: qk.worktreeChangeCounts(gitRepoPath) });
 
       const key = tabKey(worktreePath, event.relativePath);
       const tab = useEditorStore.getState().tabs[key];
@@ -359,7 +367,7 @@ function WorkspaceInner() {
       void api.stopFileWatching(worktreePath);
       offFileChanged();
     };
-  }, [activeWorktree?.path, qc]);
+  }, [activeWorktree?.path, gitRepoPath, qc]);
 
   // ── Refresh worktrees when the window regains focus ───────────────────
   // Catches worktrees an external tool (e.g. Claude Code) registered while

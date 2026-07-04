@@ -136,6 +136,7 @@
     "@sproutgit/ui": "workspace:*",
     "@tanstack/react-query": "^5.101.2",
     "@tanstack/react-router": "^1.170.16",
+    "chokidar": "^4.0.3",
     "electron-log": "^5.4.4",
     "electron-updater": "^6.8.9",
     "highlight.js": "^11.11.1",
