@@ -36,12 +36,15 @@ import type {
   RecentWorkspace,
   CreateWorktreeResult,
   WorktreeSwitchHookSource,
-  AgentRoster,
+  AgentConfig,
   AgentTerminalLaunchEvent,
   CommitMessageGeneratorSettings,
   CommitMessageGenerateResult,
   IssueTrackerPattern,
   ProviderIssue,
+  ToolTestResult,
+  ChatSessionEvent,
+  ChatSessionExitEvent,
 } from '@sproutgit/types';
 
 /**
@@ -374,23 +377,47 @@ const api = {
   },
 
   // ── Coding agents ─────────────────────────────────────────────────────────
-  listAgents: (): Promise<AgentRoster> =>
-    invoke(IPC.AGENT_LIST),
+  getAgentConfig: (): Promise<AgentConfig> =>
+    invoke(IPC.AGENT_GET),
 
-  saveAgents: (roster: AgentRoster): Promise<void> =>
-    invoke(IPC.AGENT_SAVE, roster),
+  saveAgentConfig: (config: AgentConfig): Promise<void> =>
+    invoke(IPC.AGENT_SAVE, config),
 
   launchAgent: (args: {
     workspacePath: string;
     worktreePath: string;
-    agentId?: string;
   }): Promise<string> =>
     invoke(IPC.AGENT_LAUNCH, args),
+
+  testAgent: (): Promise<ToolTestResult> =>
+    invoke(IPC.AGENT_TEST),
 
   onAgentTerminalLaunch: (callback: (event: AgentTerminalLaunchEvent) => void) => {
     const handler = (_e: Electron.IpcRendererEvent, payload: AgentTerminalLaunchEvent) => callback(payload);
     ipcRenderer.on(IPC.EVENT_AGENT_TERMINAL_LAUNCH, handler);
     return () => ipcRenderer.off(IPC.EVENT_AGENT_TERMINAL_LAUNCH, handler);
+  },
+
+  // ── Chat (Integrated agent mode) ─────────────────────────────────────────
+  chatStart: (args: { worktreePath: string; prompt: string }): Promise<string> =>
+    invoke(IPC.CHAT_START, args),
+
+  chatSend: (args: { sessionId: string; prompt: string }): Promise<void> =>
+    invoke(IPC.CHAT_SEND, args),
+
+  chatStop: (sessionId: string): Promise<void> =>
+    invoke(IPC.CHAT_STOP, sessionId),
+
+  onChatStream: (callback: (event: ChatSessionEvent) => void) => {
+    const handler = (_e: Electron.IpcRendererEvent, payload: ChatSessionEvent) => callback(payload);
+    ipcRenderer.on(IPC.EVENT_CHAT_STREAM, handler);
+    return () => ipcRenderer.off(IPC.EVENT_CHAT_STREAM, handler);
+  },
+
+  onChatExit: (callback: (event: ChatSessionExitEvent) => void) => {
+    const handler = (_e: Electron.IpcRendererEvent, payload: ChatSessionExitEvent) => callback(payload);
+    ipcRenderer.on(IPC.EVENT_CHAT_EXIT, handler);
+    return () => ipcRenderer.off(IPC.EVENT_CHAT_EXIT, handler);
   },
 
   // ── Commit message generator ──────────────────────────────────────────────
@@ -400,6 +427,22 @@ const api = {
     settings: CommitMessageGeneratorSettings;
   }): Promise<CommitMessageGenerateResult> =>
     invoke(IPC.COMMITMSG_GENERATE, args),
+
+  // ── Settings tool tests ───────────────────────────────────────────────────
+  testEditor: (command: string): Promise<ToolTestResult> =>
+    invoke(IPC.TOOLTEST_EDITOR, command),
+
+  testDiffTool: (command: string): Promise<ToolTestResult> =>
+    invoke(IPC.TOOLTEST_DIFF_TOOL, command),
+
+  testMergeTool: (command: string): Promise<ToolTestResult> =>
+    invoke(IPC.TOOLTEST_MERGE_TOOL, command),
+
+  testShell: (shellPath: string): Promise<ToolTestResult> =>
+    invoke(IPC.TOOLTEST_SHELL, shellPath),
+
+  testCommitMessageGenerator: (settings: CommitMessageGeneratorSettings): Promise<ToolTestResult> =>
+    invoke(IPC.TOOLTEST_COMMIT_MESSAGE_GENERATOR, settings),
 
   // ── File watcher ──────────────────────────────────────────────────────────
   startWatching: (repoPath: string): Promise<void> =>

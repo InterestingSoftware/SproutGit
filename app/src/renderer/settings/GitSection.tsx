@@ -8,6 +8,7 @@ import type {
   GitToolInfo,
 } from '@sproutgit/types';
 import { Spinner, type ToastData } from '@sproutgit/ui';
+import { SettingsToolRow } from './SettingsToolRow.js';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -96,9 +97,6 @@ export function GitSection({ onToast, githubAuth }: Props) {
   const [githubEmailsLoading, setGithubEmailsLoading] = useState(false);
 
   const [editingAuthor, setEditingAuthor] = useState(false);
-  const [editingEditor, setEditingEditor] = useState(false);
-  const [editingDiffTool, setEditingDiffTool] = useState(false);
-  const [editingMergeTool, setEditingMergeTool] = useState(false);
 
   // Load git config and tools on mount
   useEffect(() => {
@@ -166,6 +164,26 @@ export function GitSection({ onToast, githubAuth }: Props) {
     return fallbackDisplay(currentMergeTool);
   })();
 
+  // ── Test command resolution ─────────────────────────────────────────
+  // `diff.tool`/`merge.tool` in git config is just a tool id (e.g. "vscode")
+  // for detected presets — the actual invocable command lives in
+  // `difftool.<id>.cmd` / `mergetool.<id>.cmd`. A custom (non-preset) value
+  // is already a full command and is used as-is.
+
+  async function resolveDiffToolTestCommand(): Promise<string> {
+    const value = currentDiffTool.trim();
+    if (!value) return '';
+    const cmd = await api.getGitConfig(`difftool.${value}.cmd`);
+    return cmd?.trim() || value;
+  }
+
+  async function resolveMergeToolTestCommand(): Promise<string> {
+    const value = currentMergeTool.trim();
+    if (!value) return '';
+    const cmd = await api.getGitConfig(`mergetool.${value}.cmd`);
+    return cmd?.trim() || value;
+  }
+
   // ── Actions ───────────────────────────────────────────────────────────
 
   async function saveGitIdentity() {
@@ -212,7 +230,6 @@ export function GitSection({ onToast, githubAuth }: Props) {
       await api.setGitConfig('core.editor', cmd);
       setCurrentEditor(cmd);
       setCustomEditor('');
-      setEditingEditor(false);
       onToast(`Editor set to ${editor.name}`, 'success');
     } catch (err) {
       onToast(String(err), 'error');
@@ -224,7 +241,6 @@ export function GitSection({ onToast, githubAuth }: Props) {
       const value = customEditor.trim();
       await api.setGitConfig('core.editor', value);
       setCurrentEditor(value);
-      setEditingEditor(false);
       onToast(value ? `Editor set to "${value}"` : 'Editor config cleared', 'success');
     } catch (err) {
       onToast(String(err), 'error');
@@ -238,7 +254,6 @@ export function GitSection({ onToast, githubAuth }: Props) {
       if (cmd) await api.setGitConfig(`difftool.${tool.id}.cmd`, cmd);
       setCurrentDiffTool(tool.id);
       setCustomDiffTool('');
-      setEditingDiffTool(false);
       onToast(`Diff tool set to ${tool.name}`, 'success');
     } catch (err) {
       onToast(String(err), 'error');
@@ -249,7 +264,6 @@ export function GitSection({ onToast, githubAuth }: Props) {
     try {
       await api.setGitConfig('diff.tool', customDiffTool.trim());
       setCurrentDiffTool(customDiffTool.trim());
-      setEditingDiffTool(false);
     } catch (err) {
       onToast(String(err), 'error');
     }
@@ -262,7 +276,6 @@ export function GitSection({ onToast, githubAuth }: Props) {
       if (cmd) await api.setGitConfig(`mergetool.${tool.id}.cmd`, cmd);
       setCurrentMergeTool(tool.id);
       setCustomMergeTool('');
-      setEditingMergeTool(false);
       onToast(`Merge tool set to ${tool.name}`, 'success');
     } catch (err) {
       onToast(String(err), 'error');
@@ -273,7 +286,6 @@ export function GitSection({ onToast, githubAuth }: Props) {
     try {
       await api.setGitConfig('merge.tool', customMergeTool.trim());
       setCurrentMergeTool(customMergeTool.trim());
-      setEditingMergeTool(false);
     } catch (err) {
       onToast(String(err), 'error');
     }
@@ -365,153 +377,66 @@ export function GitSection({ onToast, githubAuth }: Props) {
           </div>
 
           {/* Editor */}
-          <div className="px-5 py-4">
-            <div className="flex items-start justify-between">
-              <div className="flex gap-2.5">
-                <div className="mt-0.5 shrink-0 text-(--sg-text-faint)"><Code2 size={13} /></div>
-                <div>
-                  <p className="sg-heading text-xs font-semibold text-(--sg-text)">Editor</p>
-                  <p className="text-[11px] text-(--sg-text-faint)">{editorDisplay?.name ?? '(not set)'}</p>
-                </div>
-              </div>
-              <button
-                className="inline-flex items-center gap-1 rounded border border-(--sg-border) px-2.5 py-1 text-xs text-(--sg-text-dim)"
-                onClick={() => setEditingEditor(v => !v)}
-              >
-                {editingEditor ? 'Done' : <><Pencil size={12} /> Edit</>}
-              </button>
-            </div>
-            {editingEditor && (
-              <div className="mt-3 space-y-2 border-t border-(--sg-border) pt-3">
-                <div className="flex flex-wrap gap-2">
-                  {installedEditors.map(editor => (
-                    <button
-                      key={editor.id}
-                      className={`rounded border px-3 py-1.5 text-xs ${currentEditor && matchesEditor(editor, currentEditor) ? 'border-(--sg-primary) text-(--sg-primary)' : 'border-(--sg-border) text-(--sg-text-dim)'}`}
-                      onClick={() => void selectEditor(editor)}
-                    >
-                      {editor.name}
-                    </button>
-                  ))}
-                </div>
-                <div className="flex gap-2">
-                  <input
-                    value={customEditor}
-                    onChange={e => setCustomEditor(e.target.value)}
-                    className="min-w-0 flex-1 rounded border border-(--sg-input-border) bg-(--sg-input-bg) px-2.5 py-1.5 font-mono text-xs text-(--sg-text)"
-                    placeholder="Custom core.editor"
-                  />
-                  <button
-                    className="rounded border border-(--sg-border) px-3 py-1.5 text-xs text-(--sg-text)"
-                    onClick={() => void saveCustomEditor()}
-                  >
-                    Save
-                  </button>
-                </div>
-                {unavailableEditors.length > 0 && (
-                  <p className="text-[11px] text-(--sg-text-faint)">
-                    Not found: {unavailableEditors.map(e => e.name).join(', ')}
-                  </p>
-                )}
-              </div>
-            )}
-          </div>
+          <SettingsToolRow
+            testId="editor-row"
+            icon={<Code2 size={13} />}
+            title="Editor"
+            currentValueLabel={editorDisplay?.name ?? '(not set)'}
+            presets={installedEditors.map(e => ({ id: e.id, name: e.name, active: !!currentEditor && matchesEditor(e, currentEditor) }))}
+            onSelectPreset={id => {
+              const editor = installedEditors.find(e => e.id === id);
+              if (editor) void selectEditor(editor);
+            }}
+            customValue={customEditor}
+            onCustomValueChange={setCustomEditor}
+            customPlaceholder="Custom core.editor"
+            onSaveCustom={saveCustomEditor}
+            onTest={() => api.testEditor(currentEditor)}
+            onToast={onToast}
+            editExtra={unavailableEditors.length > 0 ? (
+              <p className="text-[11px] text-(--sg-text-faint)">
+                Not found: {unavailableEditors.map(e => e.name).join(', ')}
+              </p>
+            ) : undefined}
+          />
 
           {/* Diff tool */}
-          <div className="px-5 py-4">
-            <div className="flex items-start justify-between">
-              <div className="flex gap-2.5">
-                <div className="mt-0.5 shrink-0 text-(--sg-text-faint)"><Diff size={13} /></div>
-                <div>
-                  <p className="sg-heading text-xs font-semibold text-(--sg-text)">Diff Tool</p>
-                  <p className="text-[11px] text-(--sg-text-faint)">{diffToolDisplay?.name ?? '(not set)'}</p>
-                </div>
-              </div>
-              <button
-                className="inline-flex items-center gap-1 rounded border border-(--sg-border) px-2.5 py-1 text-xs text-(--sg-text-dim)"
-                onClick={() => setEditingDiffTool(v => !v)}
-              >
-                {editingDiffTool ? 'Done' : <><Pencil size={12} /> Edit</>}
-              </button>
-            </div>
-            {editingDiffTool && (
-              <div className="mt-3 space-y-2 border-t border-(--sg-border) pt-3">
-                <div className="flex flex-wrap gap-2">
-                  {installedDiffTools.map(tool => (
-                    <button
-                      key={tool.id}
-                      className={`rounded border px-3 py-1.5 text-xs ${currentDiffTool === tool.id ? 'border-(--sg-primary) text-(--sg-primary)' : 'border-(--sg-border) text-(--sg-text-dim)'}`}
-                      onClick={() => void applyDetectedDiffTool(tool)}
-                    >
-                      {tool.name}
-                    </button>
-                  ))}
-                </div>
-                <div className="flex gap-2">
-                  <input
-                    value={customDiffTool}
-                    onChange={e => setCustomDiffTool(e.target.value)}
-                    className="min-w-0 flex-1 rounded border border-(--sg-input-border) bg-(--sg-input-bg) px-2.5 py-1.5 font-mono text-xs text-(--sg-text)"
-                    placeholder="Custom diff.tool"
-                  />
-                  <button
-                    className="rounded border border-(--sg-border) px-3 py-1.5 text-xs text-(--sg-text)"
-                    onClick={() => void saveCustomDiffTool()}
-                  >
-                    Save
-                  </button>
-                </div>
-              </div>
-            )}
-          </div>
+          <SettingsToolRow
+            testId="diff-tool-row"
+            icon={<Diff size={13} />}
+            title="Diff Tool"
+            currentValueLabel={diffToolDisplay?.name ?? '(not set)'}
+            presets={installedDiffTools.map(t => ({ id: t.id, name: t.name, active: currentDiffTool === t.id }))}
+            onSelectPreset={id => {
+              const tool = installedDiffTools.find(t => t.id === id);
+              if (tool) void applyDetectedDiffTool(tool);
+            }}
+            customValue={customDiffTool}
+            onCustomValueChange={setCustomDiffTool}
+            customPlaceholder="Custom diff.tool"
+            onSaveCustom={saveCustomDiffTool}
+            onTest={async () => api.testDiffTool(await resolveDiffToolTestCommand())}
+            onToast={onToast}
+          />
 
           {/* Merge tool */}
-          <div className="px-5 py-4">
-            <div className="flex items-start justify-between">
-              <div className="flex gap-2.5">
-                <div className="mt-0.5 shrink-0 text-(--sg-text-faint)"><GitMerge size={13} /></div>
-                <div>
-                  <p className="sg-heading text-xs font-semibold text-(--sg-text)">Merge Tool</p>
-                  <p className="text-[11px] text-(--sg-text-faint)">{mergeToolDisplay?.name ?? '(not set)'}</p>
-                </div>
-              </div>
-              <button
-                className="inline-flex items-center gap-1 rounded border border-(--sg-border) px-2.5 py-1 text-xs text-(--sg-text-dim)"
-                onClick={() => setEditingMergeTool(v => !v)}
-              >
-                {editingMergeTool ? 'Done' : <><Pencil size={12} /> Edit</>}
-              </button>
-            </div>
-            {editingMergeTool && (
-              <div className="mt-3 space-y-2 border-t border-(--sg-border) pt-3">
-                <div className="flex flex-wrap gap-2">
-                  {installedMergeTools.map(tool => (
-                    <button
-                      key={tool.id}
-                      className={`rounded border px-3 py-1.5 text-xs ${currentMergeTool === tool.id ? 'border-(--sg-primary) text-(--sg-primary)' : 'border-(--sg-border) text-(--sg-text-dim)'}`}
-                      onClick={() => void applyDetectedMergeTool(tool)}
-                    >
-                      {tool.name}
-                    </button>
-                  ))}
-                </div>
-                <div className="flex gap-2">
-                  <input
-                    value={customMergeTool}
-                    onChange={e => setCustomMergeTool(e.target.value)}
-                    className="min-w-0 flex-1 rounded border border-(--sg-input-border) bg-(--sg-input-bg) px-2.5 py-1.5 font-mono text-xs text-(--sg-text)"
-                    placeholder="Custom merge.tool"
-                  />
-                  <button
-                    className="rounded border border-(--sg-border) px-3 py-1.5 text-xs text-(--sg-text)"
-                    onClick={() => void saveCustomMergeTool()}
-                  >
-                    Save
-                  </button>
-                </div>
-              </div>
-            )}
-          </div>
+          <SettingsToolRow
+            testId="merge-tool-row"
+            icon={<GitMerge size={13} />}
+            title="Merge Tool"
+            currentValueLabel={mergeToolDisplay?.name ?? '(not set)'}
+            presets={installedMergeTools.map(t => ({ id: t.id, name: t.name, active: currentMergeTool === t.id }))}
+            onSelectPreset={id => {
+              const tool = installedMergeTools.find(t => t.id === id);
+              if (tool) void applyDetectedMergeTool(tool);
+            }}
+            customValue={customMergeTool}
+            onCustomValueChange={setCustomMergeTool}
+            customPlaceholder="Custom merge.tool"
+            onSaveCustom={saveCustomMergeTool}
+            onTest={async () => api.testMergeTool(await resolveMergeToolTestCommand())}
+            onToast={onToast}
+          />
         </div>
       )}
     </section>

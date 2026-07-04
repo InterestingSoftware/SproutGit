@@ -1,11 +1,19 @@
 import { Sparkles } from 'lucide-react';
+import { api } from '../api.js';
 import { useEffect, useState } from 'react';
 import { COMMIT_MESSAGE_GENERATOR_PRESETS, type CommitMessageGeneratorSettings } from '@sproutgit/types';
 import { Spinner, type ToastData } from '@sproutgit/ui';
 import { loadCommitMessageGeneratorSettings, saveCommitMessageGeneratorSettings } from '../commit-message-generator-settings.js';
+import { SettingsToolRow, type ToolPreset } from './SettingsToolRow.js';
 
 interface Props {
   onToast: (msg: string, variant?: ToastData['variant']) => void;
+}
+
+function commandLabel(settings: CommitMessageGeneratorSettings): string {
+  if (!settings.command.trim()) return '(not set)';
+  const preset = COMMIT_MESSAGE_GENERATOR_PRESETS.find(p => p.id === settings.presetId);
+  return preset && preset.id !== 'custom' ? preset.name : settings.command;
 }
 
 export function CommitMessageGeneratorSection({ onToast }: Props) {
@@ -24,20 +32,24 @@ export function CommitMessageGeneratorSection({ onToast }: Props) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  function currentSettings(): CommitMessageGeneratorSettings {
+    return {
+      presetId,
+      command: command.trim(),
+      args: argsText.split('\n').map(a => a.trim()).filter(Boolean),
+    };
+  }
+
   function selectPreset(id: string) {
     const preset = COMMIT_MESSAGE_GENERATOR_PRESETS.find(p => p.id === id);
     if (!preset) return;
     setPresetId(preset.id);
     setCommand(preset.command);
     setArgsText(preset.args.join('\n'));
+    void save({ presetId: preset.id, command: preset.command, args: preset.args });
   }
 
-  async function save() {
-    const settings: CommitMessageGeneratorSettings = {
-      presetId,
-      command: command.trim(),
-      args: argsText.split('\n').map(a => a.trim()).filter(Boolean),
-    };
+  async function save(settings: CommitMessageGeneratorSettings = currentSettings()) {
     try {
       await saveCommitMessageGeneratorSettings(settings);
       onToast('Commit message generator saved', 'success');
@@ -45,6 +57,12 @@ export function CommitMessageGeneratorSection({ onToast }: Props) {
       onToast(String(err), 'error');
     }
   }
+
+  const presets: ToolPreset[] = COMMIT_MESSAGE_GENERATOR_PRESETS.map(p => ({
+    id: p.id,
+    name: p.name,
+    active: presetId === p.id,
+  }));
 
   return (
     <section className="rounded-lg border border-(--sg-border) bg-(--sg-surface)">
@@ -62,48 +80,50 @@ export function CommitMessageGeneratorSection({ onToast }: Props) {
           <Spinner size="sm" /> Loading...
         </div>
       ) : (
-        <div className="px-5 py-4 space-y-3">
-          <div className="flex flex-wrap gap-2">
-            {COMMIT_MESSAGE_GENERATOR_PRESETS.map(preset => (
-              <button
-                key={preset.id}
-                className={`rounded border px-3 py-1.5 text-xs ${presetId === preset.id ? 'border-(--sg-primary) text-(--sg-primary)' : 'border-(--sg-border) text-(--sg-text-dim)'}`}
-                onClick={() => selectPreset(preset.id)}
-              >
-                {preset.name}
-              </button>
-            ))}
-          </div>
+        <>
+          <SettingsToolRow
+            testId="commitmsg-row"
+            icon={<Sparkles size={13} />}
+            title="Generator Command"
+            currentValueLabel={commandLabel(currentSettings())}
+            presets={presets}
+            onSelectPreset={selectPreset}
+            // Command only -- args (which can contain multi-word prompt text
+            // with internal spaces) are edited exclusively via the one-per-line
+            // textarea below. Joining command+args into one line and
+            // re-splitting on whitespace would silently shred any arg
+            // containing a space, e.g. the preset prompt text itself.
+            customValue={command}
+            onCustomValueChange={value => {
+              setPresetId('custom');
+              setCommand(value);
+            }}
+            customPlaceholder="e.g. claude"
+            onSaveCustom={() => save()}
+            onTest={() => api.testCommitMessageGenerator(currentSettings())}
+            onToast={onToast}
+            editExtra={
+              <div className="space-y-1">
+                <label className="text-[11px] font-medium text-(--sg-text-faint)">Arguments (one per line, for fine control)</label>
+                <textarea
+                  value={argsText}
+                  onChange={e => setArgsText(e.target.value)}
+                  rows={4}
+                  className="w-full resize-none rounded border border-(--sg-input-border) bg-(--sg-input-bg) px-2.5 py-1.5 font-mono text-xs text-(--sg-text)"
+                  placeholder={'-p\nWrite a commit message for this staged diff...'}
+                />
+                <button
+                  type="button"
+                  className="rounded border border-(--sg-border) px-3 py-1.5 text-xs text-(--sg-text) cursor-pointer bg-transparent"
+                  onClick={() => void save()}
+                >
+                  Save Arguments
+                </button>
+              </div>
+            }
+          />
 
-          <div className="space-y-1">
-            <label className="text-[11px] font-medium text-(--sg-text-faint)">Command</label>
-            <input
-              value={command}
-              onChange={e => setCommand(e.target.value)}
-              className="w-full rounded border border-(--sg-input-border) bg-(--sg-input-bg) px-2.5 py-1.5 font-mono text-xs text-(--sg-text)"
-              placeholder="e.g. claude"
-            />
-          </div>
-
-          <div className="space-y-1">
-            <label className="text-[11px] font-medium text-(--sg-text-faint)">Arguments (one per line)</label>
-            <textarea
-              value={argsText}
-              onChange={e => setArgsText(e.target.value)}
-              rows={4}
-              className="w-full resize-none rounded border border-(--sg-input-border) bg-(--sg-input-bg) px-2.5 py-1.5 font-mono text-xs text-(--sg-text)"
-              placeholder={'-p\nWrite a commit message for this staged diff...'}
-            />
-          </div>
-
-          <button
-            className="rounded border border-(--sg-border) px-3 py-1.5 text-xs text-(--sg-text)"
-            onClick={() => void save()}
-          >
-            Save
-          </button>
-
-          <div className="border-t border-(--sg-border) pt-3 text-[11px] text-(--sg-text-faint) space-y-1">
+          <div className="border-t border-(--sg-border) px-5 py-3 text-[11px] text-(--sg-text-faint) space-y-1">
             <p className="font-semibold text-(--sg-text-dim)">How it runs</p>
             <p>The staged diff is written to the command&apos;s stdin. The command must print the commit message (subject + optional body) to stdout — a non-zero exit code or empty stdout is treated as a failure.</p>
             <p>
@@ -113,7 +133,7 @@ export function CommitMessageGeneratorSection({ onToast }: Props) {
               argument as <code>$SPROUTGIT_RECENT_COMMITS</code>; SproutGit substitutes the value directly (no shell is involved).
             </p>
           </div>
-        </div>
+        </>
       )}
     </section>
   );

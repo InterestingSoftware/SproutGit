@@ -1,42 +1,30 @@
 import { gotoHash, goHome, createTestRepo, closeAndCleanup, monitorErrors, waitForToast } from '../helpers.js';
 
 /**
- * Deterministic, cross-platform test agents. `sh`/`bash` aren't guaranteed on
+ * A deterministic, cross-platform test agent. `sh`/`bash` aren't guaranteed on
  * the Windows E2E runner, so the agent command is `node` — every platform's
  * CI job runs `actions/setup-node` before the E2E step, and passing the
  * script via `-e` means there's no shell involved to quote/escape for
  * (the whole string is one argv entry, spawned directly by node-pty).
- * The default agent prints SPROUTGIT_AGENT so the test can prove env
- * injection worked, then idles so the terminal tab / badge stay alive long
- * enough to assert on; each test explicitly kills its sessions afterwards
- * (see afterEach below) instead of relying on a fixed sleep duration.
+ * The agent prints SPROUTGIT_AGENT so the test can prove env injection
+ * worked, then idles so the terminal tab / badge stay alive long enough to
+ * assert on; each test explicitly kills its sessions afterwards (see
+ * afterEach below) instead of relying on a fixed sleep duration.
  */
-const TEST_AGENTS = {
-  agents: [
-    {
-      id: 'test-default-agent',
-      name: 'Test Default Agent',
-      command: 'node',
-      args: ['-e', "console.log('AGENT=' + process.env.SPROUTGIT_AGENT); setInterval(() => {}, 1000);"],
-    },
-    {
-      id: 'test-alt-agent',
-      name: 'Test Alt Agent',
-      command: 'node',
-      args: ['-e', 'setInterval(() => {}, 1000);'],
-    },
-  ],
-  defaultAgentId: 'test-default-agent',
+const TEST_AGENT_CONFIG = {
+  command: 'node',
+  args: ['-e', "console.log('AGENT=' + process.env.SPROUTGIT_AGENT); setInterval(() => {}, 1000);"],
+  mode: 'terminal' as const,
 };
 
-async function seedTestAgents(): Promise<void> {
+async function seedTestAgent(): Promise<void> {
   await browser.executeAsync(
-    (roster: unknown, done: (err?: string) => void) => {
-      (window as unknown as { api: { saveAgents: (r: unknown) => Promise<void> } })
-        .api.saveAgents(roster)
+    (config: unknown, done: (err?: string) => void) => {
+      (window as unknown as { api: { saveAgentConfig: (c: unknown) => Promise<void> } })
+        .api.saveAgentConfig(config)
         .then(() => done(), (e: unknown) => done(String(e)));
     },
-    TEST_AGENTS
+    TEST_AGENT_CONFIG
   );
 }
 
@@ -54,7 +42,7 @@ describe('agent launch workflow', () => {
 
   beforeEach(async () => {
     testRepo = createTestRepo('agent-launch');
-    await seedTestAgents();
+    await seedTestAgent();
   });
 
   afterEach(async () => {
@@ -62,7 +50,7 @@ describe('agent launch workflow', () => {
     await closeAndCleanup(testRepo);
   });
 
-  it('launches the default agent as a labeled terminal tab with a live badge', async () => {
+  it('launches the configured agent as a labeled terminal tab with a live badge', async () => {
     const assertNoErrors = monitorErrors();
     await gotoHash(`/workspace?path=${encodeURIComponent(testRepo)}`);
 
@@ -70,7 +58,7 @@ describe('agent launch workflow', () => {
     await $('[data-testid="btn-launch-agent"]').click();
 
     await expect(
-      $('[data-testid="terminal-session-tab"][data-session-label="Test Default Agent"]')
+      $('[data-testid="terminal-session-tab"][data-session-label="AI Agent"]')
     ).toBeDisplayed();
     await expect($('[data-testid="agent-badge"]')).toBeDisplayed();
 
@@ -83,7 +71,7 @@ describe('agent launch workflow', () => {
 
     await $('[data-testid="btn-launch-agent"]').click();
     await expect(
-      $('[data-testid="terminal-session-tab"][data-session-label="Test Default Agent"]')
+      $('[data-testid="terminal-session-tab"][data-session-label="AI Agent"]')
     ).toBeDisplayed();
 
     // Give the PTY a moment to run `echo` and flush its output to xterm's buffer.
@@ -103,26 +91,7 @@ describe('agent launch workflow', () => {
       }
       return lines.join('\n');
     });
-    expect(rendered).toContain('AGENT=test-default-agent');
-
-    await assertNoErrors();
-  });
-
-  it('launches a non-default agent via the picker menu', async () => {
-    const assertNoErrors = monitorErrors();
-    await gotoHash(`/workspace?path=${encodeURIComponent(testRepo)}`);
-
-    await expect($('[data-testid="btn-launch-agent-picker"]')).toBeDisplayed();
-    await $('[data-testid="btn-launch-agent-picker"]').click();
-
-    await expect($('[data-testid="context-menu"]')).toBeDisplayed();
-    await $('[data-testid="context-menu"]')
-      .$('.//button[contains(.,"Test Alt Agent")]')
-      .click();
-
-    await expect(
-      $('[data-testid="terminal-session-tab"][data-session-label="Test Alt Agent"]')
-    ).toBeDisplayed();
+    expect(rendered).toContain('AGENT=agent');
 
     await assertNoErrors();
   });
@@ -134,7 +103,7 @@ describe('agent launch workflow', () => {
     await $('[data-testid="btn-launch-agent"]').click();
     await expect($('[data-testid="agent-badge"]')).toBeDisplayed();
 
-    await $('//button[@title="Close Test Default Agent"]').click();
+    await $('//button[@title="Close AI Agent"]').click();
 
     await expect($('[data-testid="agent-badge"]')).not.toBeDisplayed();
     await assertNoErrors();
@@ -146,51 +115,34 @@ describe('agent settings', () => {
 
   beforeEach(async () => {
     testRepo = createTestRepo('agent-settings');
-    await seedTestAgents();
+    await seedTestAgent();
   });
 
   afterEach(async () => {
     await closeAndCleanup(testRepo);
   });
 
-  it('lists the configured agents with the default marked', async () => {
+  it('shows the configured agent command in the single agent row', async () => {
     const assertNoErrors = monitorErrors();
     await gotoHash(`/settings?workspace=${encodeURIComponent(testRepo)}`);
 
     await expect($('[data-testid="agents-section"]')).toBeDisplayed();
-    const rows = await $$('[data-testid="agent-row"]');
-    expect(rows.length).toBe(2);
+    await expect($('[data-testid="agent-row"]')).toBeDisplayed();
 
-    const names = await $$('[data-testid="input-agent-name"]');
-    expect(await names[0]?.getValue()).toBe('Test Default Agent');
-    expect(await names[1]?.getValue()).toBe('Test Alt Agent');
-
-    const stars = await $$('[data-testid="btn-set-default-agent"]');
-    expect(await stars[0]?.getAttribute('title')).toBe('Default agent');
-    expect(await stars[1]?.getAttribute('title')).toBe('Set as default');
+    // Terminal mode is the only option for a non-Claude-Code command.
+    await expect($('[data-testid="btn-agent-mode-integrated"]')).toBeDisabled();
 
     await assertNoErrors();
   });
 
-  it('adds a custom agent, saves it, and persists it across a reload', async () => {
+  it('edits the agent command, saves it, and persists it across a reload', async () => {
     const assertNoErrors = monitorErrors();
     await gotoHash(`/settings?workspace=${encodeURIComponent(testRepo)}`);
 
-    await $('[data-testid="btn-add-agent"]').click();
-    let names = await $$('[data-testid="input-agent-name"]');
-    expect(names.length).toBe(3);
-
-    await names[2]?.setValue('My Custom Agent');
-    const commands = await $$('[data-testid="input-agent-command"]');
-    await commands[2]?.setValue('my-custom-cli');
-    const argsInputs = await $$('[data-testid="input-agent-args"]');
-    await argsInputs[2]?.setValue('--flag value');
-
-    // Make the new agent the default.
-    const stars = await $$('[data-testid="btn-set-default-agent"]');
-    await stars[2]?.click();
-
-    await $('[data-testid="btn-save-agents"]').click();
+    await $('[data-testid="agent-row-btn-edit"]').click();
+    const input = $('[data-testid="agent-row-input-custom"]');
+    await input.setValue('my-custom-cli --flag');
+    await $('[data-testid="agent-row-btn-save"]').click();
     await waitForToast('success');
 
     // Force a remount so the settings page re-fetches from the config DB,
@@ -198,33 +150,70 @@ describe('agent settings', () => {
     await goHome();
     await gotoHash(`/settings?workspace=${encodeURIComponent(testRepo)}`);
 
-    names = await $$('[data-testid="input-agent-name"]');
-    expect(names.length).toBe(3);
-    expect(await names[2]?.getValue()).toBe('My Custom Agent');
-
-    const persistedCommands = await $$('[data-testid="input-agent-command"]');
-    expect(await persistedCommands[2]?.getValue()).toBe('my-custom-cli');
-
-    const persistedStars = await $$('[data-testid="btn-set-default-agent"]');
-    expect(await persistedStars[2]?.getAttribute('title')).toBe('Default agent');
+    const rowText = await $('[data-testid="agent-row"]').getText();
+    expect(rowText).toContain('my-custom-cli');
 
     await assertNoErrors();
   });
 
-  it('removes an agent from the roster', async () => {
+  it('enables Integrated mode only when the command is recognized as Claude Code', async () => {
     const assertNoErrors = monitorErrors();
     await gotoHash(`/settings?workspace=${encodeURIComponent(testRepo)}`);
 
-    const removeButtons = await $$('[data-testid="btn-remove-agent"]');
-    await removeButtons[1]?.click();
-
-    const names = await $$('[data-testid="input-agent-name"]');
-    expect(names.length).toBe(1);
-    expect(await names[0]?.getValue()).toBe('Test Default Agent');
-
-    await $('[data-testid="btn-save-agents"]').click();
+    await $('[data-testid="agent-row-btn-edit"]').click();
+    const input = $('[data-testid="agent-row-input-custom"]');
+    await input.setValue('claude');
+    await $('[data-testid="agent-row-btn-save"]').click();
     await waitForToast('success');
 
+    await expect($('[data-testid="btn-agent-mode-integrated"]')).not.toBeDisabled();
+
     await assertNoErrors();
+  });
+
+  it('clicking Test against a resolvable but unrecognized agent command reports success without spawning a live prompt', async () => {
+    // Only Claude Code's non-interactive prompt flag (-p) is known, so a
+    // command not recognized as Claude Code (e.g. this `node` invocation)
+    // is expected to resolve and stop there, rather than attempting a live
+    // prompt spawn that would hang until AGENT_TEST's 15s timeout on a CLI
+    // whose non-interactive flag isn't known (see AGENT_TEST's unit tests
+    // in app/src/main/ipc/__tests__/agent-test.test.ts for the Claude-Code
+    // path, which needs a real `claude` CLI this e2e environment doesn't have).
+    const assertNoErrors = monitorErrors();
+    await gotoHash(`/settings?workspace=${encodeURIComponent(testRepo)}`);
+
+    await $('[data-testid="agent-row-btn-edit"]').click();
+    const input = $('[data-testid="agent-row-input-custom"]');
+    await input.setValue("node -e process.stdout.write('OK');process.exit(0)");
+    await $('[data-testid="agent-row-btn-save"]').click();
+    await waitForToast('success');
+
+    await $('[data-testid="agent-row-btn-test"]').click();
+    await waitForToast('success');
+
+    await expect($('[data-testid="agent-row-test-result"]')).toBeDisplayed();
+    const resultText = await $('[data-testid="agent-row-test-result"]').getText();
+    expect(resultText).toContain('Test passed');
+    expect(resultText).not.toContain('-p');
+
+    await assertNoErrors();
+  });
+
+  it('clicking Test against an unresolvable agent command shows a fail result and an error toast', async () => {
+    await gotoHash(`/settings?workspace=${encodeURIComponent(testRepo)}`);
+
+    await $('[data-testid="agent-row-btn-edit"]').click();
+    const input = $('[data-testid="agent-row-input-custom"]');
+    await input.setValue('sproutgit-definitely-not-a-real-agent-binary-xyz');
+    await $('[data-testid="agent-row-btn-save"]').click();
+    await waitForToast('success');
+
+    await $('[data-testid="agent-row-btn-test"]').click();
+    await waitForToast('error');
+
+    await expect($('[data-testid="agent-row-test-result"]')).toBeDisplayed();
+    const resultText = await $('[data-testid="agent-row-test-result"]').getText();
+    expect(resultText).toContain('Test failed');
+    expect(resultText).toContain('Command not found on PATH');
   });
 });
