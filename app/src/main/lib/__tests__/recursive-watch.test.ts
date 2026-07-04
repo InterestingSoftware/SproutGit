@@ -27,6 +27,49 @@ function waitFor<T>(check: () => T | undefined, timeoutMs = 5_000, intervalMs = 
   });
 }
 
+/**
+ * Waits `initialDelayMs` (letting the watcher settle past its
+ * ignoreInitial/baseline phase — writing immediately after watchRecursive()
+ * returns can otherwise misfire an "add" for a pre-existing file), then
+ * repeats `mutate()` on an interval until `check()` returns a defined value
+ * or the overall timeout elapses. Native fs.watch (used on macOS/Windows)
+ * can occasionally take longer than expected to start observing a freshly
+ * created watch under CI load -- retrying the mutation after the initial
+ * settle delay is far more reliable than a single write + a long fixed wait.
+ */
+async function waitForEventRetrying<T>(
+  mutate: () => void,
+  check: () => T | undefined,
+  timeoutMs = 8_000,
+  retryIntervalMs = 500,
+  initialDelayMs = 300,
+): Promise<T> {
+  await new Promise(r => setTimeout(r, initialDelayMs));
+  const start = Date.now();
+  let lastMutate = Date.now();
+  mutate();
+  return new Promise((resolvePromise, reject) => {
+    const tick = () => {
+      const result = check();
+      if (result !== undefined) {
+        resolvePromise(result);
+        return;
+      }
+      const now = Date.now();
+      if (now - start > timeoutMs) {
+        reject(new Error('waitForEventRetrying() timed out'));
+        return;
+      }
+      if (now - lastMutate >= retryIntervalMs) {
+        lastMutate = now;
+        mutate();
+      }
+      setTimeout(tick, 25);
+    };
+    tick();
+  });
+}
+
 describe('watchRecursive / closeWatcher', () => {
   const dirsToClean: string[] = [];
 
@@ -47,11 +90,11 @@ describe('watchRecursive / closeWatcher', () => {
     });
 
     try {
-      // Give chokidar a moment to finish its initial scan before writing.
-      await new Promise(r => setTimeout(r, 200));
-      writeFileSync(join(root, 'new-file.txt'), 'hello');
-
-      const added = await waitFor(() => events.find(e => e.event === 'add' && e.path.endsWith('new-file.txt')), 8_000);
+      const added = await waitForEventRetrying(
+        () => writeFileSync(join(root, 'new-file.txt'), 'hello'),
+        () => events.find(e => e.event === 'add' && e.path.endsWith('new-file.txt')),
+        8_000,
+      );
       expect(added.path).toBe(join(root, 'new-file.txt'));
     } finally {
       closeWatcher(watcher);
@@ -70,12 +113,12 @@ describe('watchRecursive / closeWatcher', () => {
     });
 
     try {
-      // Give chokidar a moment to establish its baseline (ignoreInitial: true
-      // means the initial add for this pre-existing file must not surface).
-      await new Promise(r => setTimeout(r, 300));
-      writeFileSync(filePath, 'v2 - changed');
-
-      const changed = await waitFor(() => events.find(e => e.event === 'change' && e.path === filePath), 8_000);
+      let attempt = 0;
+      const changed = await waitForEventRetrying(
+        () => writeFileSync(filePath, `v2 - changed (attempt ${attempt++})`),
+        () => events.find(e => e.event === 'change' && e.path === filePath),
+        8_000,
+      );
       expect(changed).toBeDefined();
       // ignoreInitial: true means the pre-existing file must not have been
       // reported as newly "add"-ed once watching started.
@@ -97,10 +140,17 @@ describe('watchRecursive / closeWatcher', () => {
     });
 
     try {
-      await new Promise(r => setTimeout(r, 300));
-      rmSync(filePath);
-
-      const unlinked = await waitFor(() => events.find(e => e.event === 'unlink' && e.path === filePath), 8_000);
+      // Recreate the file before each retry so a retried mutation always
+      // produces a fresh delete event (rather than a no-op rm on an
+      // already-deleted file, which wouldn't generate anything to observe).
+      const unlinked = await waitForEventRetrying(
+        () => {
+          writeFileSync(filePath, 'bye again');
+          rmSync(filePath, { force: true });
+        },
+        () => events.find(e => e.event === 'unlink' && e.path === filePath),
+        8_000,
+      );
       expect(unlinked).toBeDefined();
     } finally {
       closeWatcher(watcher);
@@ -120,16 +170,15 @@ describe('watchRecursive / closeWatcher', () => {
     );
 
     try {
-      // Let chokidar finish its initial scan before writing — under load
-      // (e.g. the full suite running many test files in parallel) writing
-      // immediately can race the watcher's setup.
-      await new Promise(r => setTimeout(r, 200));
       writeFileSync(join(root, 'node_modules', 'ignored.js'), '');
-      writeFileSync(join(root, 'tracked.txt'), 'seen');
-
-      // Wait for the tracked file to show up, which proves the watcher is
-      // alive and had every opportunity to also report the ignored one.
-      await waitFor(() => events.find(e => e.path.endsWith('tracked.txt')), 8_000);
+      // Wait for the tracked file to show up (retrying the write, since the
+      // watcher may not be fully up yet), which proves the watcher is alive
+      // and had every opportunity to also report the ignored one.
+      await waitForEventRetrying(
+        () => writeFileSync(join(root, 'tracked.txt'), 'seen'),
+        () => events.find(e => e.path.endsWith('tracked.txt')),
+        8_000,
+      );
 
       expect(events.some(e => e.path.includes('node_modules'))).toBe(false);
     } finally {
@@ -213,13 +262,13 @@ describe('watchRecursive / closeWatcher', () => {
     const events: { event: RecursiveWatchEvent; path: string }[] = [];
     const watcher = watchRecursive(root, (event, path) => events.push({ event, path }));
 
-    // Let chokidar finish its initial scan before writing, same as the
-    // other tests in this file — writing immediately after watchRecursive()
-    // returns races chokidar's setup and can make the first event slow to
-    // arrive (or in the worst case, missed).
-    await new Promise(r => setTimeout(r, 200));
-    writeFileSync(join(root, 'before-close.txt'), 'x');
-    await waitFor(() => events.find(e => e.path.endsWith('before-close.txt')), 8_000);
+    // Retry the write (the watcher may not be fully up yet right after
+    // watchRecursive() returns) rather than a single write + long fixed wait.
+    await waitForEventRetrying(
+      () => writeFileSync(join(root, 'before-close.txt'), 'x'),
+      () => events.find(e => e.path.endsWith('before-close.txt')),
+      8_000,
+    );
 
     closeWatcher(watcher);
     const countAtClose = events.length;
