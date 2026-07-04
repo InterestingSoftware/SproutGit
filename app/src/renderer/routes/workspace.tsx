@@ -212,6 +212,7 @@ function WorkspaceInner() {
   const [runHookTarget, setRunHookTarget] = useState<WorktreeInfo | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<WorktreeInfo | null>(null);
   const [showNewWorktree, setShowNewWorktree] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(() => sessionStorage.getItem('sg_sidebar_collapsed') === '1');
 
   // Commit diff state
   const [selectedCommits, setSelectedCommits] = useState<CommitEntry[]>([]);
@@ -333,6 +334,30 @@ function WorkspaceInner() {
   useEffect(() => {
     sessionStorage.setItem('sg_terminal_layout', terminalLayout);
   }, [terminalLayout]);
+
+  useEffect(() => {
+    sessionStorage.setItem('sg_sidebar_collapsed', sidebarCollapsed ? '1' : '0');
+  }, [sidebarCollapsed]);
+
+  // ── Cmd/Ctrl+B toggles the worktree sidebar ("work mode") ──────────────
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if (!(e.metaKey || e.ctrlKey) || e.key.toLowerCase() !== 'b') return;
+      // Don't hijack Cmd/Ctrl+B while the user is typing (e.g. it's "bold" in
+      // a rich-text/contentEditable field, or a meaningful character in a
+      // terminal/input) or if another handler already consumed the event.
+      if (e.defaultPrevented) return;
+      const target = e.target;
+      if (target instanceof HTMLElement) {
+        const tag = target.tagName;
+        if (tag === 'INPUT' || tag === 'TEXTAREA' || target.isContentEditable) return;
+      }
+      e.preventDefault();
+      setSidebarCollapsed(v => !v);
+    }
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
 
   useEffect(() => {
     // If the active terminal was closed (not in any session), fall back to
@@ -928,6 +953,8 @@ function WorkspaceInner() {
             creatingWorktree={creatingWorktree}
             pendingCreationBranch={pendingCreationBranch}
             updateState={updateState}
+            collapsed={sidebarCollapsed}
+            onToggleCollapsed={() => setSidebarCollapsed(v => !v)}
             onWorktreeSwitch={wt => void handleWorktreeSwitch(wt)}
             onFetch={() => void doFetch()}
             onPull={() => void doPull()}
@@ -952,7 +979,7 @@ function WorkspaceInner() {
           {/* Main content */}
           <div className="flex-1 flex flex-col overflow-hidden">
             {/* Tab bar */}
-            <div className="flex items-center border-b border-(--sg-border) bg-(--sg-surface) shrink-0 h-9">
+            <div className="flex items-center border-b border-(--sg-border) bg-(--sg-surface) shrink-0 h-(--sg-toolbar-height)">
               <button
                 className={tabCls(activeTab === 'graph')}
                 onClick={() => useWorkspaceStore.setState({ activeTab: 'graph' })}

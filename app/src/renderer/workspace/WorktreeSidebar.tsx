@@ -8,7 +8,7 @@ import {
   useContextMenu,
   UpdateBadge,
 } from '@sproutgit/ui';
-import { GitBranch, RefreshCw, ArrowDownToLine, ArrowUpFromLine, Download, Plus, Sliders, Trash2, MoreHorizontal, FolderPen, FolderSearch, SquareTerminal, Play, Copy, CopyPlus, Bot, ChevronDown, Link2, Rocket } from 'lucide-react';
+import { GitBranch, RefreshCw, ArrowDownToLine, ArrowUpFromLine, Download, Plus, Sliders, Trash2, MoreHorizontal, FolderPen, FolderSearch, SquareTerminal, Play, Copy, CopyPlus, Bot, ChevronDown, Link2, Rocket, PanelLeftClose, PanelLeftOpen } from 'lucide-react';
 import type { WorktreeInfo, WorkspaceStatus, AgentRoster } from '@sproutgit/types';
 import type { UpdateState } from '@sproutgit/ui';
 
@@ -26,6 +26,10 @@ type Props = {
   updateState: UpdateState;
   agentRoster: AgentRoster;
   worktreesWithLiveAgent: Set<string>;
+  /** Whether the sidebar is collapsed to a slim icon rail. */
+  collapsed?: boolean;
+  /** Toggles the collapsed state — wired to a toolbar button and Cmd/Ctrl+B. */
+  onToggleCollapsed?: () => void;
   onWorktreeSwitch: (wt: WorktreeInfo) => void;
   onFetch: () => void;
   onPull: () => void;
@@ -73,6 +77,8 @@ export function WorktreeSidebar({
   updateState,
   agentRoster,
   worktreesWithLiveAgent,
+  collapsed = false,
+  onToggleCollapsed,
   onWorktreeSwitch,
   onFetch,
   onPull,
@@ -144,11 +150,82 @@ export function WorktreeSidebar({
   const activeIsPersistent = activeWorktree ? isPersistentBranch(activeWorktree.branch) : false;
   const activeDirty = activeWorktree ? (worktreeChangeCounts[activeWorktree.path] ?? 0) : 0;
 
+  // Slim icon rail shown when the sidebar is collapsed — keeps worktree
+  // switching and re-expanding available without taking up horizontal space.
+  const railContent = (
+    <div className="flex h-full flex-col items-center gap-1 bg-(--sg-surface) py-2">
+      <button
+        className={iconBtn}
+        title="Expand sidebar (Cmd/Ctrl+B)"
+        aria-label="Expand sidebar"
+        onClick={onToggleCollapsed}
+        data-testid="btn-expand-sidebar"
+      >
+        <PanelLeftOpen size={15} />
+      </button>
+      <div className="my-1 h-px w-5 bg-(--sg-border)" />
+      <button
+        className={iconBtn}
+        title="New worktree"
+        aria-label="New worktree"
+        onClick={onNewWorktree}
+      >
+        <Plus size={14} />
+      </button>
+      <div className="min-h-0 flex-1 overflow-y-auto flex flex-col items-center gap-1 pt-1">
+        {inventoryRows.filter(row => row.wt.path !== PENDING_PATH).map(row => {
+          const isActive = activeWorktree?.path === row.wt.path;
+          const label = row.wt.branch ?? (row.wt.detached ? 'detached' : row.wt.path.split('/').pop()) ?? row.wt.path;
+          const changeCount = worktreeChangeCounts[row.wt.path] ?? 0;
+          return (
+            <button
+              key={row.wt.path}
+              className={`relative flex h-7 w-7 shrink-0 items-center justify-center rounded-md border-none cursor-pointer transition-colors ${isActive ? 'bg-(--sg-primary)/15 text-(--sg-primary)' : 'bg-transparent text-(--sg-text-faint) hover:bg-(--sg-surface-raised) hover:text-(--sg-text)'}`}
+              title={label}
+              aria-label={`Switch to ${label}`}
+              data-testid="worktree-rail-item"
+              data-path={row.wt.path}
+              onClick={() => onWorktreeSwitch(row.wt)}
+            >
+              <GitBranch size={14} />
+              {changeCount > 0 && (
+                <span className="absolute top-0.5 right-0.5 h-1.5 w-1.5 rounded-full bg-(--sg-warning)" aria-hidden="true" />
+              )}
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+
   return (
-    <ResizableSidebar initialWidth={330} minWidth={200} maxWidth={480} className="border-r border-(--sg-border)">
+    <ResizableSidebar
+      initialWidth={330}
+      minWidth={200}
+      maxWidth={480}
+      className="border-r border-(--sg-border)"
+      collapsible
+      collapsed={collapsed}
+      collapsedWidth={48}
+      railContent={railContent}
+    >
       <div className="flex flex-col h-full bg-(--sg-surface)">
         {/* Compact icon toolbar */}
-        <div className="flex items-center gap-1.5 border-b border-(--sg-border-subtle) px-2.5 h-10 bg-(--sg-surface) shrink-0">
+        <div className="flex items-center gap-1.5 border-b border-(--sg-border-subtle) px-2.5 h-(--sg-toolbar-height) bg-(--sg-surface) shrink-0">
+          {onToggleCollapsed && (
+            <>
+              <button
+                className={iconBtn}
+                title="Collapse sidebar (Cmd/Ctrl+B)"
+                aria-label="Collapse sidebar"
+                onClick={onToggleCollapsed}
+                data-testid="btn-toggle-sidebar"
+              >
+                <PanelLeftClose size={15} />
+              </button>
+              <div className="mx-0.5 h-4 w-px bg-(--sg-border)" />
+            </>
+          )}
           <button
             className="flex items-center gap-1 rounded-lg bg-(--sg-primary) px-2.5 py-1 text-xs font-semibold text-white hover:bg-(--sg-primary-hover) border-none cursor-pointer"
             onClick={onNewWorktree}
