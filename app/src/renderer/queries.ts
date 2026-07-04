@@ -14,7 +14,7 @@ import {
   useQueryClient,
   type UseQueryOptions,
 } from '@tanstack/react-query';
-import type { CommitEntry, RefInfo, WorktreeInfo, WorkspaceStatus, WorktreePushStatus, IssueTrackerPattern } from '@sproutgit/types';
+import type { CommitEntry, RefInfo, WorktreeInfo, WorkspaceStatus, WorktreePushStatus, IssueTrackerPattern, FetchSummary } from '@sproutgit/types';
 
 // ── Query key factory ─────────────────────────────────────────────────────────
 
@@ -238,13 +238,31 @@ export function useCreateCommit(worktreePath: string, gitRepoPath: string) {
 export function useFetch(worktreePath: string, gitRepoPath: string) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: () => api.fetch(worktreePath) as Promise<void>,
-    onSuccess: () => {
+    mutationFn: () => api.fetch(worktreePath) as Promise<FetchSummary>,
+    onSuccess: (summary) => {
+      // No point invalidating anything when there was nothing to fetch
+      // (no remotes) or nothing changed — avoids a pointless refetch storm
+      // on every click of a no-op fetch.
+      if (summary.hadNoRemotes || (summary.updatedRefCount === 0 && summary.prunedRefCount === 0)) return;
       void qc.invalidateQueries({ queryKey: qk.commits(gitRepoPath) });
       void qc.invalidateQueries({ queryKey: qk.refs(gitRepoPath) });
       void qc.invalidateQueries({ queryKey: qk.pushStatus(worktreePath) });
     },
   });
+}
+
+/** Turns a `FetchSummary` into a single human-readable line for a toast. */
+export function describeFetchSummary(summary: FetchSummary): string {
+  if (summary.hadNoRemotes) return 'No remotes configured — nothing to fetch';
+  if (summary.updatedRefCount === 0 && summary.prunedRefCount === 0) return 'Already up to date';
+  const parts: string[] = [];
+  if (summary.updatedRefCount > 0) {
+    parts.push(`${summary.updatedRefCount} ref${summary.updatedRefCount === 1 ? '' : 's'} updated`);
+  }
+  if (summary.prunedRefCount > 0) {
+    parts.push(`${summary.prunedRefCount} stale ref${summary.prunedRefCount === 1 ? '' : 's'} pruned`);
+  }
+  return `Fetched — ${parts.join(', ')}`;
 }
 
 export function usePull(worktreePath: string, gitRepoPath: string) {

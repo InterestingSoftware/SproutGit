@@ -1,12 +1,33 @@
-import { type WorktreePushStatus, type PushBranchResult } from '@sproutgit/types';
+import { type WorktreePushStatus, type PushBranchResult, type FetchSummary } from '@sproutgit/types';
 import { gitForPath } from './client.js';
 
 /**
  * Fetches latest refs from all remotes for a worktree.
+ *
+ * Returns a `FetchSummary` rather than `void` so the caller can tell apart
+ * three outcomes that would otherwise all look like an identical resolved
+ * promise: no remotes configured at all (fetch is skipped — running
+ * `git fetch --all` with zero remotes is a silent, meaningless no-op),
+ * everything already up to date, or N ref(s) actually updated/pruned. This
+ * is what makes fetch look like it "doesn't do anything" even when it
+ * succeeded — a bare success with no information isn't distinguishable
+ * from nothing having happened.
  */
-export async function fetchWorktree(worktreePath: string): Promise<void> {
+export async function fetchWorktree(worktreePath: string): Promise<FetchSummary> {
   const git = gitForPath(worktreePath);
-  await git.fetch(['--all', '--prune']);
+
+  const remotes = await git.getRemotes(false);
+  if (remotes.length === 0) {
+    return { worktreePath, hadNoRemotes: true, updatedRefCount: 0, prunedRefCount: 0 };
+  }
+
+  const result = await git.fetch(['--all', '--prune']);
+  return {
+    worktreePath,
+    hadNoRemotes: false,
+    updatedRefCount: result.updated.length,
+    prunedRefCount: result.deleted.length,
+  };
 }
 
 /**

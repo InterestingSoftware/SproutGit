@@ -9,6 +9,7 @@ import type {
   WorktreeStatusResult,
   DiffFileEntry,
   WorktreePushStatus,
+  FetchSummary,
   DeviceCodeResponse,
   GitHubPollResult,
   GitHubAuthStatus,
@@ -131,7 +132,7 @@ const api = {
     invoke(IPC.GIT_RESET, { worktreePath, targetRef, mode }),
 
   // ── Remote ────────────────────────────────────────────────────────────────
-  fetch: (worktreePath: string): Promise<void> =>
+  fetch: (worktreePath: string): Promise<FetchSummary> =>
     invoke(IPC.GIT_FETCH, worktreePath),
 
   pull: (worktreePath: string): Promise<void> =>

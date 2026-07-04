@@ -152,6 +152,7 @@ import type {
   DiffFileEntry,
   WorktreePushStatus,
   RefsResult,
+  FetchSummary,
 } from './git.js';
 import type { WorkspaceInitResult, WorkspaceStatus, RecentWorkspace, WorktreeProvenance, NestedRepoSyncRule, ImportRepoMode, CreateWorktreeResult } from './workspace.js';
 import type {
@@ -216,7 +217,7 @@ export type IpcMap = {
   'git:commit':      { args: [args: { worktreePath: string; message: string }];              result: void };
   'git:checkout':    { args: [args: { worktreePath: string; targetRef: string }];            result: void };
   'git:reset':       { args: [args: { worktreePath: string; targetRef: string; mode: 'soft'|'mixed'|'hard' }]; result: void };
-  'git:fetch':       { args: [worktreePath: string];                                         result: void };
+  'git:fetch':       { args: [worktreePath: string];                                         result: FetchSummary };
   'git:pull':        { args: [worktreePath: string];                                         result: void };
   'git:push':        { args: [args: { worktreePath: string; remote?: string }];              result: void };
   'git:pushStatus':  { args: [worktreePath: string];                                         result: WorktreePushStatus };

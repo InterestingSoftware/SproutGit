@@ -35,6 +35,7 @@ import {
   useRefs,
   usePushStatus,
   useFetch,
+  describeFetchSummary,
   usePull,
   usePush,
   useDeleteWorktree,
@@ -271,7 +272,12 @@ function WorkspaceInner() {
 
   useEffect(() => {
     if (!gitRepoPath) return;
-    void api.startWatching(gitRepoPath);
+    // A failure here means the app silently stops picking up external
+    // changes (branch switches, commits, worktree adds from another tool)
+    // for the whole session — surface it rather than letting the workspace
+    // look "stuck"/stale with no explanation.
+    void api.startWatching(gitRepoPath).catch((err: unknown) =>
+      toast(`Failed to watch workspace for changes: ${String(err)}`, 'error'));
     const offWorktree = api.onWorktreeChanged(() => {
       void qc.invalidateQueries({ queryKey: qk.worktrees(gitRepoPath) });
     });
@@ -280,7 +286,7 @@ function WorkspaceInner() {
       void qc.invalidateQueries({ queryKey: qk.refs(gitRepoPath) });
     });
     return () => {
-      void api.stopWatching(gitRepoPath);
+      void api.stopWatching(gitRepoPath).catch(() => undefined);
       offWorktree();
       offRefs();
     };
@@ -451,8 +457,8 @@ function WorkspaceInner() {
     if (!activeWorktree) return;
     useWorkspaceStore.setState({ fetching: true });
     try {
-      await fetchMutation.mutateAsync();
-      toast('Fetched', 'success');
+      const summary = await fetchMutation.mutateAsync();
+      toast(describeFetchSummary(summary), summary.hadNoRemotes ? 'info' : 'success');
     } catch (err) {
       toast(`Fetch failed: ${String(err)}`, 'error');
     } finally {
@@ -522,60 +528,65 @@ function WorkspaceInner() {
       ?? null
       : null;
 
-    if (isDeletingActive && nextWt) {
+    try {
+      if (isDeletingActive && nextWt) {
+        try {
+          await api.runSwitchHooks({
+            workspacePath,
+            targetWorktreePath: nextWt.path,
+            initiatingWorktreePath: wt.path,
+            source: 'delete',
+          });
+          await api.runTriggerHooks({
+            workspacePath,
+            trigger: 'after_worktree_switch',
+            worktreePath: nextWt.path,
+            initiatingWorktreePath: wt.path,
+            source: 'delete',
+          });
+        } catch { /* non-critical */ }
+      }
+
+      // before_worktree_remove: runs in the worktree being deleted
       try {
-        await api.runSwitchHooks({
-          workspacePath,
-          targetWorktreePath: nextWt.path,
-          initiatingWorktreePath: wt.path,
-          source: 'delete',
-        });
         await api.runTriggerHooks({
           workspacePath,
-          trigger: 'after_worktree_switch',
-          worktreePath: nextWt.path,
-          initiatingWorktreePath: wt.path,
-          source: 'delete',
+          trigger: 'before_worktree_remove',
+          worktreePath: wt.path,
+          initiatingWorktreePath: activeWorktree?.path ?? null,
         });
       } catch { /* non-critical */ }
-    }
 
-    // before_worktree_remove: runs in the worktree being deleted
-    try {
-      await api.runTriggerHooks({
-        workspacePath,
-        trigger: 'before_worktree_remove',
+      await api.closeTerminalsForPath(wt.path);
+      // Switch the active worktree away *before* the mutation so that no git
+      // queries fire on the deleted path while or after the deletion runs.
+      if (isDeletingActive) useWorkspaceStore.setState({ activeWorktree: nextWt });
+      await deleteWorktreeMutation.mutateAsync({
+        rootRepoPath: gitRepoPath,
+        ...(workspaceStatus?.worktreesPath ? { managedWorktreesPath: workspaceStatus.worktreesPath } : {}),
         worktreePath: wt.path,
-        initiatingWorktreePath: activeWorktree?.path ?? null,
+        // Never delete the branch of an external worktree — an external tool
+        // owns it. The main process re-enforces this guard server-side too.
+        deleteBranch: !wt.isExternal && !!wt.branch,
+        branchName: wt.branch ?? null,
       });
-    } catch { /* non-critical */ }
 
-    await api.closeTerminalsForPath(wt.path);
-    // Switch the active worktree away *before* the mutation so that no git
-    // queries fire on the deleted path while or after the deletion runs.
-    if (isDeletingActive) useWorkspaceStore.setState({ activeWorktree: nextWt });
-    await deleteWorktreeMutation.mutateAsync({
-      rootRepoPath: gitRepoPath,
-      ...(workspaceStatus?.worktreesPath ? { managedWorktreesPath: workspaceStatus.worktreesPath } : {}),
-      worktreePath: wt.path,
-      // Never delete the branch of an external worktree — an external tool
-      // owns it. The main process re-enforces this guard server-side too.
-      deleteBranch: !wt.isExternal && !!wt.branch,
-      branchName: wt.branch ?? null,
-    });
+      // after_worktree_remove: runs in the now-active worktree
+      if (nextWt ?? activeWorktree) {
+        void api.runTriggerHooks({
+          workspacePath,
+          trigger: 'after_worktree_remove',
+          worktreePath: (nextWt ?? activeWorktree)!.path,
+          initiatingWorktreePath: null,
+        }).catch(() => undefined);
+      }
 
-    // after_worktree_remove: runs in the now-active worktree
-    if (nextWt ?? activeWorktree) {
-      void api.runTriggerHooks({
-        workspacePath,
-        trigger: 'after_worktree_remove',
-        worktreePath: (nextWt ?? activeWorktree)!.path,
-        initiatingWorktreePath: null,
-      }).catch(() => undefined);
+      toast('Worktree removed', 'success');
+    } catch (err) {
+      toast(`Failed to remove worktree: ${String(err)}`, 'error');
+    } finally {
+      setDeleteTarget(null);
     }
-
-    toast('Worktree removed', 'success');
-    setDeleteTarget(null);
   }
 
   // after_worktree_create hooks never fire retroactively for a worktree we
@@ -1241,8 +1252,12 @@ function WorkspaceInner() {
                               sessionId={s.id}
                               incomingData={s.pendingData}
                               className="h-full w-full"
-                              onData={(id, data) => { void api.writeTerminal(id, data); }}
-                              onResize={(id, cols, rows) => { void api.resizeTerminal(id, cols, rows); }}
+                              // High-frequency (every keystroke/resize) — a toast per
+                              // failure would be spam, so this is intentionally silent
+                              // beyond swallowing the rejection to avoid unhandled-
+                              // rejection console noise if the PTY session has died.
+                              onData={(id, data) => { void api.writeTerminal(id, data).catch(() => undefined); }}
+                              onResize={(id, cols, rows) => { void api.resizeTerminal(id, cols, rows).catch(() => undefined); }}
                             />
                           </div>
                         ))}
@@ -1296,7 +1311,7 @@ function WorkspaceInner() {
             workspacePath,
             newWorktreePath,
             initiatingWorktreePath: activeWorktree?.path ?? null,
-          });
+          }).catch((err: unknown) => toast(`Create hooks failed: ${String(err)}`, 'error'));
         }}
         onToast={(msg, v) => toast(msg, v)}
       />

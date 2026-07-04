@@ -207,16 +207,24 @@ function HomeView() {
   }
 
   async function browseProjectsFolder() {
-    const paths = await api.showOpenDialog({ title: 'Choose projects folder', properties: ['openDirectory'] });
-    if (paths[0]) {
-      setProjectsFolder(paths[0]);
-      void api.setSetting(PROJECTS_FOLDER_SETTING, paths[0]).catch(() => undefined);
+    try {
+      const paths = await api.showOpenDialog({ title: 'Choose projects folder', properties: ['openDirectory'] });
+      if (paths[0]) {
+        setProjectsFolder(paths[0]);
+        void api.setSetting(PROJECTS_FOLDER_SETTING, paths[0]).catch(() => undefined);
+      }
+    } catch (err) {
+      toast(`Failed to open folder picker: ${String(err)}`, 'error');
     }
   }
 
   async function browseImportPath() {
-    const paths = await api.showOpenDialog({ title: 'Select Git Repository', properties: ['openDirectory'] });
-    if (paths[0]) setImportPath(paths[0]);
+    try {
+      const paths = await api.showOpenDialog({ title: 'Select Git Repository', properties: ['openDirectory'] });
+      if (paths[0]) setImportPath(paths[0]);
+    } catch (err) {
+      toast(`Failed to open folder picker: ${String(err)}`, 'error');
+    }
   }
 
   async function doClone(e: React.FormEvent) {

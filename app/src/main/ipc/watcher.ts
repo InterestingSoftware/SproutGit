@@ -1,7 +1,10 @@
 /**
  * File-system watcher that emits IPC events when git HEAD or refs change.
- * Uses Node's built-in `fs.watch` on HEAD and refs to detect branch switches
- * and new commits.
+ * Watches HEAD and FETCH_HEAD (single files) with Node's built-in
+ * `fs.watch`; watches `refs/` and `worktrees/` (which need to recurse into
+ * subdirectories) via the cross-platform `watchRecursive` helper — native
+ * recursive `fs.watch` on macOS/Windows (unchanged from before), chokidar
+ * only on Linux, where native recursive watching isn't supported at all.
  *
  * `repoPath` here is always the bare root itself (`gitRepoPath`, e.g.
  * `<workspace>/.sproutgit/root`) — root is always bare, so HEAD/refs/
@@ -13,16 +16,19 @@
  */
 import { ipcMain, type BrowserWindow } from 'electron';
 import { IPC } from '@sproutgit/types';
-import { watch, type FSWatcher } from 'node:fs';
+import { watch } from 'node:fs';
 import { join, resolve } from 'node:path';
+import { watchRecursive, closeWatcher } from '../lib/recursive-watch.js';
 
-const activeWatchers = new Map<string, FSWatcher[]>();
+type Closable = { close: () => void | Promise<void> };
+
+const activeWatchers = new Map<string, Closable[]>();
 
 function watchPath(
   repoPath: string,
   win: BrowserWindow,
-): FSWatcher[] {
-  const watchers: FSWatcher[] = [];
+): Closable[] {
+  const watchers: Closable[] = [];
 
   const emitWorktreeChanged = () => {
     win.webContents.send(IPC.EVENT_WORKTREE_CHANGED, { repoPath });
@@ -42,15 +48,11 @@ function watchPath(
     watchers.push(headWatcher);
   } catch { /* path may not exist */ }
 
-  try {
-    // Watch refs recursively for new commits / remote updates
-    const refsWatcher = watch(
-      join(repoPath, 'refs'),
-      { persistent: false, recursive: true },
-      () => emitRefsChanged(),
-    );
-    watchers.push(refsWatcher);
-  } catch { /* path may not exist */ }
+  // Watch refs recursively for new commits / remote updates. Uses the
+  // cross-platform watchRecursive helper (native fs.watch on macOS/Windows,
+  // chokidar on Linux, where native recursive watching throws).
+  const refsWatcher = watchRecursive(join(repoPath, 'refs'), () => emitRefsChanged());
+  if (refsWatcher) watchers.push(refsWatcher);
 
   try {
     // FETCH_HEAD changes after git fetch
@@ -62,18 +64,13 @@ function watchPath(
     watchers.push(fetchHeadWatcher);
   } catch { /* path may not exist */ }
 
-  try {
-    // Git records one admin subdirectory per linked worktree under
-    // <bare root>/worktrees/<name> — this is where `git worktree add/remove`
-    // (run by us or an external tool like Claude Code) shows up, regardless
-    // of where the actual worktree checkout lives on disk.
-    const worktreesAdminWatcher = watch(
-      join(repoPath, 'worktrees'),
-      { persistent: false, recursive: true },
-      () => emitWorktreeChanged(),
-    );
-    watchers.push(worktreesAdminWatcher);
-  } catch { /* path may not exist */ }
+  // Git records one admin subdirectory per linked worktree under
+  // <bare root>/worktrees/<name> — this is where `git worktree add/remove`
+  // (run by us or an external tool like Claude Code) shows up, regardless
+  // of where the actual worktree checkout lives on disk. This directory may
+  // not exist yet (no worktree has ever been added).
+  const worktreesWatcher = watchRecursive(join(repoPath, 'worktrees'), () => emitWorktreeChanged());
+  if (worktreesWatcher) watchers.push(worktreesWatcher);
 
   return watchers;
 }
@@ -90,9 +87,7 @@ export function stopWatchingPath(repoPath: string): void {
   const normalised = resolve(repoPath);
   const watchers = activeWatchers.get(normalised);
   if (!watchers) return;
-  for (const w of watchers) {
-    try { w.close(); } catch { /* ignore */ }
-  }
+  for (const w of watchers) closeWatcher(w);
   activeWatchers.delete(normalised);
 }
 
