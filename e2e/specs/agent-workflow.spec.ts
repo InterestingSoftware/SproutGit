@@ -170,4 +170,47 @@ describe('agent settings', () => {
 
     await assertNoErrors();
   });
+
+  it('clicking Test against a working agent command shows a pass result and a success toast', async () => {
+    // The real AGENT_TEST handler spawns the configured command with a real
+    // fixed prompt appended and checks for non-empty stdout, so the
+    // configured command here must actually exit with output (unlike
+    // seedTestAgent()'s idling terminal-launch fixture, which would hang
+    // until AGENT_TEST's 15s timeout and report failure instead).
+    const assertNoErrors = monitorErrors();
+    await gotoHash(`/settings?workspace=${encodeURIComponent(testRepo)}`);
+
+    await $('[data-testid="agent-row-btn-edit"]').click();
+    const input = $('[data-testid="agent-row-input-custom"]');
+    await input.setValue("node -e process.stdout.write('OK');process.exit(0)");
+    await $('[data-testid="agent-row-btn-save"]').click();
+    await waitForToast('success');
+
+    await $('[data-testid="agent-row-btn-test"]').click();
+    await waitForToast('success');
+
+    await expect($('[data-testid="agent-row-test-result"]')).toBeDisplayed();
+    const resultText = await $('[data-testid="agent-row-test-result"]').getText();
+    expect(resultText).toContain('Test passed');
+
+    await assertNoErrors();
+  });
+
+  it('clicking Test against an unresolvable agent command shows a fail result and an error toast', async () => {
+    await gotoHash(`/settings?workspace=${encodeURIComponent(testRepo)}`);
+
+    await $('[data-testid="agent-row-btn-edit"]').click();
+    const input = $('[data-testid="agent-row-input-custom"]');
+    await input.setValue('sproutgit-definitely-not-a-real-agent-binary-xyz');
+    await $('[data-testid="agent-row-btn-save"]').click();
+    await waitForToast('success');
+
+    await $('[data-testid="agent-row-btn-test"]').click();
+    await waitForToast('error');
+
+    await expect($('[data-testid="agent-row-test-result"]')).toBeDisplayed();
+    const resultText = await $('[data-testid="agent-row-test-result"]').getText();
+    expect(resultText).toContain('Test failed');
+    expect(resultText).toContain('Command not found on PATH');
+  });
 });
