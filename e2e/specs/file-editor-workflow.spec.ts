@@ -18,6 +18,11 @@ describe('file editor workflow', () => {
 
     await gotoHash(`/workspace?path=${encodeURIComponent(testRepo)}`);
     await expect($('//*[contains(@class,"sg-tab") and contains(.,"Graph")]')).toBeDisplayed();
+    // The Files tab is disabled until activeWorktree resolves -- wait for the
+    // sidebar worktree item (same signal file-live-sync.spec.ts uses) rather
+    // than clicking immediately, which raced and lost intermittently on
+    // slower CI (the tab button stays disabled and the click is a no-op).
+    await expect($('[data-testid="worktree-item"]')).toBeDisplayed();
 
     // Switch to the Files tab.
     await $('[data-testid="tab-files"]').click();
