@@ -26,6 +26,9 @@
   --sg-titlebar-inset-default: 16px;
   --sg-titlebar-inset: var(--sg-titlebar-inset-default);
   --sg-titlebar-height: 38px;
+  /* Shared height for secondary chrome bars (sidebar toolbar, main tab bar)
+     so they visually align with each other and with the titlebar above them. */
+  --sg-toolbar-height: 38px;
 
   --sg-bg: #f5f5f5;
   --sg-surface: #ffffff;
