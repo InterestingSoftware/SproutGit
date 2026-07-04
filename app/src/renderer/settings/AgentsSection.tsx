@@ -111,6 +111,7 @@ export function AgentsSection({ onToast }: Props) {
           customPlaceholder="Command and args, e.g. claude"
           onSaveCustom={saveCustomCommand}
           onTest={() => api.testAgent()}
+          onToast={onToast}
           belowSummary={
             <div className="mt-2 flex items-center gap-2" data-testid="agent-mode-toggle">
               <span className="text-[11px] font-medium text-(--sg-text-faint)">Mode:</span>

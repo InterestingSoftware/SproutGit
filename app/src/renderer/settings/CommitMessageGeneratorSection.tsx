@@ -98,6 +98,7 @@ export function CommitMessageGeneratorSection({ onToast }: Props) {
             customPlaceholder="e.g. claude -p &quot;...&quot;"
             onSaveCustom={() => save()}
             onTest={() => api.testCommitMessageGenerator(currentSettings())}
+            onToast={onToast}
             editExtra={
               <div className="space-y-1">
                 <label className="text-[11px] font-medium text-(--sg-text-faint)">Arguments (one per line, for fine control)</label>

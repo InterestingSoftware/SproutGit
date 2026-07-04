@@ -392,6 +392,7 @@ export function GitSection({ onToast, githubAuth }: Props) {
             customPlaceholder="Custom core.editor"
             onSaveCustom={saveCustomEditor}
             onTest={() => api.testEditor(currentEditor)}
+            onToast={onToast}
             editExtra={unavailableEditors.length > 0 ? (
               <p className="text-[11px] text-(--sg-text-faint)">
                 Not found: {unavailableEditors.map(e => e.name).join(', ')}
@@ -415,6 +416,7 @@ export function GitSection({ onToast, githubAuth }: Props) {
             customPlaceholder="Custom diff.tool"
             onSaveCustom={saveCustomDiffTool}
             onTest={async () => api.testDiffTool(await resolveDiffToolTestCommand())}
+            onToast={onToast}
           />
 
           {/* Merge tool */}
@@ -433,6 +435,7 @@ export function GitSection({ onToast, githubAuth }: Props) {
             customPlaceholder="Custom merge.tool"
             onSaveCustom={saveCustomMergeTool}
             onTest={async () => api.testMergeTool(await resolveMergeToolTestCommand())}
+            onToast={onToast}
           />
         </div>
       )}

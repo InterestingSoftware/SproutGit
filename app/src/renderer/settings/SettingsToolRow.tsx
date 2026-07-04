@@ -40,6 +40,8 @@ type Props = {
   /** When provided, shows a "Test" button that runs a real scenario for this row. */
   onTest?: () => Promise<ToolTestResult>;
   testId?: string;
+  /** Fires a toast with the pass/fail headline alongside the inline detail panel. */
+  onToast?: (msg: string, variant?: 'success' | 'error') => void;
 };
 
 export function SettingsToolRow({
@@ -56,6 +58,7 @@ export function SettingsToolRow({
   belowSummary,
   onTest,
   testId,
+  onToast,
 }: Props) {
   const [editing, setEditing] = useState(false);
   const [testing, setTesting] = useState(false);
@@ -68,8 +71,13 @@ export function SettingsToolRow({
     try {
       const result = await onTest();
       setTestResult(result);
+      onToast?.(
+        result.ok ? `${title}: test passed` : `${title}: test failed${result.error ? ` — ${result.error}` : ''}`,
+        result.ok ? 'success' : 'error',
+      );
     } catch (err) {
       setTestResult({ ok: false, resolvedCommand: '', detail: '', error: String(err) });
+      onToast?.(`${title}: test failed — ${String(err)}`, 'error');
     } finally {
       setTesting(false);
     }

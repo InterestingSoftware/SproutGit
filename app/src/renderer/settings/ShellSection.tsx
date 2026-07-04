@@ -72,6 +72,7 @@ export function ShellSection({ onToast }: Props) {
           customPlaceholder="Path to shell binary"
           onSaveCustom={() => selectShell(customShell.trim())}
           onTest={() => api.testShell(currentShell)}
+          onToast={onToast}
         />
       )}
     </section>
