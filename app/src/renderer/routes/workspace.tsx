@@ -342,10 +342,18 @@ function WorkspaceInner() {
   // ── Cmd/Ctrl+B toggles the worktree sidebar ("work mode") ──────────────
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
-      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'b') {
-        e.preventDefault();
-        setSidebarCollapsed(v => !v);
+      if (!(e.metaKey || e.ctrlKey) || e.key.toLowerCase() !== 'b') return;
+      // Don't hijack Cmd/Ctrl+B while the user is typing (e.g. it's "bold" in
+      // a rich-text/contentEditable field, or a meaningful character in a
+      // terminal/input) or if another handler already consumed the event.
+      if (e.defaultPrevented) return;
+      const target = e.target;
+      if (target instanceof HTMLElement) {
+        const tag = target.tagName;
+        if (tag === 'INPUT' || tag === 'TEXTAREA' || target.isContentEditable) return;
       }
+      e.preventDefault();
+      setSidebarCollapsed(v => !v);
     }
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);

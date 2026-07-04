@@ -48,8 +48,10 @@ export function ResizableSidebar({
   const startX = useRef(0);
   const startWidth = useRef(0);
 
+  const isCollapsed = collapsible && collapsed;
+
   function onMouseDown(e: React.MouseEvent) {
-    if (collapsed) return;
+    if (isCollapsed) return;
     e.preventDefault();
     dragging.current = true;
     startX.current = e.clientX;
@@ -72,12 +74,11 @@ export function ResizableSidebar({
     window.addEventListener('mouseup', onUp);
   }
 
-  const isCollapsed = collapsible && collapsed;
   const effectiveWidth = isCollapsed ? collapsedWidth : width;
 
   return (
     <div
-      className={['relative flex shrink-0 transition-[width] duration-150 ease-out', className]
+      className={['relative flex shrink-0', dragging.current ? '' : 'transition-[width] duration-150 ease-out', className]
         .filter(Boolean)
         .join(' ')}
       style={{ width: effectiveWidth, minWidth: 0 }}
