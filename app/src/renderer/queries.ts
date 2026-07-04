@@ -14,7 +14,7 @@ import {
   useQueryClient,
   type UseQueryOptions,
 } from '@tanstack/react-query';
-import type { CommitEntry, RefInfo, WorktreeInfo, WorkspaceStatus, WorktreePushStatus, IssueTrackerPattern, FetchSummary } from '@sproutgit/types';
+import type { CommitEntry, RefInfo, WorktreeInfo, WorkspaceStatus, WorktreePushStatus, IssueTrackerPattern, FetchSummary, FileTreeNode } from '@sproutgit/types';
 
 // ── Query key factory ─────────────────────────────────────────────────────────
 
@@ -31,6 +31,7 @@ export const qk = {
   diffContent: (repoPath: string, range: string, file: string, staged?: boolean) =>
     ['diffContent', repoPath, range, file, staged] as const,
   issueTrackerPatterns: (worktreePath: string) => ['issueTrackerPatterns', worktreePath] as const,
+  fileTree: (worktreePath: string) => ['fileTree', worktreePath] as const,
 } as const;
 
 // ── Workspace inspection ──────────────────────────────────────────────────────
@@ -95,6 +96,16 @@ export function useIssueTrackerPatterns(worktreePath: string | undefined) {
   return useQuery({
     queryKey: qk.issueTrackerPatterns(worktreePath ?? ''),
     queryFn: () => api.listIssueTrackerPatterns(worktreePath ?? '') as Promise<IssueTrackerPattern[]>,
+    enabled: !!worktreePath,
+  });
+}
+
+// ── File tree ─────────────────────────────────────────────────────────────────
+
+export function useFileTree(worktreePath: string | undefined) {
+  return useQuery({
+    queryKey: qk.fileTree(worktreePath ?? ''),
+    queryFn: () => api.listFileTree(worktreePath ?? '') as Promise<FileTreeNode[]>,
     enabled: !!worktreePath,
   });
 }

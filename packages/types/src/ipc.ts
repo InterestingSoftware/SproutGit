@@ -112,6 +112,13 @@ export const IPC = {
   // ── File watcher ─────────────────────────────────────────────────────────
   WATCH_START: 'watch:start',
   WATCH_STOP: 'watch:stop',
+  // ── File browser / editor ────────────────────────────────────────────────
+  FILE_LIST_TREE: 'file:listTree',
+  FILE_READ: 'file:read',
+  FILE_WRITE: 'file:write',
+  FILE_WATCH_START: 'file:watchStart',
+  FILE_WATCH_STOP: 'file:watchStop',
+  EVENT_FILE_CHANGED: 'event:fileChanged',
   // ── Push events (main → renderer) ────────────────────────────────────────
   TERMINAL_DATA: 'terminal:data',
   TERMINAL_EXIT: 'terminal:exit',
@@ -183,6 +190,7 @@ import type { AgentConfig } from './agents.js';
 import type { CommitMessageGeneratorSettings, CommitMessageGenerateResult } from './commit-message-generator.js';
 import type { IssueTrackerPattern } from './issuetracker.js';
 import type { ProviderIssue } from './providers.js';
+import type { FileTreeNode, FileReadResult } from './files.js';
 
 /** Shape of one row returned by WORKTREE_GET_META / WORKTREE_SET_META. */
 export type WorktreeMetaRow = {
@@ -321,6 +329,12 @@ export type IpcMap = {
   // ── Watcher ───────────────────────────────────────────────────────────────
   'watch:start': { args: [repoPath: string]; result: void };
   'watch:stop':  { args: [repoPath: string]; result: void };
+  // ── File browser / editor ───────────────────────────────────────────────────
+  'file:listTree':  { args: [worktreePath: string];                                    result: FileTreeNode[] };
+  'file:read':      { args: [args: { worktreePath: string; relativePath: string }];     result: FileReadResult };
+  'file:write':      { args: [args: { worktreePath: string; relativePath: string; content: string }]; result: { mtimeMs: number } };
+  'file:watchStart': { args: [worktreePath: string];                                    result: void };
+  'file:watchStop':  { args: [worktreePath: string];                                    result: void };
   // ── Auto-update ───────────────────────────────────────────────────────────
   'update:check':   { args: []; result: void };
   'update:install': { args: []; result: void };

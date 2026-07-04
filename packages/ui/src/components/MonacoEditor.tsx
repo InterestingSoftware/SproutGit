@@ -3,8 +3,42 @@ import { loader } from '@monaco-editor/react';
 import * as monacoApi from 'monaco-editor';
 import 'monaco-editor/esm/vs/basic-languages/shell/shell.contribution';
 import 'monaco-editor/esm/vs/basic-languages/powershell/powershell.contribution';
+import EditorWorker from 'monaco-editor/esm/vs/editor/editor.worker?worker';
+import JsonWorker from 'monaco-editor/esm/vs/language/json/json.worker?worker';
+import CssWorker from 'monaco-editor/esm/vs/language/css/css.worker?worker';
+import HtmlWorker from 'monaco-editor/esm/vs/language/html/html.worker?worker';
+import TsWorker from 'monaco-editor/esm/vs/language/typescript/ts.worker?worker';
 
 loader.config({ monaco: monacoApi });
+
+// Without this, Monaco falls back to running language services on the main
+// thread (console warning: "You must define a function
+// MonacoEnvironment.getWorkerUrl or MonacoEnvironment.getWorker"), which can
+// jank the UI on large files. Vite's `?worker` import produces a proper
+// Worker constructor for each of Monaco's bundled language workers.
+if (typeof self !== 'undefined' && !self.MonacoEnvironment) {
+  self.MonacoEnvironment = {
+    getWorker(_workerId: string, label: string) {
+      switch (label) {
+        case 'json':
+          return new JsonWorker();
+        case 'css':
+        case 'scss':
+        case 'less':
+          return new CssWorker();
+        case 'html':
+        case 'handlebars':
+        case 'razor':
+          return new HtmlWorker();
+        case 'typescript':
+        case 'javascript':
+          return new TsWorker();
+        default:
+          return new EditorWorker();
+      }
+    },
+  };
+}
 
 type Props = {
   value: string;

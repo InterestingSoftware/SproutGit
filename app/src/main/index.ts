@@ -17,6 +17,7 @@ import { registerChatHandlers } from './ipc/chat.js';
 import { registerCommitMessageGeneratorHandlers } from './ipc/commit-message-generator.js';
 import { registerToolTestHandlers } from './ipc/tool-test.js';
 import { registerWatchHandlers } from './ipc/watcher.js';
+import { registerFileHandlers } from './ipc/files.js';
 import { registerUpdateHandlers, startUpdateCheck } from './ipc/update.js';
 import { registerIssueTrackerHandlers } from './ipc/issuetracker.js';
 import { registerProviderHandlers } from './ipc/providers.js';
@@ -51,9 +52,10 @@ if (isE2EMode) {
 }
 
 // Allow Electron MCP tools to attach in development without requiring
-// per-command launch flags.
+// per-command launch flags. Overridable via SPROUTGIT_DEBUG_PORT so multiple
+// dev instances (e.g. parallel worktrees) don't fight over the same port.
 if (process.env['NODE_ENV'] === 'development') {
-  app.commandLine.appendSwitch('remote-debugging-port', '9222');
+  app.commandLine.appendSwitch('remote-debugging-port', process.env['SPROUTGIT_DEBUG_PORT'] ?? '9222');
 }
 
 let mainWindow: BrowserWindow | null = null;
@@ -263,6 +265,8 @@ app.whenReady().then(() => {
   if (isE2EMode) log.info('[e2e] tool test handlers ok');
   registerWatchHandlers(getMainWindow);
   if (isE2EMode) log.info('[e2e] watch handlers ok');
+  registerFileHandlers(getMainWindow);
+  if (isE2EMode) log.info('[e2e] file handlers ok');
   registerIssueTrackerHandlers();
   registerProviderHandlers(userDataPath);
   if (isE2EMode) log.info('[e2e] issue tracker / provider handlers ok');
