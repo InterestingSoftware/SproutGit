@@ -19,7 +19,9 @@ export function CommitMessageGeneratorSection({ onToast }: Props) {
       setPresetId(settings.presetId);
       setCommand(settings.command);
       setArgsText(settings.args.join('\n'));
-    }).finally(() => setLoading(false));
+    }).catch((err: unknown) => onToast(`Failed to load commit message generator settings: ${String(err)}`, 'error'))
+      .finally(() => setLoading(false));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   function selectPreset(id: string) {

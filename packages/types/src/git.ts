@@ -76,6 +76,23 @@ export type WorktreePushStatus = {
   detached: boolean;
 };
 
+/**
+ * Summary of what a `git fetch --all --prune` actually did, so the caller
+ * can tell "nothing to do because there are no remotes" apart from
+ * "nothing to do because everything was already up to date" apart from
+ * "fetched N updated ref(s)" — all three look identical as a bare resolved
+ * promise, which is what made fetch look like it silently did nothing.
+ */
+export type FetchSummary = {
+  worktreePath: string;
+  /** True when the repo has no remotes at all — fetch is skipped entirely. */
+  hadNoRemotes: boolean;
+  /** Number of remote-tracking branches created or fast-forwarded. */
+  updatedRefCount: number;
+  /** Number of stale remote-tracking refs removed by `--prune`. */
+  prunedRefCount: number;
+};
+
 export type StatusFileEntry = {
   path: string;
   originalPath: string | null;
