@@ -217,6 +217,8 @@ function WorkspaceInner() {
           setPendingNewWorktreePath(null);
           useWorkspaceStore.setState(s => ({
             activeWorktree: newWt,
+            creatingWorktree: false,
+            pendingCreationBranch: null,
             worktreeActiveTerminalId: {
               ...s.worktreeActiveTerminalId,
               ...(prevPath ? { [prevPath]: s.activeTerminalId } : {}),
