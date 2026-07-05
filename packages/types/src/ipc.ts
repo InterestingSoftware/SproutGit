@@ -166,6 +166,8 @@ export const IPC = {
   MCP_SET_PORT: 'mcp:setPort',
   MCP_WRITE_CLIENT_CONFIG: 'mcp:writeClientConfig',
   MCP_GET_MANUAL_SNIPPET: 'mcp:getManualSnippet',
+  // ── Global error reporting (main → renderer push events) ──────────────────
+  EVENT_GLOBAL_ERROR: 'event:globalError',
 } as const;
 
 export type IpcChannel = (typeof IPC)[keyof typeof IPC];

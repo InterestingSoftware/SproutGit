@@ -7,6 +7,9 @@ export { linkifyIssueRefs, matchIssueRef } from './issuetracker-linkify.js';
 
 export { ConfirmDialog } from './components/ConfirmDialog.js';
 
+export { ErrorModal } from './components/ErrorModal.js';
+export type { ErrorModalData } from './components/ErrorModal.js';
+
 export { ContextMenuProvider, useContextMenu } from './components/ContextMenu.js';
 
 export { DiffViewer } from './components/DiffViewer.js';

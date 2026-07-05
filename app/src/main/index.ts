@@ -22,6 +22,7 @@ import { registerUpdateHandlers, startUpdateCheck } from './ipc/update.js';
 import { registerIssueTrackerHandlers } from './ipc/issuetracker.js';
 import { registerProviderHandlers } from './ipc/providers.js';
 import { registerMcpHandlers } from './ipc/mcp.js';
+import { registerGlobalErrorHandlers } from './global-error-handlers.js';
 import { stopAllMcpServers } from './mcp-bridge.js';
 import { openConfigDb } from '@sproutgit/database';
 import { IPC } from '@sproutgit/types';
@@ -62,6 +63,10 @@ if (process.env['NODE_ENV'] === 'development') {
 
 let mainWindow: BrowserWindow | null = null;
 function getMainWindow(): BrowserWindow | null { return mainWindow; }
+
+// Registered before the window exists so startup crashes are still logged
+// (and forwarded once the renderer is up, since ErrorModal subscribes on mount).
+registerGlobalErrorHandlers(getMainWindow);
 
 // ── macOS application menu ────────────────────────────────────────────────────
 // Without an explicit menu, Cmd+C / Cmd+V / Cmd+Z etc. don't work on macOS.
