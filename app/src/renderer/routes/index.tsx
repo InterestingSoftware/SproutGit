@@ -138,8 +138,15 @@ function HomeView() {
     const offNotAvailable = api.onUpdateNotAvailable(() => setUpdateState({ status: 'up-to-date' }));
     const offDownloading = api.onUpdateDownloading((progress: number) => setUpdateState({ status: 'downloading', progress }));
     const offReady = api.onUpdateReady(() => setUpdateState({ status: 'ready' }));
-    const offError = api.onUpdateError(() => setUpdateState({ status: 'idle' }));
+    const offError = api.onUpdateError((message: string) => {
+      console.error('[update] auto-update failed:', message);
+      toast(`Update failed: ${message}`, 'error');
+      setUpdateState({ status: 'idle' });
+    });
     return () => { offChecking(); offAvailable(); offNotAvailable(); offDownloading(); offReady(); offError(); };
+    // toast is recreated every render (see toast-context.tsx) — omit it so
+    // this effect only (re)subscribes the IPC listeners once.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
