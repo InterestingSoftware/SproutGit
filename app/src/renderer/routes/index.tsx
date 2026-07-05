@@ -2,7 +2,7 @@ import { api } from '../api.js';
 import { createRoute, useNavigate } from '@tanstack/react-router';
 import { rootRoute } from './__root.js';
 import { useState, useEffect, useRef } from 'react';
-import { ArrowRight, Clock, Download, FolderInput, FolderOpen, Play, Settings, X, AlertTriangle } from 'lucide-react';
+import { AppWindow, ArrowRight, Clock, Download, FolderInput, FolderOpen, Play, Settings, X, AlertTriangle } from 'lucide-react';
 import { Spinner, WindowControls, UpdateBadge, Autocomplete, ResizableSidebar } from '@sproutgit/ui';
 import type { UpdateState } from '@sproutgit/ui';
 import type { GitHubRepo, GitInfo, GitHubAuthStatus, GitOpProgressEvent, RecentWorkspace } from '@sproutgit/types';
@@ -336,6 +336,9 @@ function HomeView() {
         <div className="flex items-center h-full pr-2 gap-1" style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}
         >
           <UpdateBadge state={updateState} onInstall={() => void api.installUpdate()} />
+          <button className={iconBtn} title="New Window" onClick={() => void api.openNewWindow()}>
+            <AppWindow size={15} />
+          </button>
           <button className={iconBtn} title="Settings" onClick={() => void navigate({ to: '/settings' })}>
             <Settings size={15} />
           </button>

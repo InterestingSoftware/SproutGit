@@ -71,10 +71,9 @@ export function SettingsToolRow({
     try {
       const result = await onTest();
       setTestResult(result);
-      onToast?.(
-        result.ok ? `${title}: test passed` : `${title}: test failed${result.error ? ` — ${result.error}` : ''}`,
-        result.ok ? 'success' : 'error',
-      );
+      const headline = result.ok ? `${title}: test passed` : `${title}: test failed`;
+      const body = [result.detail, result.error].filter(Boolean).join(' — ');
+      onToast?.(body ? `${headline} — ${body}` : headline, result.ok ? 'success' : 'error');
     } catch (err) {
       setTestResult({ ok: false, resolvedCommand: '', detail: '', error: String(err) });
       onToast?.(`${title}: test failed — ${String(err)}`, 'error');

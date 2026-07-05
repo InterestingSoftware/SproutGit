@@ -4,7 +4,7 @@
  * Hooks are shell scripts that run at lifecycle points (worktree create/delete/switch).
  * They execute in a PTY terminal session visible in the renderer's terminal tab.
  */
-import { ipcMain, type BrowserWindow } from 'electron';
+import { ipcMain, BrowserWindow } from 'electron';
 import { IPC } from '@sproutgit/types';
 import type { WorkspaceHookTrigger, WorkspaceHookShell, HookProgressEvent, WorktreeSwitchHookSource } from '@sproutgit/types';
 import { canonicalize } from '@sproutgit/paths';
@@ -308,9 +308,9 @@ export async function runTriggerHooks(args: RunTriggerHooksArgs, win: BrowserWin
   }
 }
 
-export function registerHookHandlers(getWindow: () => BrowserWindow | null): void {
+export function registerHookHandlers(): void {
   ipcMain.handle(IPC.HOOK_RUN, async (_e, args: RunHookArgs) => {
-    const win = getWindow();
+    const win = BrowserWindow.fromWebContents(_e.sender);
     if (!win) return;
     await runHook(args, win);
   });
@@ -337,7 +337,7 @@ export function registerHookHandlers(getWindow: () => BrowserWindow | null): voi
     initiatingWorktreePath?: string | null;
     source?: WorktreeSwitchHookSource;
   }) => {
-    const win = getWindow();
+    const win = BrowserWindow.fromWebContents(_e.sender);
     if (!win) return;
 
     const source = args.source ?? 'manual';
@@ -379,7 +379,7 @@ export function registerHookHandlers(getWindow: () => BrowserWindow | null): voi
     newWorktreePath: string;
     initiatingWorktreePath?: string | null;
   }) => {
-    const win = getWindow();
+    const win = BrowserWindow.fromWebContents(_e.sender);
     if (!win) return;
 
     const db = getWorkspaceDb(args.workspacePath);
@@ -403,7 +403,7 @@ export function registerHookHandlers(getWindow: () => BrowserWindow | null): voi
   });
 
   ipcMain.handle(IPC.HOOK_RUN_TRIGGER, async (_e, args: RunTriggerHooksArgs) => {
-    const win = getWindow();
+    const win = BrowserWindow.fromWebContents(_e.sender);
     if (!win) return;
     await runTriggerHooks(args, win);
   });
