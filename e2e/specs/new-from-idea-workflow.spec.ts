@@ -17,8 +17,12 @@ import { tmpdir } from 'os';
  *    from stdin, prints a fixed JSON response, and exits.
  *  - The "scaffold this" terminal launch (agents.ts' AGENT_LAUNCH) spawns it
  *    via node-pty with SPROUTGIT_AGENT set — idles so the terminal tab stays
- *    alive; the pty's own line discipline echoes whatever gets typed into it
- *    (the kickoff prompt), so nothing extra is needed here to see it rendered.
+ *    alive, and explicitly echoes whatever it reads on stdin (the kickoff
+ *    prompt) back to its own stdout. Unix PTYs echo typed input at the line-
+ *    discipline level regardless of what the child process does, but Windows'
+ *    ConPTY doesn't reliably do the same for a plain script that never enables
+ *    console echo itself — so this can't rely on the pty to echo it; the
+ *    script has to.
  */
 const GENERATED_NAME = 'E2E Sample Project';
 const GENERATED_SLUG = 'e2e-sample-project';
@@ -27,6 +31,7 @@ const GENERATED_DESCRIPTION = 'An e2e-generated test project.';
 
 const TEST_AGENT_SCRIPT = `
 if (process.env.SPROUTGIT_AGENT) {
+  process.stdin.on('data', c => process.stdout.write(c));
   setInterval(() => {}, 1000);
 } else {
   let d = '';
@@ -80,6 +85,15 @@ describe('new from idea workflow', () => {
 
   afterEach(async () => {
     await closeAllTerminals();
+    // closeAllTerminals() only requests the PTY kill (TerminalManager.close()
+    // calls pty.kill() and drops the session synchronously) — it doesn't wait
+    // for the OS to actually finish tearing down the process. This test's
+    // fake agent is a live, indefinitely-running process (setInterval) whose
+    // cwd is inside the workspace about to be deleted; on Windows that
+    // process can hold a lock on it for a moment after the kill signal, with
+    // no app-exposed signal to poll for "is it actually gone yet" — so this
+    // has to be a short, honest wait rather than something pollable.
+    await browser.pause(1000);
     // closeAndCleanup() navigates home and closes the workspace's SQLite
     // connection via IPC *before* deleting — skipping that (as a plain
     // rmSync of the parent folder does) leaves state.db locked on Windows,
