@@ -206,8 +206,18 @@ export function registerAgentHandlers(configDb: ConfigDb, getWindow: () => Brows
     const agent = getAgentConfig(configDb);
     const spec = getAcpLaunchSpec(agent.command, agent.args);
     if (!spec?.npmPackage) return null;
-    const resolved = await resolveAcpAdapterBin(userDataPath, spec);
-    return { npmPackage: spec.npmPackage, label: spec.label, bin: spec.bin, installed: resolved !== null, approxSizeMb: spec.approxSizeMb ?? 0 };
+    const [resolved, npmBin] = await Promise.all([
+      resolveAcpAdapterBin(userDataPath, spec),
+      resolveCommandPath('npm'),
+    ]);
+    return {
+      npmPackage: spec.npmPackage,
+      label: spec.label,
+      bin: spec.bin,
+      installed: resolved !== null,
+      approxSizeMb: spec.approxSizeMb ?? 0,
+      npmAvailable: npmBin !== null,
+    };
   });
 
   handle(IPC.AGENT_ACP_ADAPTER_INSTALL, async (_e, npmPackage: string) => {

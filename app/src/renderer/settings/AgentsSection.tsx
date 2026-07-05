@@ -1,4 +1,4 @@
-import { Bot, CheckCircle2, Download, Loader2 } from 'lucide-react';
+import { Bot, CheckCircle2, Download, Loader2, RefreshCw } from 'lucide-react';
 import { api } from '../api.js';
 import { useEffect, useRef, useState } from 'react';
 import type { AcpAdapterStatus, AgentConfig, AgentInvocationMode } from '@sproutgit/types';
@@ -210,27 +210,47 @@ export function AgentsSection({ onToast }: Props) {
                 )}
               </div>
               {adapterStatus && (
-                <div className="mt-2 flex items-center gap-2 text-[11px]" data-testid="agent-acp-adapter-row">
-                  {adapterStatus.installed ? (
-                    <span className="flex items-center gap-1 text-(--sg-primary)">
-                      <CheckCircle2 size={12} /> {adapterStatus.label} ACP adapter installed
-                    </span>
-                  ) : (
-                    <>
-                      <span className="text-(--sg-text-faint)">
-                        {adapterStatus.label} ACP mode needs a separate adapter (~{adapterStatus.approxSizeMb}MB) — not installed.
+                <div className="mt-2 space-y-1" data-testid="agent-acp-adapter-row">
+                  <div className="flex items-center gap-2 text-[11px]">
+                    {adapterStatus.installed ? (
+                      <span className="flex items-center gap-1 text-(--sg-primary)">
+                        <CheckCircle2 size={12} /> {adapterStatus.label} ACP adapter installed
                       </span>
-                      <button
-                        type="button"
-                        className="inline-flex items-center gap-1 rounded border border-(--sg-border) px-2 py-0.5 text-[11px] text-(--sg-text-dim) disabled:opacity-50 cursor-pointer bg-transparent"
-                        onClick={installAdapter}
-                        disabled={installing}
-                        data-testid="btn-install-acp-adapter"
-                      >
-                        {installing ? <Loader2 size={11} className="animate-spin" /> : <Download size={11} />}
-                        {installing ? (installMessage || 'Installing…') : 'Install'}
-                      </button>
-                    </>
+                    ) : (
+                      <>
+                        <span className="text-(--sg-text-faint)">
+                          {adapterStatus.label} ACP mode needs a separate adapter (~{adapterStatus.approxSizeMb}MB) — not installed.
+                        </span>
+                        {adapterStatus.npmAvailable ? (
+                          <button
+                            type="button"
+                            className="inline-flex items-center gap-1 rounded border border-(--sg-border) px-2 py-0.5 text-[11px] text-(--sg-text-dim) disabled:opacity-50 cursor-pointer bg-transparent"
+                            onClick={installAdapter}
+                            disabled={installing}
+                            data-testid="btn-install-acp-adapter"
+                          >
+                            {installing ? <Loader2 size={11} className="animate-spin" /> : <Download size={11} />}
+                            {installing ? (installMessage || 'Installing…') : 'Install'}
+                          </button>
+                        ) : (
+                          <span className="text-(--sg-danger)">npm not found on PATH — can't install automatically.</span>
+                        )}
+                        <button
+                          type="button"
+                          className="inline-flex items-center gap-1 rounded border border-(--sg-border) px-1.5 py-0.5 text-[11px] text-(--sg-text-dim) cursor-pointer bg-transparent"
+                          onClick={refreshAdapterStatus}
+                          title="Re-check (e.g. after installing manually)"
+                          data-testid="btn-recheck-acp-adapter"
+                        >
+                          <RefreshCw size={11} />
+                        </button>
+                      </>
+                    )}
+                  </div>
+                  {!adapterStatus.installed && (
+                    <p className="text-[10px] text-(--sg-text-faint)">
+                      Or install it yourself, globally: <code className="font-mono text-(--sg-text-dim)">npm install -g {adapterStatus.npmPackage}</code>
+                    </p>
                   )}
                 </div>
               )}

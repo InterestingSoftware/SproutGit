@@ -48,6 +48,8 @@ export type AcpAdapterStatus = {
   installed: boolean;
   /** Rough download size, for the install button's confirmation copy. */
   approxSizeMb: number;
+  /** Whether `npm` is resolvable on PATH — SproutGit's on-demand install shells out to it. */
+  npmAvailable: boolean;
 };
 
 /** Pushed to the renderer while an ACP adapter install is in progress. */
