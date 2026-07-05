@@ -14,7 +14,7 @@
  * handle on the watched path, and starting a watch on a not-yet-converted
  * repo's `.git` would block the rename that converts it (EPERM).
  */
-import { ipcMain, type BrowserWindow } from 'electron';
+import { ipcMain, BrowserWindow } from 'electron';
 import { IPC } from '@sproutgit/types';
 import { watch } from 'node:fs';
 import { join, resolve } from 'node:path';
@@ -22,20 +22,53 @@ import { watchRecursive, closeWatcher } from '../lib/recursive-watch.js';
 
 type Closable = { close: () => void | Promise<void> };
 
-const activeWatchers = new Map<string, Closable[]>();
+// Multiple windows can watch the same repoPath (e.g. the same workspace open
+// in two windows), so each entry tracks every subscribing window and
+// broadcasts to all of them rather than a single one.
+type WatchEntry = { watchers: Closable[]; windows: Set<BrowserWindow> };
+
+const activeWatchers = new Map<string, WatchEntry>();
+
+function broadcast(windows: Set<BrowserWindow>, channel: string, payload: unknown): void {
+  for (const win of windows) {
+    if (win.isDestroyed()) { windows.delete(win); continue; }
+    win.webContents.send(channel, payload);
+  }
+}
+
+// A window that's abruptly closed (not navigated away from first) never
+// calls WATCH_STOP, which would otherwise leave its fs watchers running with
+// no live subscriber — on Windows that also holds a handle blocking anything
+// that needs to delete/rename the watched repo. Sweep it out of every entry
+// on 'closed', tearing down any that are left with zero subscribers. Each
+// window only needs this wired up once, regardless of how many repos it
+// ends up watching over its lifetime.
+const windowsWithCloseCleanup = new WeakSet<BrowserWindow>();
+
+function ensureCleanupOnClose(win: BrowserWindow): void {
+  if (windowsWithCloseCleanup.has(win)) return;
+  windowsWithCloseCleanup.add(win);
+  win.once('closed', () => {
+    for (const [repoPath, entry] of activeWatchers) {
+      if (entry.windows.delete(win) && entry.windows.size === 0) {
+        stopWatchingPath(repoPath);
+      }
+    }
+  });
+}
 
 function watchPath(
   repoPath: string,
-  win: BrowserWindow,
+  windows: Set<BrowserWindow>,
 ): Closable[] {
   const watchers: Closable[] = [];
 
   const emitWorktreeChanged = () => {
-    win.webContents.send(IPC.EVENT_WORKTREE_CHANGED, { repoPath });
+    broadcast(windows, IPC.EVENT_WORKTREE_CHANGED, { repoPath });
   };
 
   const emitRefsChanged = () => {
-    win.webContents.send(IPC.EVENT_GIT_REFS_CHANGED, { repoPath });
+    broadcast(windows, IPC.EVENT_GIT_REFS_CHANGED, { repoPath });
   };
 
   try {
@@ -85,27 +118,44 @@ function watchPath(
  */
 export function stopWatchingPath(repoPath: string): void {
   const normalised = resolve(repoPath);
-  const watchers = activeWatchers.get(normalised);
-  if (!watchers) return;
-  for (const w of watchers) closeWatcher(w);
+  const entry = activeWatchers.get(normalised);
+  if (!entry) return;
+  for (const w of entry.watchers) closeWatcher(w);
   activeWatchers.delete(normalised);
 }
 
-export function registerWatchHandlers(getWindow: () => BrowserWindow | null): void {
+export function registerWatchHandlers(): void {
   ipcMain.handle(IPC.WATCH_START, (_e, repoPath: string) => {
-    const normalised = resolve(repoPath);
-    if (activeWatchers.has(normalised)) return; // already watching
-
-    const win = getWindow();
+    const win = BrowserWindow.fromWebContents(_e.sender);
     if (!win) return;
 
-    const watchers = watchPath(normalised, win);
+    const normalised = resolve(repoPath);
+    const existing = activeWatchers.get(normalised);
+    if (existing) {
+      // Already watching this repo (e.g. from another window) — just add
+      // this window as another subscriber to the same underlying watchers.
+      existing.windows.add(win);
+      ensureCleanupOnClose(win);
+      return;
+    }
+
+    const windows = new Set([win]);
+    const watchers = watchPath(normalised, windows);
     if (watchers.length > 0) {
-      activeWatchers.set(normalised, watchers);
+      activeWatchers.set(normalised, { watchers, windows });
+      ensureCleanupOnClose(win);
     }
   });
 
   ipcMain.handle(IPC.WATCH_STOP, (_e, repoPath: string) => {
-    stopWatchingPath(repoPath);
+    const normalised = resolve(repoPath);
+    const entry = activeWatchers.get(normalised);
+    if (!entry) return;
+
+    const win = BrowserWindow.fromWebContents(_e.sender);
+    if (win) entry.windows.delete(win);
+
+    // Only tear down the underlying fs watchers once nobody is left watching.
+    if (entry.windows.size === 0) stopWatchingPath(repoPath);
   });
 }

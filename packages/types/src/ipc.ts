@@ -109,6 +109,7 @@ export const IPC = {
   SYSTEM_OPEN_URL: 'system:openUrl',
   SYSTEM_APP_VERSION: 'system:appVersion',
   SYSTEM_GET_HOME_DIR: 'system:getHomeDir',
+  SYSTEM_NEW_WINDOW: 'system:newWindow',
   // ── GitHub OAuth ──────────────────────────────────────────────────────────
   GITHUB_AUTH_STATUS: 'github:authStatus',
   GITHUB_DEVICE_FLOW_START: 'github:deviceFlowStart',
@@ -344,6 +345,7 @@ export type IpcMap = {
   'system:revealInFinder':{ args: [path: string]; result: void };
   'system:openUrl':       { args: [url: string];  result: void };
   'system:getHomeDir':    { args: [];             result: string };
+  'system:newWindow':     { args: [];             result: void };
   // ── GitHub OAuth ───────────────────────────────────────────────────────────
   'github:authStatus':      { args: [];                    result: GitHubAuthStatus };
   'github:deviceFlowStart': { args: [];                    result: DeviceCodeResponse };

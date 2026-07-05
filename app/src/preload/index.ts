@@ -548,6 +548,9 @@ const api = {
   getHomeDir: (): Promise<string> =>
     invoke(IPC.SYSTEM_GET_HOME_DIR),
 
+  openNewWindow: (): Promise<void> =>
+    invoke(IPC.SYSTEM_NEW_WINDOW),
+
   // ── Native dialogs ────────────────────────────────────────────────────────
   showOpenDialog: (opts: {
     title?: string;

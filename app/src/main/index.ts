@@ -1,7 +1,7 @@
 import { initTelemetry, shutdownTelemetry, log } from './telemetry.js';
 initTelemetry(); // must be first — patches Node.js before other imports
 
-import { app, BrowserWindow, shell, nativeTheme, Menu } from 'electron';
+import { app, BrowserWindow, shell, nativeTheme, Menu, ipcMain } from 'electron';
 import { join } from 'path';
 import { tmpdir } from 'os';
 import { registerGitHandlers } from './ipc/git.js';
@@ -62,12 +62,17 @@ if (process.env['NODE_ENV'] === 'development') {
   app.commandLine.appendSwitch('remote-debugging-port', process.env['SPROUTGIT_DEBUG_PORT'] ?? '9222');
 }
 
+// Tracks the "primary" window for app-level concerns that need exactly one
+// target: flushing paths queued from `open-file` before any window existed,
+// and the startup update check. Multiple windows can be open at once (see
+// `openNewWindow`) — this only ever points at one of them, falling back to
+// another still-open window if it's closed.
 let mainWindow: BrowserWindow | null = null;
 function getMainWindow(): BrowserWindow | null { return mainWindow; }
 
 // Registered before the window exists so startup crashes are still logged
 // (and forwarded once the renderer is up, since ErrorModal subscribes on mount).
-registerGlobalErrorHandlers(getMainWindow);
+registerGlobalErrorHandlers();
 
 // ── macOS application menu ────────────────────────────────────────────────────
 // Without an explicit menu, Cmd+C / Cmd+V / Cmd+Z etc. don't work on macOS.
@@ -86,6 +91,16 @@ function buildMenu(): void {
         { role: 'unhide' },
         { type: 'separator' },
         { role: 'quit' },
+      ],
+    },
+    {
+      label: 'File',
+      submenu: [
+        {
+          label: 'New Window',
+          accelerator: 'CmdOrCtrl+N',
+          click: () => { openNewWindow(); },
+        },
       ],
     },
     {
@@ -200,8 +215,26 @@ function createWindow(): BrowserWindow {
     void win.loadFile(join(__dirname, '../renderer/index.html'));
   }
 
+  // Keep `mainWindow` pointing at a live window for the app-level concerns
+  // that need exactly one (see the comment above its declaration).
+  win.on('closed', () => {
+    if (mainWindow === win) {
+      mainWindow = BrowserWindow.getAllWindows().find(w => w !== win) ?? null;
+    }
+  });
+
   return win;
 }
+
+/** Opens an additional app window (File → New Window / Cmd+N), landing on the home screen so the user can open a different workspace alongside whatever's already open. */
+function openNewWindow(): void {
+  const win = createWindow();
+  mainWindow = win;
+}
+
+// Renderer-triggered equivalent of File → New Window — lets the "New Window"
+// button/shortcut work on Windows/Linux too, where there's no application menu.
+ipcMain.handle(IPC.SYSTEM_NEW_WINDOW, () => { openNewWindow(); });
 
 // Queue paths received via open-file before the window is ready.
 const pendingOpenPaths: string[] = [];
@@ -247,7 +280,7 @@ app.whenReady().then(() => {
   }
   if (isE2EMode) log.info('[e2e] skipped buildMenu, registering handlers');
 
-  registerGitHandlers(getMainWindow);
+  registerGitHandlers();
   if (isE2EMode) log.info('[e2e] git handlers ok');
   registerWorkspaceHandlers(configDb);
   if (isE2EMode) log.info('[e2e] workspace handlers ok');
@@ -261,11 +294,11 @@ app.whenReady().then(() => {
   if (isE2EMode) log.info('[e2e] system handlers ok');
   registerGithubHandlers(userDataPath);
   if (isE2EMode) log.info('[e2e] github handlers ok');
-  registerHookHandlers(getMainWindow);
+  registerHookHandlers();
   if (isE2EMode) log.info('[e2e] hook handlers ok');
-  registerAgentHandlers(configDb, getMainWindow, userDataPath);
+  registerAgentHandlers(configDb, userDataPath);
   if (isE2EMode) log.info('[e2e] agent handlers ok');
-  registerChatHandlers(configDb, getMainWindow, userDataPath);
+  registerChatHandlers(configDb, userDataPath);
   if (isE2EMode) log.info('[e2e] chat handlers ok');
   registerCommitMessageGeneratorHandlers();
   if (isE2EMode) log.info('[e2e] commit message generator handlers ok');
@@ -273,13 +306,13 @@ app.whenReady().then(() => {
   if (isE2EMode) log.info('[e2e] project idea generator handlers ok');
   registerToolTestHandlers();
   if (isE2EMode) log.info('[e2e] tool test handlers ok');
-  registerWatchHandlers(getMainWindow);
+  registerWatchHandlers();
   if (isE2EMode) log.info('[e2e] watch handlers ok');
-  registerFileHandlers(getMainWindow);
+  registerFileHandlers();
   if (isE2EMode) log.info('[e2e] file handlers ok');
   registerIssueTrackerHandlers();
   registerProviderHandlers(userDataPath);
-  registerMcpHandlers(getMainWindow);
+  registerMcpHandlers();
   if (isE2EMode) log.info('[e2e] issue tracker / provider / mcp handlers ok');
   // Skip update handler registration in E2E mode. On Linux CI, electron-updater
   // initialises AppImageUpdater which accesses D-Bus / libsecret and hangs for

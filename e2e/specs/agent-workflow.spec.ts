@@ -129,6 +129,9 @@ describe('agent settings', () => {
     await expect($('[data-testid="agents-section"]')).toBeDisplayed();
     await expect($('[data-testid="agent-row"]')).toBeDisplayed();
 
+    // The Mode toggle lives in the row's Edit panel.
+    await $('[data-testid="agent-row-btn-edit"]').click();
+
     // Terminal mode is the only option for a command not recognized as ACP-capable.
     await expect($('[data-testid="btn-agent-mode-integrated"]')).toBeDisabled();
 

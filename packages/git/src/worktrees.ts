@@ -53,6 +53,26 @@ function isTransientWorktreeListError(error: unknown): boolean {
 }
 
 /**
+ * A linked worktree must never be bare, but if `extensions.worktreeConfig`
+ * is already set on the repo (e.g. left over from a prior migration, or
+ * enabled by external tooling), `core.bare` becomes a per-worktree setting —
+ * any worktree without its own `config.worktree` override silently inherits
+ * `core.bare = true` from the shared config and every working-tree command
+ * (`status`, `add`, ...) fails with "this operation must be run in a work
+ * tree". Setting it explicitly per-worktree is always correct.
+ *
+ * `git config --worktree` itself refuses to run once there's more than one
+ * worktree unless `extensions.worktreeConfig` is already on (a plain repo
+ * gaining its first linked worktree hits exactly that: two worktrees now
+ * exist, extension still off) — so enable it first. That's a one-time,
+ * repo-wide, backward-compatible flag; safe to set unconditionally.
+ */
+async function disableBareForWorktree(rootRepoPath: string, worktreePath: string): Promise<void> {
+  await gitForPath(rootRepoPath).raw(['config', 'extensions.worktreeConfig', 'true']);
+  await gitForPath(worktreePath).raw(['config', '--worktree', 'core.bare', 'false']);
+}
+
+/**
  * Creates a new managed worktree branching from `fromRef`.
  * The worktree is placed at `<managedWorktreesPath>/<newBranch>`.
  */
@@ -80,6 +100,7 @@ export async function createManagedWorktree(
 
   return withWorktreeLock(rootRepoPath, async () => {
     await gitForPath(rootRepoPath).raw(['worktree', 'add', '-b', newBranch, worktreePath, fromRef]);
+    await disableBareForWorktree(rootRepoPath, worktreePath);
     // normalize() ensures consistent path separators on all platforms so the
     // returned path matches what listWorktrees() returns (which also normalizes).
     return { worktreePath: normalize(worktreePath), branch: newBranch, fromRef };
@@ -115,6 +136,7 @@ export async function createFirstManagedWorktree(
 
   return withWorktreeLock(rootRepoPath, async () => {
     await gitForPath(rootRepoPath).raw(['worktree', 'add', '--orphan', '-b', newBranch, worktreePath]);
+    await disableBareForWorktree(rootRepoPath, worktreePath);
     return { worktreePath: normalize(worktreePath), branch: newBranch, fromRef: newBranch };
   });
 }
@@ -145,6 +167,7 @@ export async function addWorktreeForExistingBranch(
 
   return withWorktreeLock(rootRepoPath, async () => {
     await gitForPath(rootRepoPath).raw(['worktree', 'add', worktreePath, branch]);
+    await disableBareForWorktree(rootRepoPath, worktreePath);
     return { worktreePath: normalize(worktreePath), branch, fromRef: branch };
   });
 }
