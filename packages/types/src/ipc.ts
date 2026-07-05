@@ -99,6 +99,8 @@ export const IPC = {
   HOOK_TOGGLE: 'hook:toggle',
   // ── Commit message generator ─────────────────────────────────────────────
   COMMITMSG_GENERATE: 'commitmsg:generate',
+  // ── New-project-from-idea generator ──────────────────────────────────────
+  PROJECT_IDEA_GENERATE: 'projectIdea:generate',
   // ── System / editors / shells ─────────────────────────────────────────────
   SYSTEM_DETECT_EDITORS: 'system:detectEditors',
   SYSTEM_DETECT_GIT_TOOLS: 'system:detectGitTools',
@@ -206,6 +208,7 @@ import type { TerminalInfo } from './terminal.js';
 import type { AgentConfig, AcpAdapterStatus } from './agents.js';
 import type { ChatConfigOption } from './chat.js';
 import type { CommitMessageGeneratorSettings, CommitMessageGenerateResult } from './commit-message-generator.js';
+import type { ProjectIdeaGenerateResult } from './project-idea.js';
 import type { IssueTrackerPattern } from './issuetracker.js';
 import type { ProviderIssue } from './providers.js';
 import type { FileTreeNode, FileReadResult } from './files.js';
@@ -267,7 +270,7 @@ export type IpcMap = {
   'git:getConfig':   { args: [key: string];                                                  result: string | null };
   'git:setConfig':   { args: [args: { key: string; value: string }];                         result: void };
   // ── Worktrees ─────────────────────────────────────────────────────────────
-  'worktree:create': { args: [args: { workspacePath: string; rootRepoPath: string; managedWorktreesPath: string; fromRef: string; newBranch: string; initiatingWorktreePath?: string | null; issueRef?: string | null; issueTitle?: string | null }]; result: CreateWorktreeResult };
+  'worktree:create': { args: [args: { workspacePath: string; rootRepoPath: string; managedWorktreesPath: string; fromRef: string; newBranch: string; initiatingWorktreePath?: string | null; issueRef?: string | null; issueTitle?: string | null; orphan?: boolean }]; result: CreateWorktreeResult };
   'worktree:delete': { args: [args: { workspacePath: string; rootRepoPath: string; managedWorktreesPath?: string; worktreePath: string; deleteBranch: boolean; branchName?: string | null; initiatingWorktreePath?: string | null; afterRemoveWorktreePath?: string | null }];                      result: void };
   'worktree:getMeta':    { args: [args: { workspacePath: string; worktreePath: string }]; result: WorktreeMetaRow | null };
   'worktree:setMeta':    { args: [args: { workspacePath: string; worktreePath: string; branch?: string; sourceRef?: string; rootRepoPath?: string; issueRef?: string | null; issueTitle?: string | null }]; result: void };
@@ -302,6 +305,8 @@ export type IpcMap = {
   'hook:runLog':      { args: [args: HookRunLogArgs]; result: void };
   // ── Commit message generator ─────────────────────────────────────────────
   'commitmsg:generate': { args: [args: { workspacePath: string; worktreePath: string; settings: CommitMessageGeneratorSettings }]; result: CommitMessageGenerateResult };
+  // ── New-project-from-idea generator ──────────────────────────────────────
+  'projectIdea:generate': { args: [args: { pitch: string }]; result: ProjectIdeaGenerateResult };
   // ── Terminal ──────────────────────────────────────────────────────────────
   'terminal:create': { args: [args: { cwd: string; shell?: string; label?: string; cols?: number; rows?: number }]; result: string };
   'terminal:write':  { args: [args: { id: string; data: string }];           result: void };

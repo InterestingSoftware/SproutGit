@@ -3,6 +3,7 @@ export { getGitConfig, setGitConfig } from './config.js';
 export {
   listWorktrees,
   createManagedWorktree,
+  createFirstManagedWorktree,
   addWorktreeForExistingBranch,
   deleteManagedWorktree,
 } from './worktrees.js';

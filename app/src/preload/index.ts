@@ -53,6 +53,7 @@ import type {
   McpServerStatus,
   McpConfigWriteResult,
   GlobalErrorEvent,
+  ProjectIdeaGenerateResult,
 } from '@sproutgit/types';
 
 /**
@@ -98,6 +99,7 @@ const api = {
     initiatingWorktreePath?: string | null;
     issueRef?: string | null;
     issueTitle?: string | null;
+    orphan?: boolean;
   }): Promise<CreateWorktreeResult> =>
     invoke(IPC.WORKTREE_CREATE, args),
 
@@ -431,6 +433,10 @@ const api = {
     settings: CommitMessageGeneratorSettings;
   }): Promise<CommitMessageGenerateResult> =>
     invoke(IPC.COMMITMSG_GENERATE, args),
+
+  // ── New-project-from-idea generator ───────────────────────────────────────
+  generateProjectIdea: (pitch: string): Promise<ProjectIdeaGenerateResult> =>
+    invoke(IPC.PROJECT_IDEA_GENERATE, { pitch }),
 
   // ── Settings tool tests ───────────────────────────────────────────────────
   testEditor: (command: string): Promise<ToolTestResult> =>

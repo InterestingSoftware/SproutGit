@@ -14,3 +14,4 @@ export * from './chat.js';
 export * from './files.js';
 export * from './mcp.js';
 export * from './errors.js';
+export * from './project-idea.js';

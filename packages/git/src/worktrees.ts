@@ -106,6 +106,41 @@ export async function createManagedWorktree(
 }
 
 /**
+ * Creates the very first managed worktree for a brand-new, zero-commit bare
+ * repo (e.g. `initBareRepo()` with no clone/import). A freshly `git init
+ * --bare`'d repo has no commits, so its `HEAD` is unborn — plain
+ * `git worktree add -b <branch> <path> HEAD` fails with `fatal: invalid
+ * reference: HEAD` because there's no commit to check out yet. `--orphan`
+ * (git 2.38+) creates the worktree on a new unborn branch instead, exactly
+ * like a fresh `git init` would, with no starting ref required.
+ */
+export async function createFirstManagedWorktree(
+  rootRepoPath: string,
+  managedWorktreesPath: string,
+  newBranch: string
+): Promise<CreateWorktreeResult> {
+  const branchError = validateBranchName(newBranch);
+  if (branchError) {
+    throw new Error(`Invalid branch name: ${branchError}`);
+  }
+
+  const worktreePath = `${managedWorktreesPath}/${newBranch}`;
+
+  // Defense in depth: validateBranchName already rejects '..' and path
+  // separators that would escape managedWorktreesPath, but re-verify the
+  // resolved path stays contained in case validation rules ever change.
+  if (!isPathWithin(worktreePath, managedWorktreesPath)) {
+    throw new Error('Worktree path must stay within the managed worktrees directory.');
+  }
+
+  return withWorktreeLock(rootRepoPath, async () => {
+    await gitForPath(rootRepoPath).raw(['worktree', 'add', '--orphan', '-b', newBranch, worktreePath]);
+    await disableBareForWorktree(rootRepoPath, worktreePath);
+    return { worktreePath: normalize(worktreePath), branch: newBranch, fromRef: newBranch };
+  });
+}
+
+/**
  * Attaches an existing branch to a new managed worktree at
  * `<managedWorktreesPath>/<branch>`, without creating a new branch.
  * Used when migrating a repo that already has the branch checked out

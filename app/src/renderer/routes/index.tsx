@@ -2,12 +2,13 @@ import { api } from '../api.js';
 import { createRoute, useNavigate } from '@tanstack/react-router';
 import { rootRoute } from './__root.js';
 import { useState, useEffect, useRef } from 'react';
-import { AppWindow, ArrowRight, Clock, Download, FolderInput, FolderOpen, Play, Settings, X, AlertTriangle } from 'lucide-react';
+import { AppWindow, ArrowRight, Clock, Download, FolderInput, FolderOpen, Play, Settings, Sparkles, X, AlertTriangle } from 'lucide-react';
 import { Spinner, WindowControls, UpdateBadge, Autocomplete, ResizableSidebar } from '@sproutgit/ui';
 import type { UpdateState } from '@sproutgit/ui';
-import type { GitHubRepo, GitInfo, GitHubAuthStatus, GitOpProgressEvent, RecentWorkspace } from '@sproutgit/types';
+import type { AgentConfig, GitHubRepo, GitInfo, GitHubAuthStatus, GitOpProgressEvent, RecentWorkspace } from '@sproutgit/types';
 import { useToast } from '../toast-context.js';
 import { reportError } from '../error-reporting.js';
+import { setPendingScaffold } from '../pending-scaffold.js';
 import logoSvgUrl from '../logo.svg?inline';
 
 // Shared Tailwind class strings
@@ -36,6 +37,18 @@ function repoNameFromPath(p: string): string {
 
 function workspaceDisplayName(workspacePath: string): string {
   return repoNameFromPath(workspacePath) || workspacePath.trim() || '?';
+}
+
+/** The kickoff message auto-sent to the agent right after a "New from idea" project is created — see pending-scaffold.ts. */
+function buildScaffoldPrompt(args: { name: string; pitch: string; techStack: string; description: string }): string {
+  return `Set up the initial boilerplate for a brand new project called "${args.name}".
+
+Idea: ${args.pitch}
+
+Tech stack: ${args.techStack}
+Description: ${args.description}
+
+Create a sensible initial folder structure, a README describing the project, a .gitignore appropriate for the stack, and any baseline config/dependency files the stack needs. Make an initial commit once the boilerplate is in place.`;
 }
 
 function formatRelativeDate(d: Date | string | number): string {
@@ -89,6 +102,24 @@ function HomeView() {
   const [importError, setImportError] = useState('');
   const importPathRef = useRef<HTMLInputElement>(null);
 
+  // Idea modal (new project from a pitch) — only offered once an AI agent is configured
+  const [agentConfig, setAgentConfig] = useState<AgentConfig | null>(null);
+  const [showIdea, setShowIdea] = useState(false);
+  const [ideaPitch, setIdeaPitch] = useState('');
+  const [ideaGenerating, setIdeaGenerating] = useState(false);
+  const [ideaGenerated, setIdeaGenerated] = useState(false);
+  const [ideaName, setIdeaName] = useState('');
+  const [ideaTechStack, setIdeaTechStack] = useState('');
+  const [ideaDescription, setIdeaDescription] = useState('');
+  const [ideaError, setIdeaError] = useState('');
+  const [ideaCreating, setIdeaCreating] = useState(false);
+  const ideaPitchRef = useRef<HTMLTextAreaElement>(null);
+
+  function resetIdeaState() {
+    setIdeaPitch(''); setIdeaGenerated(false); setIdeaName(''); setIdeaTechStack(''); setIdeaDescription('');
+    setIdeaError('');
+  }
+
   useEffect(() => {
     void api.appVersion()
       .then(v => setAppVersion(import.meta.env.DEV ? 'dev build' : `v${v}`))
@@ -128,10 +159,13 @@ function HomeView() {
         }
       }
     }).catch(() => undefined);
+
+    void api.getAgentConfig().then(setAgentConfig).catch(() => undefined);
   }, []);
 
   useEffect(() => { if (showClone) setTimeout(() => cloneUrlRef.current?.focus(), 50); }, [showClone]);
   useEffect(() => { if (showImport) setTimeout(() => importPathRef.current?.focus(), 50); }, [showImport]);
+  useEffect(() => { if (showIdea) setTimeout(() => ideaPitchRef.current?.focus(), 50); }, [showIdea]);
 
   useEffect(() => {
     const offChecking = api.onUpdateChecking(() => setUpdateState({ status: 'checking' }));
@@ -154,6 +188,7 @@ function HomeView() {
     if (!importFolderManual) setImportFolderName(repoNameFromPath(importPath));
   }, [importPath, importFolderManual]);
 
+
   useEffect(() => {
     progressEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [cloneProgress]);
@@ -163,11 +198,12 @@ function HomeView() {
       if (e.key === 'Escape') {
         if (showImport) { e.preventDefault(); setShowImport(false); }
         else if (showClone) { e.preventDefault(); setShowClone(false); }
+        else if (showIdea) { e.preventDefault(); setShowIdea(false); }
       }
     }
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [showClone, showImport]);
+  }, [showClone, showImport, showIdea]);
 
   async function openWorkspace(workspacePath: string, fromRecents = false) {
     setOpening(true);
@@ -301,7 +337,71 @@ function HomeView() {
     }
   }
 
+  async function generateIdea() {
+    setIdeaError('');
+    if (!ideaPitch.trim()) { setIdeaError('Describe your idea first'); return; }
+    setIdeaGenerating(true);
+    try {
+      const result = await api.generateProjectIdea(ideaPitch.trim());
+      if (result.error !== undefined) {
+        // Still reveal the fields so the user can fill them in by hand.
+        setIdeaError(result.error);
+        setIdeaGenerated(true);
+        return;
+      }
+      setIdeaName(result.name);
+      setIdeaTechStack(result.techStack);
+      setIdeaDescription(result.description);
+      setIdeaGenerated(true);
+    } catch (err) {
+      setIdeaError(String(err));
+      setIdeaGenerated(true);
+    } finally {
+      setIdeaGenerating(false);
+    }
+  }
+
+  async function createIdeaProject(e: React.FormEvent) {
+    e.preventDefault();
+    setIdeaError('');
+    if (!projectsFolder.trim()) { setIdeaError('Projects folder is required'); return; }
+    if (!ideaName.trim()) { setIdeaError('Project name is required'); return; }
+    const workspacePath = `${projectsFolder}/${ideaName.trim()}`;
+    setIdeaCreating(true);
+    try {
+      const initResult = await api.createWorkspace({ workspacePath });
+      await api.createWorktree({
+        workspacePath,
+        rootRepoPath: initResult.rootPath,
+        managedWorktreesPath: initResult.worktreesPath,
+        fromRef: '',
+        newBranch: 'main',
+        orphan: true,
+      });
+      setPendingScaffold(workspacePath, buildScaffoldPrompt({
+        name: ideaName.trim(),
+        pitch: ideaPitch.trim(),
+        techStack: ideaTechStack.trim(),
+        description: ideaDescription.trim(),
+      }));
+      setShowIdea(false);
+      await api.addRecentWorkspace(workspacePath);
+      setRecents(prev => [
+        { workspacePath, lastOpenedAt: Date.now() },
+        ...prev.filter(w => w.workspacePath !== workspacePath),
+      ]);
+      resetIdeaState();
+      toast('Project created', 'success');
+      void navigate({ to: '/workspace', search: { path: workspacePath } });
+    } catch (err) {
+      setIdeaError(String(err));
+    } finally {
+      setIdeaCreating(false);
+    }
+  }
+
   const cloneWorkspacePath = projectsFolder && cloneFolderName ? `${projectsFolder}/${cloneFolderName}` : '';
+  const ideaWorkspacePath = projectsFolder && ideaName ? `${projectsFolder}/${ideaName}` : '';
 
   return (
     <div className="flex flex-col h-screen overflow-hidden bg-(--sg-bg)">
@@ -356,6 +456,14 @@ function HomeView() {
             </div>
 
             <div className="flex flex-col gap-0.5 p-2">
+              {!!agentConfig?.command.trim() && (
+                <button className={actionBtn} data-testid="btn-new-from-idea" onClick={() => { resetIdeaState(); setShowIdea(true); }}>
+                  <span className={actionIcon}><Sparkles size={14} strokeWidth={2} /></span>
+                  <span>New from idea</span>
+                  <ArrowRight size={13} className="ml-auto text-(--sg-text-faint) opacity-0 transition-opacity group-hover:opacity-100" />
+                </button>
+              )}
+
               <button className={actionBtn} data-testid="btn-clone" onClick={() => { setCloneError(''); setCloneProgress([]); setShowClone(true); }}>
                 <span className={actionIcon}><Download size={14} strokeWidth={2} /></span>
                 <span>Clone</span>
@@ -617,6 +725,96 @@ function HomeView() {
               <button type="submit" className={primaryBtn} disabled={importing}>
                 {importing ? <><Spinner size="sm" /> Importing…</> : 'Import'}
               </button>
+            </div>
+          </form>
+        </div>
+      )}
+
+      {/* New from idea Dialog */}
+      {showIdea && (
+        <div
+          className="fixed inset-0 z-200 bg-black/45 flex items-center justify-center"
+          onClick={e => { if (e.target === e.currentTarget) setShowIdea(false); }}
+          data-testid="idea-dialog"
+        >
+          <form
+            className="bg-(--sg-surface) border border-(--sg-border) rounded-xl p-5 min-w-[440px] max-w-[520px] shadow-[0_20px_60px_rgba(0,0,0,0.25)]"
+            onSubmit={e => void createIdeaProject(e)}
+          >
+            <div className="flex items-start gap-[10px] mb-[18px]">
+              <span className="flex items-center justify-center w-[30px] h-[30px] rounded-lg bg-[color-mix(in_srgb,var(--sg-primary)_15%,transparent)] text-(--sg-primary) shrink-0">
+                <Sparkles size={14} />
+              </span>
+              <div className="flex-1">
+                <h2 className="text-[15px] font-semibold m-0 mb-[10px] text-(--sg-text) font-[family-name:var(--sg-font-heading)]">New from idea</h2>
+                <p className="text-[11px] text-(--sg-text-faint) mt-0.5 mb-0">Pitch a project — your AI agent names it, picks a stack, and scaffolds it</p>
+              </div>
+              <button type="button" className={iconBtn} onClick={() => setShowIdea(false)}><X size={14} /></button>
+            </div>
+            <div className="flex flex-col gap-3">
+              <label className="flex flex-col gap-1">
+                <span className={fieldLabel}>Your idea</span>
+                <textarea
+                  ref={ideaPitchRef}
+                  className={`${fieldInput} min-h-[70px] resize-none`}
+                  value={ideaPitch}
+                  onChange={e => setIdeaPitch(e.target.value)}
+                  placeholder="A CLI that turns a changelog into release notes…"
+                  required
+                  disabled={ideaGenerating || ideaCreating}
+                  spellCheck={false}
+                  data-testid="input-idea-pitch"
+                />
+              </label>
+
+              {!ideaGenerated && (
+                <div className="flex justify-end">
+                  <button type="button" className={secondaryBtn} onClick={() => void generateIdea()} disabled={ideaGenerating || !ideaPitch.trim()} data-testid="btn-idea-generate">
+                    {ideaGenerating ? <><Spinner size="sm" /> Thinking…</> : 'Generate name & stack'}
+                  </button>
+                </div>
+              )}
+
+              {ideaGenerated && (
+                <>
+                  <label className="flex flex-col gap-1">
+                    <span className={fieldLabel}>Project name</span>
+                    <input className={fieldInput} value={ideaName} onChange={e => setIdeaName(e.target.value)} placeholder="my-project" required disabled={ideaCreating} spellCheck={false} data-testid="input-idea-name" />
+                  </label>
+                  <label className="flex flex-col gap-1">
+                    <span className={fieldLabel}>Tech stack</span>
+                    <input className={fieldInput} value={ideaTechStack} onChange={e => setIdeaTechStack(e.target.value)} placeholder="Node.js + TypeScript" disabled={ideaCreating} spellCheck={false} data-testid="input-idea-stack" />
+                  </label>
+                  <label className="flex flex-col gap-1">
+                    <span className={fieldLabel}>Description</span>
+                    <input className={fieldInput} value={ideaDescription} onChange={e => setIdeaDescription(e.target.value)} disabled={ideaCreating} spellCheck={false} data-testid="input-idea-description" />
+                  </label>
+                  <div className="flex flex-col gap-1">
+                    <span className={fieldLabel}>Parent folder</span>
+                    <div className="flex gap-[6px] items-center">
+                      <input className={fieldInput} value={projectsFolder} onChange={e => setProjectsFolder(e.target.value)}
+                        onBlur={() => { if (projectsFolder.trim()) void api.setSetting(PROJECTS_FOLDER_SETTING, projectsFolder.trim()).catch(() => undefined); }}
+                        placeholder="~/Projects" disabled={ideaCreating} spellCheck={false} data-testid="input-idea-parent-folder" />
+                      <button type="button" className={secondaryBtn} onClick={() => void browseProjectsFolder()} disabled={ideaCreating}><FolderOpen size={13} /></button>
+                    </div>
+                  </div>
+                  {ideaWorkspacePath && (
+                    <p className="text-[11px] text-(--sg-text-faint) m-0">
+                      Will create: <code>{ideaWorkspacePath}</code> — the agent will scaffold boilerplate automatically once it opens.
+                    </p>
+                  )}
+                </>
+              )}
+
+              {ideaError && <p className="text-xs text-(--sg-danger) m-0">{ideaError}</p>}
+            </div>
+            <div className="flex gap-2 justify-end mt-5">
+              <button type="button" className={secondaryBtn} onClick={() => setShowIdea(false)} disabled={ideaCreating}>Cancel</button>
+              {ideaGenerated && (
+                <button type="submit" className={primaryBtn} disabled={ideaCreating || !ideaName.trim()} data-testid="btn-idea-create">
+                  {ideaCreating ? <><Spinner size="sm" /> Creating…</> : 'Create Project'}
+                </button>
+              )}
             </div>
           </form>
         </div>

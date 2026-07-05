@@ -54,6 +54,7 @@ export function registerGitHandlers(configDb: ConfigDb): void {
     initiatingWorktreePath?: string | null;
     issueRef?: string | null;
     issueTitle?: string | null;
+    orphan?: boolean;
   }) => {
     return createWorktreeWithHooks(args, () => BrowserWindow.fromWebContents(_e.sender), configDb);
   });
