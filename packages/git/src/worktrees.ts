@@ -126,9 +126,10 @@ export async function createFirstManagedWorktree(
 
   const worktreePath = `${managedWorktreesPath}/${newBranch}`;
 
-  const resolvedRoot = resolve(managedWorktreesPath) + sep;
-  const resolvedTarget = resolve(worktreePath);
-  if (!(resolvedTarget + sep).startsWith(resolvedRoot)) {
+  // Defense in depth: validateBranchName already rejects '..' and path
+  // separators that would escape managedWorktreesPath, but re-verify the
+  // resolved path stays contained in case validation rules ever change.
+  if (!isPathWithin(worktreePath, managedWorktreesPath)) {
     throw new Error('Worktree path must stay within the managed worktrees directory.');
   }
 
