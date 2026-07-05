@@ -7,7 +7,7 @@ import { openWorkspaceDb, eq } from '@sproutgit/database';
 import { workspaceState } from '@sproutgit/database/schema/workspace';
 import { handle } from './handle.js';
 import { startMcpServer, stopMcpServer, getMcpStatus, deriveDefaultPort } from '../mcp-bridge.js';
-import { writeClientConfig, buildManualSnippet } from '../mcp-config-writers.js';
+import { writeClientConfig, buildManualSnippet } from '@sproutgit/mcp-client-config';
 
 /** Per-workspace keys in the workspace_state table. */
 const ENABLED_KEY = 'mcp:enabled';

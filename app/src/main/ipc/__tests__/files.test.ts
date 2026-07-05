@@ -12,7 +12,7 @@ const { watchRecursiveMock, closeWatcherMock } = vi.hoisted(() => ({
   watchRecursiveMock: vi.fn(),
   closeWatcherMock: vi.fn(),
 }));
-vi.mock('../../lib/recursive-watch.js', () => ({
+vi.mock('@sproutgit/fs-watch', () => ({
   watchRecursive: (...args: unknown[]) => watchRecursiveMock(...args),
   closeWatcher: (...args: unknown[]) => closeWatcherMock(...args),
 }));

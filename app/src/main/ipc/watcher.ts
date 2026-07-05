@@ -18,7 +18,7 @@ import { ipcMain, type BrowserWindow } from 'electron';
 import { IPC } from '@sproutgit/types';
 import { watch } from 'node:fs';
 import { join, resolve } from 'node:path';
-import { watchRecursive, closeWatcher } from '../lib/recursive-watch.js';
+import { watchRecursive, closeWatcher } from '@sproutgit/fs-watch';
 
 type Closable = { close: () => void | Promise<void> };
 

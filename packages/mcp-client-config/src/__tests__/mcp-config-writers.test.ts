@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { mkdtempSync, rmSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { writeClientConfig, buildManualSnippet } from '../mcp-config-writers.js';
+import { writeClientConfig, buildManualSnippet } from '../index.js';
 
 const PORT = 47285;
 const TOKEN = 'test-token-abc123';
