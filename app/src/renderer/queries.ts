@@ -302,7 +302,7 @@ export function usePush(worktreePath: string) {
 export function useDeleteWorktree(gitRepoPath: string) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (args: { rootRepoPath: string; managedWorktreesPath?: string; worktreePath: string; deleteBranch: boolean; branchName?: string | null }) =>
+    mutationFn: (args: { workspacePath: string; rootRepoPath: string; managedWorktreesPath?: string; worktreePath: string; deleteBranch: boolean; branchName?: string | null; initiatingWorktreePath?: string | null; afterRemoveWorktreePath?: string | null }) =>
       api.deleteWorktree(args) as Promise<void>,
     onSuccess: (_data, args) => {
       // Remove cached status for the deleted worktree so no in-flight refetch

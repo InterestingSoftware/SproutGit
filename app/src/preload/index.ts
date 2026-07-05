@@ -51,6 +51,9 @@ import type {
   FileTreeNode,
   FileReadResult,
   FileChangedEvent,
+  McpClientId,
+  McpServerStatus,
+  McpConfigWriteResult,
 } from '@sproutgit/types';
 
 /**
@@ -88,19 +91,26 @@ const api = {
     invoke(IPC.GIT_LIST_WORKTREES, repoPath, managedWorktreesPath),
 
   createWorktree: (args: {
+    workspacePath: string;
     rootRepoPath: string;
     managedWorktreesPath: string;
     fromRef: string;
     newBranch: string;
+    initiatingWorktreePath?: string | null;
+    issueRef?: string | null;
+    issueTitle?: string | null;
   }): Promise<CreateWorktreeResult> =>
     invoke(IPC.WORKTREE_CREATE, args),
 
   deleteWorktree: (args: {
+    workspacePath: string;
     rootRepoPath: string;
     managedWorktreesPath?: string;
     worktreePath: string;
     deleteBranch: boolean;
     branchName?: string | null;
+    initiatingWorktreePath?: string | null;
+    afterRemoveWorktreePath?: string | null;
   }): Promise<void> =>
     invoke(IPC.WORKTREE_DELETE, args),
 
@@ -661,6 +671,25 @@ const api = {
   // ── Providers ────────────────────────────────────────────────────────────
   fetchProviderIssue: (url: string): Promise<ProviderIssue | null> =>
     invoke(IPC.PROVIDER_FETCH_ISSUE, url),
+
+  // ── MCP server ────────────────────────────────────────────────────────────
+  mcpStatus: (workspacePath: string): Promise<McpServerStatus> =>
+    invoke(IPC.MCP_STATUS, workspacePath),
+
+  mcpEnsureStarted: (workspacePath: string): Promise<McpServerStatus> =>
+    invoke(IPC.MCP_ENSURE_STARTED, workspacePath),
+
+  mcpSetEnabled: (workspacePath: string, enabled: boolean): Promise<McpServerStatus> =>
+    invoke(IPC.MCP_SET_ENABLED, { workspacePath, enabled }),
+
+  mcpSetPort: (workspacePath: string, port: number | null): Promise<McpServerStatus> =>
+    invoke(IPC.MCP_SET_PORT, { workspacePath, port }),
+
+  mcpWriteClientConfig: (workspacePath: string, client: McpClientId): Promise<McpConfigWriteResult> =>
+    invoke(IPC.MCP_WRITE_CLIENT_CONFIG, { workspacePath, client }),
+
+  mcpGetManualSnippet: (workspacePath: string, client?: McpClientId): Promise<string> =>
+    invoke(IPC.MCP_GET_MANUAL_SNIPPET, client ? { workspacePath, client } : { workspacePath }),
 };
 
 contextBridge.exposeInMainWorld('api', api);

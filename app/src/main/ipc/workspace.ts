@@ -6,6 +6,7 @@ import { join } from 'path';
 import { recentWorkspaces } from '@sproutgit/database/schema/config';
 import { log } from '../telemetry.js';
 import { stopWatchingPath } from './watcher.js';
+import { stopMcpServer } from '../mcp-bridge.js';
 import { waitForIdleRepo } from '@sproutgit/git';
 import {
   worktreeMetadata,
@@ -28,6 +29,67 @@ function getWorkspaceDb(workspacePath: string) {
   const db = openWorkspaceDb(dbPath);
   workspaceDbCache.set(workspacePath, db);
   return db;
+}
+
+/**
+ * Closes and evicts the cached workspace-DB connection for `workspacePath`,
+ * if one is open. Exported so callers that need the underlying sqlite file
+ * to actually be removable/renamable right after this call — the
+ * WORKSPACE_CLOSE handler below, and worktree-lifecycle.ts's tests, which
+ * hit this same cache indirectly via setWorktreeMeta() — can force it
+ * closed instead of leaving it cached for the rest of the process
+ * lifetime (an open handle blocks deleting the directory on Windows).
+ */
+export function closeWorkspaceDbCache(workspacePath: string): void {
+  const db = workspaceDbCache.get(workspacePath);
+  if (db) {
+    db.close();
+    workspaceDbCache.delete(workspacePath);
+  }
+}
+
+export interface SetWorktreeMetaArgs {
+  workspacePath: string;
+  worktreePath: string;
+  branch?: string;
+  sourceRef?: string;
+  rootRepoPath?: string;
+  issueRef?: string | null;
+  issueTitle?: string | null;
+}
+
+/**
+ * Upserts worktree provenance/issue-ref metadata. Exported standalone so
+ * worktree-lifecycle.ts (shared by both the renderer's worktree:create IPC
+ * call and the MCP create_worktree tool) can record it directly, without a
+ * client-side IPC round-trip.
+ */
+export function setWorktreeMeta(args: SetWorktreeMetaArgs): void {
+  const db = getWorkspaceDb(args.workspacePath);
+  const now = new Date();
+  db.insert(worktreeMetadata)
+    .values({
+      worktreePath: args.worktreePath,
+      branch: args.branch ?? '',
+      sourceRef: args.sourceRef ?? '',
+      rootRepoPath: args.rootRepoPath ?? '',
+      issueRef: args.issueRef ?? null,
+      issueTitle: args.issueTitle ?? null,
+      createdAt: now,
+      updatedAt: now,
+    })
+    .onConflictDoUpdate({
+      target: worktreeMetadata.worktreePath,
+      set: {
+        branch: args.branch ?? '',
+        sourceRef: args.sourceRef ?? '',
+        rootRepoPath: args.rootRepoPath ?? '',
+        issueRef: args.issueRef ?? null,
+        issueTitle: args.issueTitle ?? null,
+        updatedAt: now,
+      },
+    })
+    .run();
 }
 
 export function registerWorkspaceHandlers(configDb: ConfigDb): void {
@@ -90,11 +152,14 @@ export function registerWorkspaceHandlers(configDb: ConfigDb): void {
     // on root the moment after this call returns.
     await waitForIdleRepo(gitRepoPath);
 
-    const db = workspaceDbCache.get(workspacePath);
-    if (db) {
-      db.close();
-      workspaceDbCache.delete(workspacePath);
-    }
+    // Release the MCP socket server too — same reasoning as the watcher
+    // below: an open listener on a socket file inside .sproutgit/ would
+    // block removing that directory on Windows, and leaving it running
+    // after the workspace closes would let a stale bridge connection keep
+    // operating against a workspace the UI no longer considers open.
+    await stopMcpServer(workspacePath);
+
+    closeWorkspaceDbCache(workspacePath);
     // Release the fs.watch handles on root too — same reason as the DB
     // close above: on Windows an open watch handle blocks removing the
     // directory it's watching, so anything about to delete this workspace
@@ -110,40 +175,8 @@ export function registerWorkspaceHandlers(configDb: ConfigDb): void {
       .get() ?? null;
   });
 
-  handle(IPC.WORKTREE_SET_META, (_e, args: {
-    workspacePath: string;
-    worktreePath: string;
-    branch?: string;
-    sourceRef?: string;
-    rootRepoPath?: string;
-    issueRef?: string | null;
-    issueTitle?: string | null;
-  }) => {
-    const db = getWorkspaceDb(args.workspacePath);
-    const now = new Date();
-    db.insert(worktreeMetadata)
-      .values({
-        worktreePath: args.worktreePath,
-        branch: args.branch ?? '',
-        sourceRef: args.sourceRef ?? '',
-        rootRepoPath: args.rootRepoPath ?? '',
-        issueRef: args.issueRef ?? null,
-        issueTitle: args.issueTitle ?? null,
-        createdAt: now,
-        updatedAt: now,
-      })
-      .onConflictDoUpdate({
-        target: worktreeMetadata.worktreePath,
-        set: {
-          branch: args.branch ?? '',
-          sourceRef: args.sourceRef ?? '',
-          rootRepoPath: args.rootRepoPath ?? '',
-          issueRef: args.issueRef ?? null,
-          issueTitle: args.issueTitle ?? null,
-          updatedAt: now,
-        },
-      })
-      .run();
+  handle(IPC.WORKTREE_SET_META, (_e, args: SetWorktreeMetaArgs) => {
+    setWorktreeMeta(args);
   });
 
   // Drops worktree_metadata rows for paths git no longer reports (deleted

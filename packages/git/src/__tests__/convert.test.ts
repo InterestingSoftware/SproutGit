@@ -25,14 +25,14 @@ function tempDir(prefix: string): string {
   return realpathSync.native(mkdtempSync(join(tmpdir(), prefix)));
 }
 
-describe('convertToBareWithWorktree', () => {
-  // This is the first test in the suite to spawn a real `git` subprocess,
-  // which pays a one-time cold-start cost on Windows CI runners (e.g.
-  // Defender real-time scanning newly-written git.exe-touched temp files)
-  // that later tests in this file don't — observed timing out right at the
-  // default 5000ms twice in a row while every other test here (doing
-  // equivalent or more work) finished in 1-3s. Bumped rather than left
-  // flaky; not a sign of a real slowdown in convertToBareWithWorktree itself.
+// Each of these does several real filesystem-heavy git operations (init,
+// commit, directory rename, worktree add/checkout, sometimes a rollback on
+// top of that) — comfortably under the 5s default on macOS/Linux, but
+// Windows CI runners are measurably slower for this class of operation
+// (see docs/agent-instructions.md's notes on Windows-specific git/fs
+// quirks) and have intermittently timed out here under load. Raise the
+// suite-wide timeout rather than each call site individually.
+describe('convertToBareWithWorktree', { timeout: 20_000 }, () => {
   it('converts a clean, standalone repo to bare + worktree', async () => {
     const workspaceDir = tempDir('sg-convert-standalone-');
     const sourceDir = join(workspaceDir, 'root');
@@ -66,7 +66,7 @@ describe('convertToBareWithWorktree', () => {
     expect(worktrees[0]?.path).toBe(worktreePath);
 
     rmSync(workspaceDir, { recursive: true, force: true });
-  }, 15_000);
+  });
 
   it('converts a clean, imported-in-place repo (source is an ancestor of the bare path)', async () => {
     const workspaceDir = tempDir('sg-convert-inplace-');
