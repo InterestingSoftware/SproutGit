@@ -16,13 +16,20 @@ import { tmpdir } from 'os';
  *    spawns it via execFile with no SPROUTGIT_* env — reads the full prompt
  *    from stdin, prints a fixed JSON response, and exits.
  *  - The "scaffold this" terminal launch (agents.ts' AGENT_LAUNCH) spawns it
- *    via node-pty with SPROUTGIT_AGENT set — idles so the terminal tab stays
- *    alive, and explicitly echoes whatever it reads on stdin (the kickoff
- *    prompt) back to its own stdout. Unix PTYs echo typed input at the line-
- *    discipline level regardless of what the child process does, but Windows'
- *    ConPTY doesn't reliably do the same for a plain script that never enables
- *    console echo itself — so this can't rely on the pty to echo it; the
- *    script has to.
+ *    via node-pty with SPROUTGIT_AGENT set — idles briefly so the terminal
+ *    tab has time to render, echoes whatever it reads on stdin (the kickoff
+ *    prompt) back to its own stdout, then exits on its own a moment later.
+ *    Unix PTYs echo typed input at the line-discipline level regardless of
+ *    what the child process does, but Windows' ConPTY doesn't reliably do
+ *    the same for a plain script that never enables console echo itself —
+ *    so this can't rely on the pty to echo it; the script has to. Exiting
+ *    on its own (rather than staying alive forever and needing to be
+ *    killed by the test's cleanup) means the OS releases its handle on the
+ *    workspace directory through the normal process-exit path well before
+ *    cleanup ever runs, instead of via an external kill signal whose actual
+ *    OS-level teardown timing turned out to be unpredictable on Windows
+ *    even when explicitly waited for (see closeAllTerminalsAndWaitForExit
+ *    below, kept as a defensive backstop, not the primary mechanism).
  */
 const GENERATED_NAME = 'E2E Sample Project';
 const GENERATED_SLUG = 'e2e-sample-project';
@@ -31,7 +38,10 @@ const GENERATED_DESCRIPTION = 'An e2e-generated test project.';
 
 const TEST_AGENT_SCRIPT = `
 if (process.env.SPROUTGIT_AGENT) {
-  process.stdin.on('data', c => process.stdout.write(c));
+  process.stdin.on('data', c => {
+    process.stdout.write(c);
+    setTimeout(() => process.exit(0), 3000);
+  });
   setInterval(() => {}, 1000);
 } else {
   let d = '';
