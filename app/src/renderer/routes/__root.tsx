@@ -65,6 +65,22 @@ function RootLayout() {
     };
   }, [navigate]);
 
+  // "New Window" shortcut. On macOS this is already handled by the native
+  // File → New Window menu item (Cmd+N) — binding it here too would open two
+  // windows per press. Windows/Linux have no application menu at all, so
+  // Ctrl+N is the only shortcut path there.
+  useEffect(() => {
+    if (/mac/i.test(navigator.platform)) return;
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.ctrlKey && !e.shiftKey && !e.altKey && e.key.toLowerCase() === 'n') {
+        e.preventDefault();
+        void api.openNewWindow();
+      }
+    }
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, []);
+
   return (
     <ToastContext.Provider value={addToast}>
       <Outlet />

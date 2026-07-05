@@ -24,7 +24,7 @@ type Handler = () => Promise<AcpAdapterStatus | null>;
 
 function getHandler(configDb: ConfigDb, userDataPath: string): Handler {
   handleMock.mockClear();
-  registerAgentHandlers(configDb, () => null, userDataPath);
+  registerAgentHandlers(configDb, userDataPath);
   const call = handleMock.mock.calls.find(c => c[0] === IPC.AGENT_ACP_ADAPTER_STATUS);
   if (!call) throw new Error(`${IPC.AGENT_ACP_ADAPTER_STATUS} handler was not registered`);
   return call[1] as Handler;

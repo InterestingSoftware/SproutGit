@@ -32,7 +32,7 @@ type Handler = (event: unknown) => Promise<ToolTestResult>;
 
 function getHandler(configDb: ConfigDb): Handler {
   handleMock.mockClear();
-  registerAgentHandlers(configDb, () => null, '/tmp/sg-test-userdata');
+  registerAgentHandlers(configDb, '/tmp/sg-test-userdata');
   const call = handleMock.mock.calls.find(c => c[0] === IPC.AGENT_TEST);
   if (!call) throw new Error(`${IPC.AGENT_TEST} handler was not registered`);
   return call[1] as Handler;

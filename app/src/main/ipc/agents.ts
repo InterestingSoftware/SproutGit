@@ -8,7 +8,7 @@
  * handled separately by chat.ts, which spawns the agent with structured
  * streaming output and renders it in the Chat tab.
  */
-import type { BrowserWindow } from 'electron';
+import { BrowserWindow } from 'electron';
 import { execFile } from 'node:child_process';
 import { IPC, ACP_PRESET_TOKENS } from '@sproutgit/types';
 import type { AcpAdapterStatus, AgentConfig, IssueTrackerPattern, ToolTestResult } from '@sproutgit/types';
@@ -199,7 +199,7 @@ async function buildAgentEnv(args: { workspacePath: string; worktreePath: string
   };
 }
 
-export function registerAgentHandlers(configDb: ConfigDb, getWindow: () => BrowserWindow | null, userDataPath: string): void {
+export function registerAgentHandlers(configDb: ConfigDb, userDataPath: string): void {
   handle(IPC.AGENT_GET, () => getAgentConfig(configDb));
 
   handle(IPC.AGENT_SAVE, (_e, config: AgentConfig) => {
@@ -229,7 +229,7 @@ export function registerAgentHandlers(configDb: ConfigDb, getWindow: () => Brows
     if (!isKnownAcpAdapterPackage(npmPackage)) {
       throw new Error(`Refusing to install unrecognized package "${npmPackage}".`);
     }
-    const win = getWindow();
+    const win = BrowserWindow.fromWebContents(_e.sender);
     await installAcpAdapter(userDataPath, npmPackage, event => {
       if (win && !win.isDestroyed()) win.webContents.send(IPC.EVENT_AGENT_ACP_ADAPTER_INSTALL, event);
     });
@@ -239,7 +239,7 @@ export function registerAgentHandlers(configDb: ConfigDb, getWindow: () => Brows
     workspacePath: string;
     worktreePath: string;
   }) => {
-    const win = getWindow();
+    const win = BrowserWindow.fromWebContents(_e.sender);
     if (!win) throw new Error('No active window to launch the agent in.');
 
     const agent = getAgentConfig(configDb);
