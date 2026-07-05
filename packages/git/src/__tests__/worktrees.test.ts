@@ -29,7 +29,7 @@ describe('worktree creation and core.bare inheritance', { timeout: 20_000 }, () 
     // refusing to run without the extension enabled.
     const rootDir = tempDir('sg-worktree-plain-');
     createNonBareRepo(rootDir);
-    const worktreesDir = join(rootDir, '..', 'worktrees');
+    const worktreesDir = join(tempDir('sg-worktree-plain-out-'), 'worktrees');
     mkdirSync(worktreesDir, { recursive: true });
 
     const { worktreePath } = await createManagedWorktree(rootDir, worktreesDir, 'main', 'feature');
@@ -47,7 +47,7 @@ describe('worktree creation and core.bare inheritance', { timeout: 20_000 }, () 
     createNonBareRepo(rootDir);
     execSync('git config extensions.worktreeConfig true', { cwd: rootDir, stdio: 'ignore' });
     execSync('git config core.bare true', { cwd: rootDir, stdio: 'ignore' });
-    const worktreesDir = join(rootDir, '..', 'worktrees');
+    const worktreesDir = join(tempDir('sg-worktree-bare-inherited-out-'), 'worktrees');
     mkdirSync(worktreesDir, { recursive: true });
 
     execSync('git branch existing-branch', { cwd: rootDir, stdio: 'ignore' });

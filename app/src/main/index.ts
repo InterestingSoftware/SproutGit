@@ -280,7 +280,7 @@ app.whenReady().then(() => {
   }
   if (isE2EMode) log.info('[e2e] skipped buildMenu, registering handlers');
 
-  registerGitHandlers();
+  registerGitHandlers(configDb);
   if (isE2EMode) log.info('[e2e] git handlers ok');
   registerWorkspaceHandlers(configDb);
   if (isE2EMode) log.info('[e2e] workspace handlers ok');
@@ -294,7 +294,7 @@ app.whenReady().then(() => {
   if (isE2EMode) log.info('[e2e] system handlers ok');
   registerGithubHandlers(userDataPath);
   if (isE2EMode) log.info('[e2e] github handlers ok');
-  registerHookHandlers();
+  registerHookHandlers(configDb);
   if (isE2EMode) log.info('[e2e] hook handlers ok');
   registerAgentHandlers(configDb, userDataPath);
   if (isE2EMode) log.info('[e2e] agent handlers ok');
@@ -312,7 +312,7 @@ app.whenReady().then(() => {
   if (isE2EMode) log.info('[e2e] file handlers ok');
   registerIssueTrackerHandlers();
   registerProviderHandlers(userDataPath);
-  registerMcpHandlers();
+  registerMcpHandlers(configDb);
   if (isE2EMode) log.info('[e2e] issue tracker / provider / mcp handlers ok');
   // Skip update handler registration in E2E mode. On Linux CI, electron-updater
   // initialises AppImageUpdater which accesses D-Bus / libsecret and hangs for

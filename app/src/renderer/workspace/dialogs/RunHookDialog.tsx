@@ -28,8 +28,11 @@ export function RunHookDialog({ target, workspacePath, activeWorktreePath, onClo
       dialog.showModal();
       setRunningHookId(null);
       setLoading(true);
-      void api.listHooks(workspacePath)
-        .then((all: WorkspaceHook[]) => setHooks(all.filter(h => h.enabled)))
+      void api.listHooks(workspacePath, target.path)
+        // Untrusted repo hooks are listed elsewhere (Workspace Hooks) for
+        // visibility, but never offered here — running one would just
+        // silently no-op since the main process re-checks trust anyway.
+        .then(({ hooks: all }) => setHooks(all.filter(h => h.enabled && h.trusted)))
         .catch((err: unknown) => { onToast(`Failed to load hooks: ${String(err)}`, 'error'); onClose(); })
         .finally(() => setLoading(false));
     } else {

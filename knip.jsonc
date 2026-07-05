@@ -1,0 +1,48 @@
+{
+  "$schema": "https://unpkg.com/knip@6/schema.json",
+  // `where` is the Windows shell builtin used to resolve shell binaries in
+  // packages/terminal/src/terminal-manager.ts — not an npm package.
+  "ignoreBinaries": ["where"],
+  "ignoreDependencies": [
+    // Native module only imported transitively via @sproutgit/terminal, but
+    // electron-builder resolves native deps to rebuild/unpack from the app's
+    // own package.json, not through workspace packages.
+    "node-pty",
+    // Referenced only by npm package name string in app/src/main/ipc/agents.ts
+    // (installed on demand as external ACP adapter binaries), never imported.
+    "@agentclientprotocol/claude-agent-acp",
+    "@agentclientprotocol/codex-acp",
+    // Resolved by WebdriverIO at runtime from the `services: ['electron']`
+    // string in e2e/wdio.conf.ts, never imported directly.
+    "wdio-electron-service",
+    // Resolved by WebdriverIO at runtime from the `runner: 'local'` string
+    // in e2e/wdio.conf.ts, never imported directly.
+    "@wdio/local-runner",
+    // Supplies the ambient `WebdriverIO` namespace used for the config type
+    // in e2e/wdio.conf.ts, never imported directly.
+    "@wdio/types"
+  ],
+  "workspaces": {
+    "app": {
+      "entry": [
+        "electron.vite.config.ts",
+        "src/main/index.ts",
+        "src/preload/index.ts",
+        "src/renderer/main.tsx",
+        // Ambient .d.ts files are never imported, only picked up by tsconfig.
+        "src/main/env.d.ts",
+        "src/renderer/types-compat.d.ts",
+        "src/renderer/window.d.ts"
+      ]
+    },
+    "e2e": {
+      "entry": ["specs/**/*.spec.ts"]
+    },
+    "packages/database": {
+      // CLI-only config files (see CONTRIBUTING.md), passed to drizzle-kit
+      // via --config; never imported and don't match knip's default
+      // drizzle.config.{ts,js,json} plugin glob.
+      "entry": ["drizzle.config.config.ts", "drizzle.workspace.config.ts"]
+    }
+  }
+}

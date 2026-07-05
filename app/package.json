@@ -159,9 +159,6 @@
     "@agentclientprotocol/claude-agent-acp": "0.55.0",
     "@agentclientprotocol/codex-acp": "1.1.0",
     "@agentclientprotocol/sdk": "^1.1.0",
-    "@fontsource/fira-code": "^5.2.7",
-    "@fontsource/plus-jakarta-sans": "^5.2.8",
-    "@fontsource/space-grotesk": "^5.2.10",
     "@sproutgit/database": "workspace:*",
     "@sproutgit/fs-watch": "workspace:*",
     "@sproutgit/git": "workspace:*",
@@ -183,7 +180,6 @@
     "zustand": "^5.0.14"
   },
   "devDependencies": {
-    "@electron/rebuild": "^4.1.0",
     "@sproutgit/mcp-server": "workspace:*",
     "@sproutgit/ts-config": "workspace:*",
     "@tailwindcss/vite": "^4.3.2",

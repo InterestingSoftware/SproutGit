@@ -87,12 +87,15 @@ vi.mock('@sproutgit/git/diff', () => ({
   getWorkingDiff: (...a: unknown[]) => getWorkingDiffMock(...a),
 }));
 
+import type { ConfigDb } from '@sproutgit/database';
 import { registerGitHandlers } from '../git.js';
 
 type Handler = (event: unknown, ...args: unknown[]) => Promise<unknown>;
+// None of these tests exercise WORKTREE_CREATE/WORKTREE_DELETE, so configDb is never touched.
+const FAKE_CONFIG_DB = {} as ConfigDb;
 
 function getHandlers(): Map<string, Handler> {
-  registerGitHandlers();
+  registerGitHandlers(FAKE_CONFIG_DB);
   const map = new Map<string, Handler>();
   for (const [channel, fn] of handleMock.mock.calls) map.set(channel as string, fn as Handler);
   return map;

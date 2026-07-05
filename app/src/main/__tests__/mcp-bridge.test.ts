@@ -29,6 +29,9 @@ function paramsFor(workspacePath: string, port = 0) {
 
 /** No workspace window is open in any of these tests — hooks are simply skipped, matching production behavior when a workspace has no open window. */
 const NO_WINDOW = () => null;
+// None of these tests exercise the MCP create_worktree/remove_worktree tools
+// (mutatingToolsEnabled is always false), so configDb is never actually touched.
+const FAKE_CONFIG_DB = {} as Parameters<typeof startMcpServer>[2];
 
 describe('deriveDefaultPort', () => {
   it('is deterministic for the same workspace path', () => {
@@ -61,7 +64,7 @@ describe('mcp-bridge lifecycle', () => {
     const repo = initTestRepo();
     repos.push(repo);
 
-    const port = await startMcpServer(paramsFor(repo), NO_WINDOW);
+    const port = await startMcpServer(paramsFor(repo), NO_WINDOW, FAKE_CONFIG_DB);
     expect(port).toBeGreaterThan(0);
     expect(getMcpStatus(repo)).toEqual({ running: true, port });
 
@@ -73,8 +76,8 @@ describe('mcp-bridge lifecycle', () => {
     const repo = initTestRepo();
     repos.push(repo);
 
-    const first = await startMcpServer(paramsFor(repo, 0), NO_WINDOW);
-    const second = await startMcpServer(paramsFor(repo, 12345), NO_WINDOW); // different requested port, ignored since already running
+    const first = await startMcpServer(paramsFor(repo, 0), NO_WINDOW, FAKE_CONFIG_DB);
+    const second = await startMcpServer(paramsFor(repo, 12345), NO_WINDOW, FAKE_CONFIG_DB); // different requested port, ignored since already running
     expect(second).toBe(first);
   });
 
@@ -82,7 +85,7 @@ describe('mcp-bridge lifecycle', () => {
     const repo = initTestRepo();
     repos.push(repo);
 
-    const port = await startMcpServer(paramsFor(repo), NO_WINDOW);
+    const port = await startMcpServer(paramsFor(repo), NO_WINDOW, FAKE_CONFIG_DB);
     await stopMcpServer(repo);
     expect(getMcpStatus(repo)).toEqual({ running: false, port: null });
     await stopMcpServer(repo); // no-op, must not throw
@@ -96,8 +99,8 @@ describe('mcp-bridge lifecycle', () => {
     const repoB = initTestRepo();
     repos.push(repoA, repoB);
 
-    const port = await startMcpServer(paramsFor(repoA, 0), NO_WINDOW);
-    await expect(startMcpServer(paramsFor(repoB, port), NO_WINDOW)).rejects.toThrow(/already in use/);
+    const port = await startMcpServer(paramsFor(repoA, 0), NO_WINDOW, FAKE_CONFIG_DB);
+    await expect(startMcpServer(paramsFor(repoB, port), NO_WINDOW, FAKE_CONFIG_DB)).rejects.toThrow(/already in use/);
     expect(getMcpStatus(repoB)).toEqual({ running: false, port: null });
   });
 
