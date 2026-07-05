@@ -54,6 +54,7 @@ import type {
   McpClientId,
   McpServerStatus,
   McpConfigWriteResult,
+  GlobalErrorEvent,
 } from '@sproutgit/types';
 
 /**
@@ -690,6 +691,13 @@ const api = {
 
   mcpGetManualSnippet: (workspacePath: string, client?: McpClientId): Promise<string> =>
     invoke(IPC.MCP_GET_MANUAL_SNIPPET, client ? { workspacePath, client } : { workspacePath }),
+
+  // ── Global error reporting ────────────────────────────────────────────────
+  onGlobalError: (callback: (event: GlobalErrorEvent) => void) => {
+    const handler = (_e: Electron.IpcRendererEvent, payload: GlobalErrorEvent) => callback(payload);
+    ipcRenderer.on(IPC.EVENT_GLOBAL_ERROR, handler);
+    return () => ipcRenderer.off(IPC.EVENT_GLOBAL_ERROR, handler);
+  },
 };
 
 contextBridge.exposeInMainWorld('api', api);

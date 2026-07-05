@@ -1,6 +1,6 @@
 import { api } from '../api.js';
 import { createRootRoute, Outlet, useNavigate } from '@tanstack/react-router';
-import { ToastContainer, type ToastData } from '@sproutgit/ui';
+import { ToastContainer, ErrorModal, type ToastData, type ErrorModalData } from '@sproutgit/ui';
 import { useState, useEffect } from 'react';
 import { ToastContext, setGlobalToast } from '../toast-context.js';
 
@@ -8,6 +8,7 @@ import { ToastContext, setGlobalToast } from '../toast-context.js';
 
 function RootLayout() {
   const [toasts, setToasts] = useState<ToastData[]>([]);
+  const [globalError, setGlobalError] = useState<ErrorModalData | null>(null);
   const navigate = useNavigate();
 
   function addToast(message: string, variant: ToastData['variant'] = 'info') {
@@ -27,6 +28,32 @@ function RootLayout() {
     setToasts(prev => prev.filter(t => t.id !== id));
   }
 
+  // Last-resort safety net for crashes/programmer errors: uncaught exceptions
+  // and unhandled rejections in this process, plus anything forwarded from
+  // the main process (its own uncaughtException/unhandledRejection, or a
+  // renderer/child-process crash). Shown via ErrorModal — distinct from
+  // toast/reportError, which are for expected, recoverable failures.
+  useEffect(() => {
+    function onWindowError(event: ErrorEvent) {
+      setGlobalError({ title: 'Unexpected error', message: event.message, ...(event.error?.stack ? { stack: event.error.stack as string } : {}) });
+    }
+    function onUnhandledRejection(event: PromiseRejectionEvent) {
+      const reason = event.reason;
+      const message = reason instanceof Error ? reason.message : String(reason);
+      setGlobalError({ title: 'Unhandled promise rejection', message, ...(reason instanceof Error && reason.stack ? { stack: reason.stack } : {}) });
+    }
+    window.addEventListener('error', onWindowError);
+    window.addEventListener('unhandledrejection', onUnhandledRejection);
+    const offGlobalError = api.onGlobalError(event => {
+      setGlobalError({ title: 'Unexpected error (main process)', message: event.message, ...(event.stack ? { stack: event.stack } : {}) });
+    });
+    return () => {
+      window.removeEventListener('error', onWindowError);
+      window.removeEventListener('unhandledrejection', onUnhandledRejection);
+      offGlobalError();
+    };
+  }, []);
+
   // Open workspaces requested by the OS (macOS "Open Recent" dock menu,
   // Windows taskbar jump list, double-clicking a workspace folder, etc.).
   useEffect(() => {
@@ -42,6 +69,7 @@ function RootLayout() {
     <ToastContext.Provider value={addToast}>
       <Outlet />
       <ToastContainer toasts={toasts} onDismiss={dismiss} />
+      {globalError && <ErrorModal error={globalError} onDismiss={() => setGlobalError(null)} />}
     </ToastContext.Provider>
   );
 }

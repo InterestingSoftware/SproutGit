@@ -7,6 +7,7 @@ import { Spinner, WindowControls, UpdateBadge, Autocomplete, ResizableSidebar } 
 import type { UpdateState } from '@sproutgit/ui';
 import type { GitHubRepo, GitInfo, GitHubAuthStatus, GitOpProgressEvent, RecentWorkspace } from '@sproutgit/types';
 import { useToast } from '../toast-context.js';
+import { reportError } from '../error-reporting.js';
 import logoSvgUrl from '../logo.svg?inline';
 
 // Shared Tailwind class strings
@@ -139,14 +140,10 @@ function HomeView() {
     const offDownloading = api.onUpdateDownloading((progress: number) => setUpdateState({ status: 'downloading', progress }));
     const offReady = api.onUpdateReady(() => setUpdateState({ status: 'ready' }));
     const offError = api.onUpdateError((message: string) => {
-      console.error('[update] auto-update failed:', message);
-      toast(`Update failed: ${message}`, 'error');
+      reportError('Update failed', message);
       setUpdateState({ status: 'idle' });
     });
     return () => { offChecking(); offAvailable(); offNotAvailable(); offDownloading(); offReady(); offError(); };
-    // toast is recreated every render (see toast-context.tsx) — omit it so
-    // this effect only (re)subscribes the IPC listeners once.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {

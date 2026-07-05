@@ -17,6 +17,7 @@ import {
 import { GitBranch, Terminal, GitMerge, X, ChevronRight, ChevronDown, Settings, Plus, Columns2, Rows3, LayoutGrid, Pencil, PanelTop, SquareSplitHorizontal, ChevronsRight, Trash2, Bot, FileCode2 } from 'lucide-react';
 import type { CommitEntry, DiffFileEntry, WorktreeInfo, WorktreeSwitchHookSource, AgentConfig, FileChangedEvent } from '@sproutgit/types';
 import { useToast } from '../toast-context.js';
+import { reportError } from '../error-reporting.js';
 import { useUpdateStore } from '../stores/update-store.js';
 import { useWorkspaceStore, resetWorkspaceStore } from '../stores/workspace-store.js';
 import {
@@ -136,6 +137,7 @@ function WorkspaceInner() {
   const [showShellPicker, setShowShellPicker] = useState(false);
 
   useEffect(() => {
+    // Intentionally silent: worst case the shell picker just shows no options.
     void api.listShells().then(setAvailableShells).catch(() => undefined);
   }, []);
 
@@ -143,7 +145,9 @@ function WorkspaceInner() {
   const [agentConfig, setAgentConfig] = useState<AgentConfig | null>(null);
 
   useEffect(() => {
-    void api.getAgentConfig().then(setAgentConfig).catch(() => undefined);
+    // A failure here leaves the Chat tab looking unconfigured with no
+    // indication why — surface it instead.
+    void api.getAgentConfig().then(setAgentConfig).catch((err: unknown) => reportError('Failed to load agent configuration', err));
   }, []);
   const agentConfigured = !!agentConfig?.command.trim();
 
@@ -212,7 +216,8 @@ function WorkspaceInner() {
             },
             activeTerminalId: s.worktreeActiveTerminalId[newWt.path] ?? null,
           }));
-          void runSwitchAndTriggerHooks({ workspacePath, targetWorktreePath: newWt.path, initiatingWorktreePath: prevPath, source: 'create' }).catch(() => undefined);
+          void runSwitchAndTriggerHooks({ workspacePath, targetWorktreePath: newWt.path, initiatingWorktreePath: prevPath, source: 'create' })
+            .catch((err: unknown) => toast(`Switch hooks failed: ${String(err)}`, 'error'));
           return;
         }
       }
@@ -227,15 +232,20 @@ function WorkspaceInner() {
       const initial = restored ?? selectableWorktrees.find(w => !w.detached) ?? selectableWorktrees[0] ?? null;
       useWorkspaceStore.setState({ activeWorktree: initial });
       if (initial) {
-        void runSwitchAndTriggerHooks({ workspacePath, targetWorktreePath: initial.path, initiatingWorktreePath: null, source: 'load' }).catch(() => undefined);
+        void runSwitchAndTriggerHooks({ workspacePath, targetWorktreePath: initial.path, initiatingWorktreePath: null, source: 'load' })
+          .catch((err: unknown) => toast(`Switch hooks failed: ${String(err)}`, 'error'));
       }
     }).catch(() => {
       const initial = selectableWorktrees.find(w => !w.detached) ?? selectableWorktrees[0] ?? null;
       useWorkspaceStore.setState({ activeWorktree: initial });
       if (initial) {
-        void runSwitchAndTriggerHooks({ workspacePath, targetWorktreePath: initial.path, initiatingWorktreePath: null, source: 'load' }).catch(() => undefined);
+        void runSwitchAndTriggerHooks({ workspacePath, targetWorktreePath: initial.path, initiatingWorktreePath: null, source: 'load' })
+          .catch((err: unknown) => toast(`Switch hooks failed: ${String(err)}`, 'error'));
       }
     });
+    // toast is recreated every render (see toast-context.tsx) — omit it so
+    // this effect only reruns when the worktree selection actually changes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [worktrees, rootP, workspacePath, pendingNewWorktreePath]);
 
   // ── Local UI state ────────────────────────────────────────────────────
@@ -299,7 +309,9 @@ function WorkspaceInner() {
   // close (WORKSPACE_CLOSE) and app quit instead.
   useEffect(() => {
     if (!gitRepoPath) return;
-    void api.mcpEnsureStarted(workspacePath).catch(() => undefined);
+    // A failure here means the MCP server just doesn't start, invisibly —
+    // surface it instead.
+    void api.mcpEnsureStarted(workspacePath).catch((err: unknown) => reportError('Failed to start MCP server', err));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [gitRepoPath]);
 
@@ -572,14 +584,10 @@ function WorkspaceInner() {
     const offDownloading = api.onUpdateDownloading((progress: number) => setUpdateState({ status: 'downloading', progress }));
     const offReady = api.onUpdateReady(() => setUpdateState({ status: 'ready' }));
     const offError = api.onUpdateError((message: string) => {
-      console.error('[update] auto-update failed:', message);
-      toast(`Update failed: ${message}`, 'error');
+      reportError('Update failed', message);
       setUpdateState({ status: 'idle' });
     });
     return () => { offChecking(); offAvailable(); offNotAvailable(); offDownloading(); offReady(); offError(); };
-    // toast is recreated every render (see toast-context.tsx) — omit it so
-    // this effect only (re)subscribes the IPC listeners when setUpdateState changes.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [setUpdateState]);
 
   // ── Actions ───────────────────────────────────────────────────────────
