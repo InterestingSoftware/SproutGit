@@ -1619,14 +1619,16 @@ function WorkspaceInner() {
       <WorkspaceHooksModal
         open={hooksModalOpen}
         workspacePath={workspacePath}
+        worktreePath={activeWorktree?.path ?? null}
         onClose={() => setHooksModalOpen(false)}
         {...(defaultShell ? { defaultShell } : {})}
         api={{
-          listHooks: p => api.listHooks(p),
+          listHooks: (p, wt) => api.listHooks(p, wt),
           createHook: args => api.createHook(args),
           updateHook: args => api.updateHook(args),
           deleteHook: (p, id) => api.deleteHook(p, id),
           toggleHook: (p, id, enabled) => api.toggleHook(p, id, enabled),
+          trustHook: (wt, hookId) => api.trustHook(wt, hookId),
         }}
       />
 

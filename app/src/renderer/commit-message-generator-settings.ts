@@ -1,7 +1,7 @@
 import { DEFAULT_COMMIT_MESSAGE_GENERATOR_SETTINGS, type CommitMessageGeneratorSettings } from '@sproutgit/types';
 import { api } from './api.js';
 
-export const COMMIT_MESSAGE_GENERATOR_SETTINGS_KEY = 'commitMessageGenerator';
+const COMMIT_MESSAGE_GENERATOR_SETTINGS_KEY = 'commitMessageGenerator';
 
 function isStringArray(value: unknown): value is string[] {
   return Array.isArray(value) && value.every(v => typeof v === 'string');

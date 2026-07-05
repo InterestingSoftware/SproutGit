@@ -1,15 +1,17 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import type {
   WorkspaceHook,
   WorkspaceHookTrigger,
   WorkspaceHookShell,
   HookExecutionTarget,
   WorkspaceHookScope,
+  HookListResult,
+  HookUpsertInput,
 } from '@sproutgit/types';
 import { Spinner } from './Spinner.js';
 import { Select } from './Select.js';
 import { MonacoEditor } from './MonacoEditor.js';
-import { X, Trash2, Plus, Circle, CircleDot, Clock3, TerminalSquare, ShieldAlert } from 'lucide-react';
+import { X, Trash2, Plus, Circle, CircleDot, Clock3, TerminalSquare, ShieldAlert, GitBranch, ShieldCheck, Lock } from 'lucide-react';
 
 const TRIGGER_OPTIONS: { value: WorkspaceHookTrigger; label: string }[] = [
   { value: 'before_worktree_create', label: 'Before worktree create' },
@@ -93,50 +95,20 @@ const RUNTIME_VARIABLE_GROUPS: { label: string; vars: string[] }[] = [
 ];
 
 type HookApi = {
-  listHooks: (workspacePath: string) => Promise<WorkspaceHook[]>;
-  createHook: (args: {
-    workspacePath: string;
-    id: string;
-    name: string;
-    scope: WorkspaceHookScope;
-    trigger: WorkspaceHookTrigger;
-    shell: WorkspaceHookShell;
-    executionTarget: HookExecutionTarget;
-    script: string;
-    enabled?: boolean;
-    critical?: boolean;
-    switchOncePerSession?: boolean;
-    switchRunOnCreate?: boolean;
-    switchRunOnDelete?: boolean;
-    keepOpenOnCompletion?: boolean;
-    timeoutSeconds?: number;
-    dependencyIds?: string[];
-  }) => Promise<void>;
-  updateHook: (args: {
-    workspacePath: string;
-    id: string;
-    name?: string;
-    scope?: WorkspaceHookScope;
-    trigger?: WorkspaceHookTrigger;
-    executionTarget?: HookExecutionTarget;
-    shell?: WorkspaceHookShell;
-    script?: string;
-    enabled?: boolean;
-    critical?: boolean;
-    switchOncePerSession?: boolean;
-    switchRunOnCreate?: boolean;
-    switchRunOnDelete?: boolean;
-    keepOpenOnCompletion?: boolean;
-    timeoutSeconds?: number;
-    dependencyIds?: string[];
-  }) => Promise<void>;
+  listHooks: (workspacePath: string, worktreePath: string | null) => Promise<HookListResult>;
+  createHook: (args: { workspacePath: string } & HookUpsertInput) => Promise<void>;
+  updateHook: (args: { workspacePath: string; id: string } & Partial<HookUpsertInput>) => Promise<void>;
   deleteHook: (workspacePath: string, id: string) => Promise<void>;
   toggleHook: (workspacePath: string, id: string, enabled: boolean) => Promise<void>;
+  /** Trusts one repo-sourced hook by id so it's eligible to execute. No-op for local hooks (always trusted). */
+  trustHook: (worktreePath: string, hookId: string) => Promise<void>;
 };
 
 type Props = {
   open: boolean;
   workspacePath: string;
+  /** The worktree whose `sproutgit.hooks.json` (if any) should be shown alongside local hooks. Repo hooks are omitted entirely when this is null. */
+  worktreePath: string | null;
   api: HookApi;
   onClose: () => void;
   defaultShell?: string;
@@ -148,7 +120,7 @@ type Draft = {
   trigger: WorkspaceHookTrigger;
   shell: WorkspaceHookShell;
   executionTarget: HookExecutionTarget;
-  dependencyIds: string[];
+  dependsOn: string[];
   script: string;
   enabled: boolean;
   critical: boolean;
@@ -173,7 +145,7 @@ const defaultDraft = (shell: WorkspaceHookShell = 'bash'): Draft => ({
   switchRunOnDelete: false,
   keepOpenOnCompletion: false,
   timeoutSeconds: 60,
-  dependencyIds: [],
+  dependsOn: [],
 });
 
 function draftFromHook(hook: WorkspaceHook): Draft {
@@ -191,7 +163,7 @@ function draftFromHook(hook: WorkspaceHook): Draft {
     switchRunOnDelete: hook.switchRunOnDelete ?? false,
     keepOpenOnCompletion: hook.keepOpenOnCompletion ?? false,
     timeoutSeconds: hook.timeoutSeconds ?? 60,
-    dependencyIds: hook.dependencyIds ?? [],
+    dependsOn: hook.dependsOn ?? [],
   };
 }
 
@@ -207,21 +179,59 @@ function executionTargetLabel(target: HookExecutionTarget): string {
   return EXECUTION_TARGET_OPTIONS.find(option => option.value === target)?.label ?? target;
 }
 
-export function WorkspaceHooksModal({ open, workspacePath, api, onClose, defaultShell }: Props) {
+export function WorkspaceHooksModal({ open, workspacePath, worktreePath, api, onClose, defaultShell }: Props) {
   const [hooks, setHooks] = useState<WorkspaceHook[]>([]);
+  const [repoFileError, setRepoFileError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [editing, setEditing] = useState<{ hook: WorkspaceHook; draft: Draft } | null>(null);
   const [creating, setCreating] = useState<Draft | null>(null);
+  const [viewingRepoHook, setViewingRepoHook] = useState<WorkspaceHook | null>(null);
   const [savingDraft, setSavingDraft] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
+  const [trusting, setTrusting] = useState(false);
+
+  const refreshHooks = useCallback(async (): Promise<WorkspaceHook[]> => {
+    setLoading(true);
+    try {
+      const result = await api.listHooks(workspacePath, worktreePath);
+      setHooks(result.hooks);
+      setRepoFileError(result.repoFileError);
+      return result.hooks;
+    } finally {
+      setLoading(false);
+    }
+  }, [workspacePath, worktreePath, api]);
 
   useEffect(() => {
     if (!open) return;
-    setLoading(true);
-    void api.listHooks(workspacePath)
-      .then(setHooks)
-      .finally(() => setLoading(false));
-  }, [open, workspacePath, api]);
+    void refreshHooks();
+  }, [open, refreshHooks]);
+
+  const untrustedRepoHooks = useMemo(() => hooks.filter(h => h.source === 'repo' && !h.trusted), [hooks]);
+
+  async function handleTrustHook(hookId: string) {
+    if (!worktreePath) return;
+    setTrusting(true);
+    try {
+      await api.trustHook(worktreePath, hookId);
+      await refreshHooks();
+    } finally {
+      setTrusting(false);
+    }
+  }
+
+  async function handleTrustAll() {
+    if (!worktreePath) return;
+    setTrusting(true);
+    try {
+      for (const hook of untrustedRepoHooks) {
+        await api.trustHook(worktreePath, hook.id);
+      }
+      await refreshHooks();
+    } finally {
+      setTrusting(false);
+    }
+  }
 
   const groupedHooks = useMemo(() => {
     const map = new Map<WorkspaceHookTrigger, WorkspaceHook[]>();
@@ -240,7 +250,6 @@ export function WorkspaceHooksModal({ open, workspacePath, api, onClose, default
     if (creating && creating.name.trim()) {
       await api.createHook({
         workspacePath,
-        id: self.crypto.randomUUID(),
         name: creating.name,
         scope: creating.scope,
         trigger: creating.trigger,
@@ -254,7 +263,7 @@ export function WorkspaceHooksModal({ open, workspacePath, api, onClose, default
         switchRunOnDelete: creating.switchRunOnDelete,
         keepOpenOnCompletion: creating.keepOpenOnCompletion,
         timeoutSeconds: creating.timeoutSeconds,
-        dependencyIds: creating.dependencyIds,
+        dependsOn: creating.dependsOn,
       });
     } else if (editing && editing.draft.name.trim()) {
       await api.updateHook({
@@ -273,7 +282,7 @@ export function WorkspaceHooksModal({ open, workspacePath, api, onClose, default
         switchRunOnDelete: editing.draft.switchRunOnDelete,
         keepOpenOnCompletion: editing.draft.keepOpenOnCompletion,
         timeoutSeconds: editing.draft.timeoutSeconds,
-        dependencyIds: editing.draft.dependencyIds,
+        dependsOn: editing.draft.dependsOn,
       });
     }
   }
@@ -292,15 +301,35 @@ export function WorkspaceHooksModal({ open, workspacePath, api, onClose, default
     }
   }
 
-  /** Auto-saves the current draft, then switches to the given hook. */
+  /** Auto-saves the current draft, then switches to the given hook. Repo hooks are read-only, so they open a view-only panel instead of the draft editor. */
   async function selectHookItem(hook: WorkspaceHook) {
+    if (hook.source === 'repo') {
+      setSavingDraft(true);
+      setSaveError(null);
+      try {
+        await saveDraftIfNeeded();
+        // saveDraftIfNeeded() may have just created/updated a local hook —
+        // refresh so the list and any trust badges reflect that immediately,
+        // matching the local-hook branch below.
+        await refreshHooks();
+        setCreating(null);
+        setEditing(null);
+        setViewingRepoHook(hook);
+      } catch (err) {
+        setSaveError(String(err));
+      } finally {
+        setSavingDraft(false);
+      }
+      return;
+    }
+
     setSavingDraft(true);
     setSaveError(null);
     try {
       await saveDraftIfNeeded();
-      const updated = await api.listHooks(workspacePath);
-      setHooks(updated);
+      const updated = await refreshHooks();
       setCreating(null);
+      setViewingRepoHook(null);
       const fresh = updated.find(h => h.id === hook.id) ?? hook;
       setEditing({ hook: fresh, draft: draftFromHook(fresh) });
     } catch (err) {
@@ -316,9 +345,9 @@ export function WorkspaceHooksModal({ open, workspacePath, api, onClose, default
     setSaveError(null);
     try {
       await saveDraftIfNeeded();
-      const updated = await api.listHooks(workspacePath).catch(() => hooks);
-      setHooks(updated);
+      await refreshHooks().catch(() => hooks);
       setEditing(null);
+      setViewingRepoHook(null);
       setCreating(defaultDraft(shellFromPath(defaultShell)));
     } catch (err) {
       setSaveError(String(err));
@@ -329,22 +358,17 @@ export function WorkspaceHooksModal({ open, workspacePath, api, onClose, default
 
   async function toggleHook(hook: WorkspaceHook) {
     await api.toggleHook(workspacePath, hook.id, !hook.enabled);
-    const updated = await api.listHooks(workspacePath);
-    setHooks(updated);
+    const updated = await refreshHooks();
     // Keep the editor draft in sync with the toggled state.
     if (editing?.hook.id === hook.id) {
-      setEditing(e => e ? {
-        ...e,
-        hook: { ...e.hook, enabled: !hook.enabled },
-        draft: { ...e.draft, enabled: !hook.enabled },
-      } : null);
+      const fresh = updated.find(h => h.id === hook.id);
+      setEditing(e => e && fresh ? { hook: fresh, draft: { ...e.draft, enabled: fresh.enabled } } : e);
     }
   }
 
   async function deleteHook(id: string) {
     await api.deleteHook(workspacePath, id);
-    const updated = await api.listHooks(workspacePath);
-    setHooks(updated);
+    await refreshHooks();
     if (editing?.hook.id === id) setEditing(null);
   }
 
@@ -401,6 +425,30 @@ export function WorkspaceHooksModal({ open, workspacePath, api, onClose, default
           </div>
         </div>
 
+        {repoFileError && (
+          <div className="mx-4 mt-3 rounded-lg border border-(--sg-danger) bg-[rgba(220,38,38,0.08)] px-3 py-2 flex items-center gap-2 shrink-0">
+            <ShieldAlert size={14} className="text-(--sg-danger) shrink-0" />
+            <p className="m-0 text-xs text-(--sg-text)">Couldn't read this worktree's <code>sproutgit.hooks.json</code>: {repoFileError}</p>
+          </div>
+        )}
+        {untrustedRepoHooks.length > 0 && (
+          <div className="mx-4 mt-3 rounded-lg border border-(--sg-border) bg-[rgba(217,119,6,0.1)] px-3 py-2 flex items-center justify-between gap-3 shrink-0">
+            <div className="flex items-center gap-2 min-w-0">
+              <Lock size={14} className="text-(--sg-text-dim) shrink-0" />
+              <p className="m-0 text-xs text-(--sg-text)">
+                {untrustedRepoHooks.length} hook{untrustedRepoHooks.length === 1 ? '' : 's'} from <code>sproutgit.hooks.json</code> {untrustedRepoHooks.length === 1 ? "hasn't" : "haven't"} been trusted yet. They came in via git, so they won't run until approved — individually below, or all at once here.
+              </p>
+            </div>
+            <button
+              className={secondaryBtn}
+              disabled={trusting}
+              onClick={() => void handleTrustAll()}
+            >
+              <ShieldCheck size={12} /> Trust all {untrustedRepoHooks.length}
+            </button>
+          </div>
+        )}
+
         <div className="flex flex-1 overflow-hidden">
           <div className="w-[260px] shrink-0 border-r border-(--sg-border) overflow-y-auto flex flex-col p-3 gap-3">
             {loading && <div className="p-3"><Spinner /></div>}
@@ -418,15 +466,29 @@ export function WorkspaceHooksModal({ open, workspacePath, api, onClose, default
                   <div className="px-1 text-[10px] font-semibold tracking-[0.08em] uppercase text-(--sg-text-faint)">
                     {section.label}
                   </div>
-                  {sectionHooks.map(hook => (
+                  {sectionHooks.map(hook => {
+                    const isRepoHook = hook.source === 'repo';
+                    const isSelected = isRepoHook ? viewingRepoHook?.id === hook.id : editing?.hook.id === hook.id;
+                    return (
                     <div
                       key={hook.id}
-                      className={`rounded-lg border px-3 py-2 cursor-pointer text-xs transition-colors ${editing?.hook.id === hook.id ? 'border-(--sg-primary) bg-[rgba(25,172,92,0.1)]' : 'border-(--sg-border-subtle) bg-(--sg-surface) hover:bg-(--sg-surface-raised)'}`}
+                      className={`rounded-lg border px-3 py-2 cursor-pointer text-xs transition-colors ${isSelected ? 'border-(--sg-primary) bg-[rgba(25,172,92,0.1)]' : 'border-(--sg-border-subtle) bg-(--sg-surface) hover:bg-(--sg-surface-raised)'}`}
                       onClick={() => void selectHookItem(hook)}
                     >
                       <div className="flex items-start justify-between gap-2">
                         <div className="min-w-0">
-                          <div className="font-medium text-(--sg-text) truncate">{hook.name}</div>
+                          <div className="font-medium text-(--sg-text) truncate flex items-center gap-1.5">
+                            {hook.name}
+                            {isRepoHook && (
+                              <span
+                                className="inline-flex items-center gap-1 px-1.5 py-[1px] rounded-full text-[9px] font-semibold uppercase tracking-wide bg-(--sg-surface-raised) text-(--sg-text-dim) border border-(--sg-border-subtle)"
+                                title={hook.trusted ? 'Defined in sproutgit.hooks.json' : 'Defined in sproutgit.hooks.json — not yet trusted'}
+                              >
+                                <GitBranch size={9} /> repo
+                                {!hook.trusted && <Lock size={9} />}
+                              </span>
+                            )}
+                          </div>
                           <div className="mt-1 text-[10px] text-(--sg-text-faint) flex items-center gap-1.5">
                             <TerminalSquare size={10} />
                             <span>{hook.shell}</span>
@@ -434,29 +496,78 @@ export function WorkspaceHooksModal({ open, workspacePath, api, onClose, default
                             <span>{executionTargetLabel(hook.executionTarget)}</span>
                           </div>
                         </div>
-                        <div className="flex items-center gap-1 shrink-0" onClick={e => e.stopPropagation()}>
-                          <button
-                            className={iconBtn}
-                            onClick={() => void toggleHook(hook)}
-                            title={hook.enabled ? 'Disable' : 'Enable'}
-                          >
-                            {hook.enabled ? <CircleDot size={12} /> : <Circle size={12} />}
-                          </button>
-                          <button
-                            className="inline-flex items-center justify-center p-[3px] bg-transparent border-none cursor-pointer text-(--sg-danger) rounded-[4px] hover:bg-(--sg-surface-raised)"
-                            onClick={() => void deleteHook(hook.id)}
-                            title="Delete hook"
-                          >
-                            <Trash2 size={12} />
-                          </button>
-                        </div>
+                        {isRepoHook ? (
+                          <div className="shrink-0 text-(--sg-text-faint)" title="Read-only — edit sproutgit.hooks.json to change this hook">
+                            <Lock size={12} />
+                          </div>
+                        ) : (
+                          <div className="flex items-center gap-1 shrink-0" onClick={e => e.stopPropagation()}>
+                            <button
+                              className={iconBtn}
+                              onClick={() => void toggleHook(hook)}
+                              title={hook.enabled ? 'Disable' : 'Enable'}
+                            >
+                              {hook.enabled ? <CircleDot size={12} /> : <Circle size={12} />}
+                            </button>
+                            <button
+                              className="inline-flex items-center justify-center p-[3px] bg-transparent border-none cursor-pointer text-(--sg-danger) rounded-[4px] hover:bg-(--sg-surface-raised)"
+                              onClick={() => void deleteHook(hook.id)}
+                              title="Delete hook"
+                            >
+                              <Trash2 size={12} />
+                            </button>
+                          </div>
+                        )}
                       </div>
                     </div>
-                  ))}
+                    );
+                  })}
                 </div>
               );
             })}
           </div>
+
+          {!activeDraft && viewingRepoHook && (
+            <div className="flex-1 overflow-y-auto p-4 flex flex-col gap-3">
+              <div className={sectionCard}>
+                <div className="flex items-center justify-between gap-2">
+                  <div className="text-xs font-semibold text-(--sg-text) flex items-center gap-1.5">
+                    <GitBranch size={12} /> {viewingRepoHook.name}
+                  </div>
+                  <div className="text-[10px] text-(--sg-text-faint)">{triggerLabel(viewingRepoHook.trigger)}</div>
+                </div>
+                <p className="m-0 text-[11px] text-(--sg-text-dim)">
+                  Defined in this worktree's <code>sproutgit.hooks.json</code> — read-only here. Edit that file and commit the change to modify it.
+                </p>
+                <div className="grid grid-cols-2 gap-2 text-[11px] text-(--sg-text-dim)">
+                  <div><span className={fieldLabel}>Execution target</span><div>{executionTargetLabel(viewingRepoHook.executionTarget)}</div></div>
+                  <div><span className={fieldLabel}>Shell</span><div>{viewingRepoHook.shell}</div></div>
+                  <div><span className={fieldLabel}>Timeout</span><div>{viewingRepoHook.timeoutSeconds}s</div></div>
+                  <div><span className={fieldLabel}>Critical</span><div>{viewingRepoHook.critical ? 'Yes' : 'No'}</div></div>
+                </div>
+                {!viewingRepoHook.trusted && (
+                  <div className="rounded-md border border-(--sg-border) bg-[rgba(217,119,6,0.1)] px-2.5 py-2 flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-1.5 text-[11px] text-(--sg-text)">
+                      <Lock size={12} /> Not trusted — won't run until approved.
+                    </div>
+                    <button className={secondaryBtn} disabled={trusting} onClick={() => void handleTrustHook(viewingRepoHook.id)}>
+                      <ShieldCheck size={12} /> Trust this hook
+                    </button>
+                  </div>
+                )}
+              </div>
+              <div className={sectionCard}>
+                <div className="text-xs font-semibold text-(--sg-text)">Script</div>
+                <MonacoEditor
+                  value={viewingRepoHook.script}
+                  language={viewingRepoHook.shell === 'pwsh' || viewingRepoHook.shell === 'powershell' ? 'powershell' : 'shell'}
+                  height="300px"
+                  readOnly
+                  onChange={() => {}}
+                />
+              </div>
+            </div>
+          )}
 
           {activeDraft && (
             <div className="flex-1 overflow-y-auto p-4 flex flex-col gap-3">
@@ -585,7 +696,11 @@ export function WorkspaceHooksModal({ open, workspacePath, api, onClose, default
               </div>
 
               {(() => {
+                // Only other local hooks are valid dependencies — dependsOn is
+                // validated against hooks in the *same* file (local-hooks.json
+                // vs sproutgit.hooks.json are parsed independently).
                 const sameTriggerHooks = hooks.filter(h =>
+                  h.source === 'local' &&
                   h.trigger === activeDraft.trigger &&
                   h.id !== (editing?.hook.id ?? ''),
                 );
@@ -601,12 +716,12 @@ export function WorkspaceHooksModal({ open, workspacePath, api, onClose, default
                         <label key={h.id} className="flex items-center gap-2 text-xs text-(--sg-text-dim) cursor-pointer">
                           <input
                             type="checkbox"
-                            checked={activeDraft.dependencyIds.includes(h.id)}
+                            checked={activeDraft.dependsOn.includes(h.name)}
                             onChange={e => {
                               const next = e.target.checked
-                                ? [...activeDraft.dependencyIds, h.id]
-                                : activeDraft.dependencyIds.filter(id => id !== h.id);
-                              updateDraft({ dependencyIds: next });
+                                ? [...activeDraft.dependsOn, h.name]
+                                : activeDraft.dependsOn.filter(name => name !== h.name);
+                              updateDraft({ dependsOn: next });
                             }}
                           />
                           <span className="truncate">{h.name}</span>
@@ -666,7 +781,7 @@ export function WorkspaceHooksModal({ open, workspacePath, api, onClose, default
             </div>
           )}
 
-          {!activeDraft && (
+          {!activeDraft && !viewingRepoHook && (
             <div className="flex-1 p-6 text-xs text-(--sg-text-faint) flex items-center justify-center">
               Select a hook from the left or create a new one.
             </div>
@@ -676,4 +791,3 @@ export function WorkspaceHooksModal({ open, workspacePath, api, onClose, default
     </div>
   );
 }
-
