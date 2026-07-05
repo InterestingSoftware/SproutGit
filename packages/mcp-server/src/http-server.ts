@@ -1,3 +1,4 @@
+import { createHash, timingSafeEqual } from 'node:crypto';
 import { createMcpExpressApp } from '@modelcontextprotocol/sdk/server/express.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import type { Transport } from '@modelcontextprotocol/sdk/shared/transport.js';
@@ -10,6 +11,19 @@ const JSONRPC_METHOD_NOT_ALLOWED = { jsonrpc: '2.0' as const, error: { code: -32
 
 function methodNotAllowed(_req: Request, res: Response): void {
   res.status(405).json(JSONRPC_METHOD_NOT_ALLOWED);
+}
+
+/**
+ * Constant-time string comparison. `timingSafeEqual` requires equal-length
+ * buffers, so both sides are hashed to a fixed-length digest first — that
+ * avoids branching on `a.length !== b.length` (which would itself leak the
+ * expected token's length through timing) while still comparing the actual
+ * secret in constant time.
+ */
+function safeEqual(a: string, b: string): boolean {
+  const aHash = createHash('sha256').update(a).digest();
+  const bHash = createHash('sha256').update(b).digest();
+  return timingSafeEqual(aHash, bHash);
 }
 
 /**
@@ -36,7 +50,8 @@ export function createHttpApp(context: McpServerContext, token: string): Express
   const app = createMcpExpressApp();
 
   app.use((req: Request, res: Response, next: NextFunction) => {
-    if (req.headers.authorization !== `Bearer ${token}`) {
+    const authorization = req.headers.authorization;
+    if (typeof authorization !== 'string' || !safeEqual(authorization, `Bearer ${token}`)) {
       res.status(401).json(JSONRPC_UNAUTHORIZED);
       return;
     }
