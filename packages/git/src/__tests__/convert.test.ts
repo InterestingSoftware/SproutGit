@@ -25,7 +25,14 @@ function tempDir(prefix: string): string {
   return realpathSync.native(mkdtempSync(join(tmpdir(), prefix)));
 }
 
-describe('convertToBareWithWorktree', () => {
+// Each of these does several real filesystem-heavy git operations (init,
+// commit, directory rename, worktree add/checkout, sometimes a rollback on
+// top of that) — comfortably under the 5s default on macOS/Linux, but
+// Windows CI runners are measurably slower for this class of operation
+// (see docs/agent-instructions.md's notes on Windows-specific git/fs
+// quirks) and have intermittently timed out here under load. Raise the
+// suite-wide timeout rather than each call site individually.
+describe('convertToBareWithWorktree', { timeout: 20_000 }, () => {
   it('converts a clean, standalone repo to bare + worktree', async () => {
     const workspaceDir = tempDir('sg-convert-standalone-');
     const sourceDir = join(workspaceDir, 'root');

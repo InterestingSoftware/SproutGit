@@ -154,6 +154,13 @@ export const IPC = {
   ISSUETRACKER_LIST: 'issuetracker:list',
   // ── Providers ────────────────────────────────────────────────────────────
   PROVIDER_FETCH_ISSUE: 'provider:fetchIssue',
+  // ── MCP server ───────────────────────────────────────────────────────────
+  MCP_STATUS: 'mcp:status',
+  MCP_ENSURE_STARTED: 'mcp:ensureStarted',
+  MCP_SET_ENABLED: 'mcp:setEnabled',
+  MCP_SET_PORT: 'mcp:setPort',
+  MCP_WRITE_CLIENT_CONFIG: 'mcp:writeClientConfig',
+  MCP_GET_MANUAL_SNIPPET: 'mcp:getManualSnippet',
 } as const;
 
 export type IpcChannel = (typeof IPC)[keyof typeof IPC];
@@ -191,6 +198,7 @@ import type { CommitMessageGeneratorSettings, CommitMessageGenerateResult } from
 import type { IssueTrackerPattern } from './issuetracker.js';
 import type { ProviderIssue } from './providers.js';
 import type { FileTreeNode, FileReadResult } from './files.js';
+import type { McpClientId, McpServerStatus, McpConfigWriteResult } from './mcp.js';
 
 /** Shape of one row returned by WORKTREE_GET_META / WORKTREE_SET_META. */
 export type WorktreeMetaRow = {
@@ -248,8 +256,8 @@ export type IpcMap = {
   'git:getConfig':   { args: [key: string];                                                  result: string | null };
   'git:setConfig':   { args: [args: { key: string; value: string }];                         result: void };
   // ── Worktrees ─────────────────────────────────────────────────────────────
-  'worktree:create': { args: [args: { rootRepoPath: string; managedWorktreesPath: string; fromRef: string; newBranch: string }]; result: CreateWorktreeResult };
-  'worktree:delete': { args: [args: { rootRepoPath: string; managedWorktreesPath?: string; worktreePath: string; deleteBranch: boolean; branchName?: string | null }];                      result: void };
+  'worktree:create': { args: [args: { workspacePath: string; rootRepoPath: string; managedWorktreesPath: string; fromRef: string; newBranch: string; initiatingWorktreePath?: string | null; issueRef?: string | null; issueTitle?: string | null }]; result: CreateWorktreeResult };
+  'worktree:delete': { args: [args: { workspacePath: string; rootRepoPath: string; managedWorktreesPath?: string; worktreePath: string; deleteBranch: boolean; branchName?: string | null; initiatingWorktreePath?: string | null; afterRemoveWorktreePath?: string | null }];                      result: void };
   'worktree:getMeta':    { args: [args: { workspacePath: string; worktreePath: string }]; result: WorktreeMetaRow | null };
   'worktree:setMeta':    { args: [args: { workspacePath: string; worktreePath: string; branch?: string; sourceRef?: string; rootRepoPath?: string; issueRef?: string | null; issueTitle?: string | null }]; result: void };
   'worktree:pruneMetadata': { args: [args: { workspacePath: string; activeWorktreePaths: string[] }]; result: void };
@@ -349,6 +357,13 @@ export type IpcMap = {
   'issuetracker:list':  { args: [worktreePath: string]; result: IssueTrackerPattern[] };
   // ── Providers ─────────────────────────────────────────────────────────────
   'provider:fetchIssue': { args: [url: string]; result: ProviderIssue | null };
+  // ── MCP server ────────────────────────────────────────────────────────────
+  'mcp:status':            { args: [workspacePath: string];                                          result: McpServerStatus };
+  'mcp:ensureStarted':     { args: [workspacePath: string];                                          result: McpServerStatus };
+  'mcp:setEnabled':        { args: [args: { workspacePath: string; enabled: boolean }];               result: McpServerStatus };
+  'mcp:setPort':           { args: [args: { workspacePath: string; port: number | null }];            result: McpServerStatus };
+  'mcp:writeClientConfig': { args: [args: { workspacePath: string; client: McpClientId }];            result: McpConfigWriteResult };
+  'mcp:getManualSnippet':  { args: [args: { workspacePath: string; client?: McpClientId }];           result: string };
 };
 
 /** Union of all invoke-able channel strings. */

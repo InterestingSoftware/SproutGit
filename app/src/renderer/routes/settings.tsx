@@ -13,6 +13,7 @@ import { ShellSection } from '../settings/ShellSection.js';
 import { AppSection } from '../settings/AppSection.js';
 import { AgentsSection } from '../settings/AgentsSection.js';
 import { CommitMessageGeneratorSection } from '../settings/CommitMessageGeneratorSection.js';
+import { McpSection } from '../settings/McpSection.js';
 
 // ── Route definition ──────────────────────────────────────────────────────────
 
@@ -87,6 +88,7 @@ function SettingsPage() {
               <GitSection onToast={toast} githubAuth={githubAuth} />
               <AgentsSection onToast={toast} />
               <CommitMessageGeneratorSection onToast={toast} />
+              <McpSection onToast={toast} workspacePath={workspacePath} />
             </div>
 
             <div className="flex flex-col gap-6">

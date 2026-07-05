@@ -129,6 +129,7 @@
     "chokidar": "^4.0.3",
     "@sproutgit/database": "workspace:*",
     "@sproutgit/git": "workspace:*",
+    "@sproutgit/mcp-server": "workspace:*",
     "@sproutgit/paths": "workspace:*",
     "@sproutgit/provider-github": "workspace:*",
     "@sproutgit/terminal": "workspace:*",

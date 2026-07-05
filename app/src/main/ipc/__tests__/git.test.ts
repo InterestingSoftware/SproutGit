@@ -92,7 +92,7 @@ import { registerGitHandlers } from '../git.js';
 type Handler = (event: unknown, ...args: unknown[]) => Promise<unknown>;
 
 function getHandlers(): Map<string, Handler> {
-  registerGitHandlers();
+  registerGitHandlers(() => null);
   const map = new Map<string, Handler>();
   for (const [channel, fn] of handleMock.mock.calls) map.set(channel as string, fn as Handler);
   return map;

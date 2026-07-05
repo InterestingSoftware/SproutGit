@@ -12,3 +12,4 @@ export * from './issuetracker.js';
 export * from './providers.js';
 export * from './chat.js';
 export * from './files.js';
+export * from './mcp.js';
