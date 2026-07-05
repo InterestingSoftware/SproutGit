@@ -293,7 +293,7 @@ describe('file:watchStart and file:watchStop', () => {
   });
 
   it('starts a watcher for a worktree path and does not start a second one for the same path', async () => {
-    const win = { webContents: { send: vi.fn() }, isDestroyed: () => false };
+    const win = { webContents: { send: vi.fn() }, isDestroyed: () => false, once: vi.fn() };
     const getHandler = registerAndGetHandlers();
     const watchStart = getHandler(IPC.FILE_WATCH_START);
 
@@ -313,7 +313,7 @@ describe('file:watchStart and file:watchStop', () => {
   });
 
   it('stops a watcher and closes it via closeWatcher', async () => {
-    const win = { webContents: { send: vi.fn() }, isDestroyed: () => false };
+    const win = { webContents: { send: vi.fn() }, isDestroyed: () => false, once: vi.fn() };
     const getHandler = registerAndGetHandlers();
     const watchStart = getHandler(IPC.FILE_WATCH_START);
     const watchStop = getHandler(IPC.FILE_WATCH_STOP);
@@ -340,7 +340,7 @@ describe('file:watchStart and file:watchStop', () => {
       return { close: vi.fn() };
     });
 
-    const win = { webContents: { send: vi.fn() }, isDestroyed: () => false };
+    const win = { webContents: { send: vi.fn() }, isDestroyed: () => false, once: vi.fn() };
     const getHandler = registerAndGetHandlers();
     const watchStart = getHandler(IPC.FILE_WATCH_START);
     await watchStart({ sender: win }, '/watched/root');
@@ -362,7 +362,7 @@ describe('file:watchStart and file:watchStop', () => {
   });
 
   it('the ignored predicate passed to watchRecursive filters out .git and node_modules paths', async () => {
-    const win = { webContents: { send: vi.fn() }, isDestroyed: () => false };
+    const win = { webContents: { send: vi.fn() }, isDestroyed: () => false, once: vi.fn() };
     const getHandler = registerAndGetHandlers();
     const watchStart = getHandler(IPC.FILE_WATCH_START);
     await watchStart({ sender: win }, '/watched/root2');

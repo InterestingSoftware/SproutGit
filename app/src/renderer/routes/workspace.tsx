@@ -68,6 +68,13 @@ type WorkspaceSearch = { path: string };
 
 // ── Shared helpers ────────────────────────────────────────────────────────────
 
+/** Last path segment, tolerating both '/' (macOS/Linux) and '\' (Windows) separators. */
+function workspaceBaseName(p: string): string {
+  const trimmed = p.trim().replace(/[\\/]+$/g, '');
+  const idx = Math.max(trimmed.lastIndexOf('/'), trimmed.lastIndexOf('\\'));
+  return idx === -1 ? trimmed : trimmed.slice(idx + 1);
+}
+
 async function runSwitchAndTriggerHooks(args: {
   workspacePath: string;
   targetWorktreePath: string;
@@ -291,15 +298,23 @@ function WorkspaceInner() {
 
   // ── Recent workspaces (for the title bar's workspace switcher) ─────────
 
-  function loadRecentWorkspaces() {
-    void api.listRecentWorkspaces()
-      .then((ws: RecentWorkspace[]) => {
-        setRecentWorkspaces([...ws].sort((a, b) => new Date(b.lastOpenedAt).getTime() - new Date(a.lastOpenedAt).getTime()));
-      })
-      .catch(() => undefined);
+  async function loadRecentWorkspaces(): Promise<RecentWorkspace[]> {
+    try {
+      const ws = await api.listRecentWorkspaces();
+      const sorted = [...ws].sort((a, b) => new Date(b.lastOpenedAt).getTime() - new Date(a.lastOpenedAt).getTime());
+      setRecentWorkspaces(sorted);
+      return sorted;
+    } catch {
+      return recentWorkspaces;
+    }
   }
 
-  useEffect(() => { loadRecentWorkspaces(); }, [workspacePath]);
+  useEffect(() => {
+    void loadRecentWorkspaces();
+    // loadRecentWorkspaces is redefined every render (it closes over
+    // recentWorkspaces for its error fallback) — only re-run on navigation.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [workspacePath]);
 
   function switchWorkspace(path: string) {
     if (path === workspacePath) return;
@@ -1090,19 +1105,19 @@ function WorkspaceInner() {
               style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}
               title="Switch workspace"
               data-testid="btn-workspace-switcher"
-              onClick={e => {
-                loadRecentWorkspaces();
-                const others = recentWorkspaces.filter(w => w.workspacePath !== workspacePath);
+              onClick={async e => {
+                const fresh = await loadRecentWorkspaces();
+                const others = fresh.filter(w => w.workspacePath !== workspacePath);
                 contextMenu.open(e, others.length > 0
                   ? others.map(w => ({
-                    label: w.workspacePath.split('/').pop() ?? w.workspacePath,
+                    label: workspaceBaseName(w.workspacePath),
                     icon: <FolderOpen size={14} />,
                     onClick: () => switchWorkspace(w.workspacePath),
                   }))
                   : [{ label: 'No other recent workspaces', disabled: true, onClick: () => undefined }]);
               }}
             >
-              <span className="truncate">{workspacePath.split('/').pop()}</span>
+              <span className="truncate">{workspaceBaseName(workspacePath)}</span>
               <ChevronDown size={12} className="text-(--sg-text-faint) shrink-0 opacity-60 group-hover/switcher:opacity-100" />
             </button>
             <ChevronRight size={12} className="text-(--sg-text-faint) shrink-0" />

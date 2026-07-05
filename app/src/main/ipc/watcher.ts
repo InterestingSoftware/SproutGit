@@ -36,6 +36,27 @@ function broadcast(windows: Set<BrowserWindow>, channel: string, payload: unknow
   }
 }
 
+// A window that's abruptly closed (not navigated away from first) never
+// calls WATCH_STOP, which would otherwise leave its fs watchers running with
+// no live subscriber — on Windows that also holds a handle blocking anything
+// that needs to delete/rename the watched repo. Sweep it out of every entry
+// on 'closed', tearing down any that are left with zero subscribers. Each
+// window only needs this wired up once, regardless of how many repos it
+// ends up watching over its lifetime.
+const windowsWithCloseCleanup = new WeakSet<BrowserWindow>();
+
+function ensureCleanupOnClose(win: BrowserWindow): void {
+  if (windowsWithCloseCleanup.has(win)) return;
+  windowsWithCloseCleanup.add(win);
+  win.once('closed', () => {
+    for (const [repoPath, entry] of activeWatchers) {
+      if (entry.windows.delete(win) && entry.windows.size === 0) {
+        stopWatchingPath(repoPath);
+      }
+    }
+  });
+}
+
 function watchPath(
   repoPath: string,
   windows: Set<BrowserWindow>,
@@ -114,6 +135,7 @@ export function registerWatchHandlers(): void {
       // Already watching this repo (e.g. from another window) — just add
       // this window as another subscriber to the same underlying watchers.
       existing.windows.add(win);
+      ensureCleanupOnClose(win);
       return;
     }
 
@@ -121,6 +143,7 @@ export function registerWatchHandlers(): void {
     const watchers = watchPath(normalised, windows);
     if (watchers.length > 0) {
       activeWatchers.set(normalised, { watchers, windows });
+      ensureCleanupOnClose(win);
     }
   });
 

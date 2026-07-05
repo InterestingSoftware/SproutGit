@@ -191,6 +191,28 @@ type FileWatchEntry = { watcher: Closable; windows: Set<BrowserWindow> };
 
 const activeFileWatchers = new Map<string, FileWatchEntry>();
 
+// A window that's abruptly closed (not navigated away from first) never
+// calls FILE_WATCH_STOP, which would otherwise leave the recursive watcher
+// running with no live subscriber — on Windows that also holds a handle
+// blocking anything that needs to delete/rename the watched worktree. Sweep
+// it out of every entry on 'closed', tearing down any left with zero
+// subscribers. Each window only needs this wired up once, regardless of how
+// many worktrees it ends up watching over its lifetime.
+const windowsWithCloseCleanup = new WeakSet<BrowserWindow>();
+
+function ensureCleanupOnClose(win: BrowserWindow): void {
+  if (windowsWithCloseCleanup.has(win)) return;
+  windowsWithCloseCleanup.add(win);
+  win.once('closed', () => {
+    for (const [worktreePath, entry] of activeFileWatchers) {
+      if (entry.windows.delete(win) && entry.windows.size === 0) {
+        closeWatcher(entry.watcher);
+        activeFileWatchers.delete(worktreePath);
+      }
+    }
+  });
+}
+
 function isAlwaysIgnoredPath(path: string): boolean {
   return path.split(/[\\/]+/).some(segment => ALWAYS_IGNORED_DIRS.has(segment));
 }
@@ -202,6 +224,7 @@ function startFileWatch(worktreePath: string, win: BrowserWindow): void {
     // Already watching this worktree (e.g. from another window) — just add
     // this window as another subscriber to the same underlying watcher.
     existing.windows.add(win);
+    ensureCleanupOnClose(win);
     return;
   }
 
@@ -222,7 +245,10 @@ function startFileWatch(worktreePath: string, win: BrowserWindow): void {
     },
     isAlwaysIgnoredPath,
   );
-  if (watcher) activeFileWatchers.set(root, { watcher, windows }); // null if the worktree path doesn't exist (yet) on macOS/Windows
+  if (watcher) {
+    activeFileWatchers.set(root, { watcher, windows }); // null if the worktree path doesn't exist (yet) on macOS/Windows
+    ensureCleanupOnClose(win);
+  }
 }
 
 function stopFileWatch(worktreePath: string, win?: BrowserWindow): void {
