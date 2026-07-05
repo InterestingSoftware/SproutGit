@@ -64,11 +64,50 @@ async function setProjectsFolder(dir: string): Promise<void> {
   );
 }
 
-async function closeAllTerminals(): Promise<void> {
+/**
+ * Kills every live terminal session and waits for the underlying OS
+ * processes to actually finish exiting before returning — not just for
+ * TerminalManager.close() to request the kill and drop its own bookkeeping
+ * (which happens synchronously, well before the OS confirms termination).
+ * This test's fake agent is a live, indefinitely-running process
+ * (setInterval) whose cwd is inside the workspace about to be deleted; on
+ * Windows, that process can hold a lock on it for a variable, sometimes
+ * long amount of time after the kill signal — but node-pty's own onExit
+ * callback (wired to TERMINAL_EXIT/onTerminalExit) fires exactly when the
+ * OS confirms the process is gone, so waiting on that is a real signal
+ * instead of a guessed delay.
+ */
+async function closeAllTerminalsAndWaitForExit(): Promise<void> {
   await browser.executeAsync((done: (err?: string) => void) => {
-    (window as unknown as { api: { closeAllTerminals: () => Promise<void> } })
-      .api.closeAllTerminals()
-      .then(() => done(), (e: unknown) => done(String(e)));
+    const api = (window as unknown as {
+      api: {
+        listTerminals: () => Promise<{ id: string }[]>;
+        onTerminalExit: (cb: (id: string) => void) => () => void;
+        closeAllTerminals: () => Promise<void>;
+      };
+    }).api;
+
+    api.listTerminals()
+      .then(terminals => {
+        const pending = new Set(terminals.map(t => t.id));
+        if (pending.size === 0) {
+          void api.closeAllTerminals().then(() => done(), (e: unknown) => done(String(e)));
+          return;
+        }
+        const offExit = api.onTerminalExit(id => {
+          pending.delete(id);
+          if (pending.size === 0) {
+            clearTimeout(timer);
+            offExit();
+            done();
+          }
+        });
+        // Defensive fallback only — an id that never reports exiting (e.g. a
+        // future change stops emitting TERMINAL_EXIT) shouldn't hang the hook
+        // forever; this is well short of the 120s mocha hook timeout.
+        const timer = setTimeout(() => { offExit(); done(); }, 20_000);
+        void api.closeAllTerminals().catch((e: unknown) => { clearTimeout(timer); offExit(); done(String(e)); });
+      }, (e: unknown) => done(String(e)));
   });
 }
 
@@ -105,16 +144,7 @@ describe('new from idea workflow', () => {
   });
 
   afterEach(async () => {
-    await closeAllTerminals();
-    // closeAllTerminals() only requests the PTY kill (TerminalManager.close()
-    // calls pty.kill() and drops the session synchronously) — it doesn't wait
-    // for the OS to actually finish tearing down the process. This test's
-    // fake agent is a live, indefinitely-running process (setInterval) whose
-    // cwd is inside the workspace about to be deleted; on Windows that
-    // process can hold a lock on it for a moment after the kill signal, with
-    // no app-exposed signal to poll for "is it actually gone yet" — so this
-    // has to be a short, honest wait rather than something pollable.
-    await browser.pause(1000);
+    await closeAllTerminalsAndWaitForExit();
     // Closes the workspace's SQLite connection via IPC *before* deleting —
     // skipping that leaves state.db locked on Windows. One retry pass over
     // the whole projectsFolder afterward, budgeted generously since this
