@@ -17,22 +17,40 @@ function getWorkspaceDb(workspacePath: string) {
   return openWorkspaceDb(join(workspacePath, '.sproutgit', 'state.db'));
 }
 
+// Each of these opens its own short-lived db connection rather than caching
+// one (unlike workspace.ts's per-workspace cache) — these are infrequent,
+// one-off reads/writes, not per-frame hot paths. But an unclosed sqlite
+// handle holds a WAL lock, and on Windows that also blocks deleting/renaming
+// the file out from under it — always close before returning.
+
 function readState(workspacePath: string, key: string): string | null {
   const db = getWorkspaceDb(workspacePath);
-  return db.select().from(workspaceState).where(eq(workspaceState.key, key)).get()?.value ?? null;
+  try {
+    return db.select().from(workspaceState).where(eq(workspaceState.key, key)).get()?.value ?? null;
+  } finally {
+    db.close();
+  }
 }
 
 function writeState(workspacePath: string, key: string, value: string): void {
   const db = getWorkspaceDb(workspacePath);
-  db.insert(workspaceState)
-    .values({ key, value })
-    .onConflictDoUpdate({ target: workspaceState.key, set: { value } })
-    .run();
+  try {
+    db.insert(workspaceState)
+      .values({ key, value })
+      .onConflictDoUpdate({ target: workspaceState.key, set: { value } })
+      .run();
+  } finally {
+    db.close();
+  }
 }
 
 function deleteState(workspacePath: string, key: string): void {
   const db = getWorkspaceDb(workspacePath);
-  db.delete(workspaceState).where(eq(workspaceState.key, key)).run();
+  try {
+    db.delete(workspaceState).where(eq(workspaceState.key, key)).run();
+  } finally {
+    db.close();
+  }
 }
 
 function readEnabled(workspacePath: string): boolean {

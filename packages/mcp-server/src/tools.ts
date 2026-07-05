@@ -2,8 +2,20 @@ import { z } from 'zod';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import { listWorktrees, createManagedWorktree, deleteManagedWorktree, getWorktreeStatus } from '@sproutgit/git';
-import { isPathWithin } from '@sproutgit/paths';
+import { isPathWithin, canonicalize } from '@sproutgit/paths';
 import type { McpServerContext } from './context.js';
+
+/**
+ * True when `childPath` is `parentPath` itself or nested inside it, resolved
+ * through realpath first — mirrors packages/git/src/worktrees.ts's own
+ * isWithinCanonical() helper. isPathWithin() alone is documented as pure
+ * path-string comparison with no symlink resolution, so a symlink under (or
+ * pointing out of) managedWorktreesPath could otherwise pass or fail the
+ * containment check incorrectly.
+ */
+function isWithinCanonical(childPath: string, parentPath: string): boolean {
+  return isPathWithin(canonicalize(childPath), canonicalize(parentPath));
+}
 
 function textResult(value: unknown): CallToolResult {
   return { content: [{ type: 'text', text: typeof value === 'string' ? value : JSON.stringify(value, null, 2) }] };
@@ -75,7 +87,7 @@ export async function removeWorktreeHandler(
   // Defense in depth: only ever remove a worktree this workspace itself
   // manages — never a path outside managedWorktreesPath (e.g. the repo root
   // itself, or an unrelated directory).
-  if (!isPathWithin(args.worktreePath, context.managedWorktreesPath)) {
+  if (!isWithinCanonical(args.worktreePath, context.managedWorktreesPath)) {
     return errorResult(`"${args.worktreePath}" is not inside this workspace's managed worktrees directory.`);
   }
   if (args.deleteBranch && !args.branchName) {
@@ -147,7 +159,7 @@ export function registerTools(server: McpServer, context: McpServerContext): voi
       description: 'Removes a managed worktree, optionally deleting its branch. Disabled by default pending a permission-gate setting.',
       inputSchema: {
         worktreePath: z.string().describe('Absolute path of the worktree to remove, as returned by list_worktrees.'),
-        deleteBranch: z.boolean().default(true).describe('Also delete the worktree\'s branch.'),
+        deleteBranch: z.boolean().default(false).describe('Also delete the worktree\'s branch. Requires branchName.'),
         branchName: z.string().optional().describe('Branch name to delete; required when deleteBranch is true.'),
       },
     },

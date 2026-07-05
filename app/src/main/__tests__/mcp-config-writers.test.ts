@@ -13,15 +13,20 @@ describe('mcp-config-writers', () => {
   let workspaceDir: string;
   let homeDir: string;
   let originalHome: string | undefined;
+  let originalUserProfile: string | undefined;
 
   beforeEach(() => {
     workspaceDir = mkdtempSync(join(tmpdir(), 'sg-mcp-cfg-ws-'));
     homeDir = mkdtempSync(join(tmpdir(), 'sg-mcp-cfg-home-'));
     // writeClientConfig calls node:os's homedir() directly for the
     // user-level clients (Gemini, Codex) — homedir() isn't memoized, so
-    // overriding HOME redirects it for the duration of each test.
+    // overriding the env var redirects it for the duration of each test.
+    // Node's os.homedir() reads HOME on POSIX but USERPROFILE on Windows,
+    // so both must be set for this override to take effect on every platform.
     originalHome = process.env['HOME'];
+    originalUserProfile = process.env['USERPROFILE'];
     process.env['HOME'] = homeDir;
+    process.env['USERPROFILE'] = homeDir;
   });
 
   afterEach(() => {
@@ -29,6 +34,8 @@ describe('mcp-config-writers', () => {
     rmSync(homeDir, { recursive: true, force: true });
     if (originalHome === undefined) delete process.env['HOME'];
     else process.env['HOME'] = originalHome;
+    if (originalUserProfile === undefined) delete process.env['USERPROFILE'];
+    else process.env['USERPROFILE'] = originalUserProfile;
   });
 
   it('writes Claude Code .mcp.json with type "http", url, and headers', () => {
