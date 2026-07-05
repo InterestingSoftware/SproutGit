@@ -4,10 +4,11 @@ import { render, screen, cleanup, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type { ChatSessionEvent, ChatSessionExitEvent } from '@sproutgit/types';
 
-const { chatStartMock, chatSendMock, chatStopMock, onChatStreamMock, onChatExitMock } = vi.hoisted(() => ({
+const { chatStartMock, chatSendMock, chatStopMock, chatRespondPermissionMock, onChatStreamMock, onChatExitMock } = vi.hoisted(() => ({
   chatStartMock: vi.fn(),
   chatSendMock: vi.fn(),
   chatStopMock: vi.fn(),
+  chatRespondPermissionMock: vi.fn(),
   onChatStreamMock: vi.fn(),
   onChatExitMock: vi.fn(),
 }));
@@ -17,6 +18,7 @@ vi.mock('../../api.js', () => ({
     chatStart: (...args: unknown[]) => chatStartMock(...args),
     chatSend: (...args: unknown[]) => chatSendMock(...args),
     chatStop: (...args: unknown[]) => chatStopMock(...args),
+    chatRespondPermission: (...args: unknown[]) => chatRespondPermissionMock(...args),
     onChatStream: (...args: unknown[]) => onChatStreamMock(...args),
     onChatExit: (...args: unknown[]) => onChatExitMock(...args),
   },
@@ -57,6 +59,7 @@ describe('ChatPanel', () => {
     onChatExitMock.mockReturnValue(() => undefined);
     chatStopMock.mockResolvedValue(undefined);
     chatSendMock.mockResolvedValue(undefined);
+    chatRespondPermissionMock.mockResolvedValue(undefined);
   });
 
   it('shows the empty state and a disabled Send button before any message is sent', () => {
@@ -73,7 +76,7 @@ describe('ChatPanel', () => {
     await user.type(screen.getByTestId('input-chat-prompt'), 'Fix the bug');
     await user.click(screen.getByTestId('btn-chat-send'));
 
-    expect(chatStartMock).toHaveBeenCalledWith({ worktreePath: '/ws/wt', prompt: 'Fix the bug' });
+    expect(chatStartMock).toHaveBeenCalledWith({ worktreePath: '/ws/wt', initialPrompt: 'Fix the bug' });
     const userBubbles = screen.getAllByTestId('chat-message').filter(el => el.getAttribute('data-role') === 'user');
     expect(userBubbles).toHaveLength(1);
     expect(screen.getByText('Fix the bug')).toBeTruthy();
@@ -161,6 +164,38 @@ describe('ChatPanel', () => {
 
     streamCb({ sessionId: 'session-1', event: { type: 'tool_result', messageId: '', toolUseId: 'tool-1', result: 'file body', isError: false } });
     await waitFor(() => expect(screen.getByText('file body')).toBeTruthy());
+  });
+
+  it('renders a permission request and sends the chosen option back over IPC', async () => {
+    const user = userEvent.setup();
+    chatStartMock.mockResolvedValue('session-1');
+    render(<ChatPanel worktreePath="/ws/wt" />);
+
+    await user.type(screen.getByTestId('input-chat-prompt'), 'delete the temp files');
+    await user.click(screen.getByTestId('btn-chat-send'));
+    await waitFor(() => expect(onChatStreamMock).toHaveBeenCalled());
+
+    const streamCb = captureStreamCallback();
+    streamCb({
+      sessionId: 'session-1',
+      event: {
+        type: 'permission_request',
+        requestId: 'req-1',
+        toolUse: { id: 'tool-1', name: 'Delete files', input: { path: '/tmp/x' } },
+        options: [
+          { id: 'allow', name: 'Allow', kind: 'allow_once' },
+          { id: 'reject', name: 'Reject', kind: 'reject_once' },
+        ],
+      },
+    });
+
+    await waitFor(() => expect(screen.getByTestId('chat-permission-request')).toBeTruthy());
+    expect(screen.getByText('Delete files')).toBeTruthy();
+
+    await user.click(screen.getAllByTestId('btn-chat-permission-option')[0]!);
+
+    expect(chatRespondPermissionMock).toHaveBeenCalledWith({ sessionId: 'session-1', requestId: 'req-1', optionId: 'allow' });
+    await waitFor(() => expect(screen.queryByTestId('chat-permission-request')).toBeNull());
   });
 
   it('shows the error banner when a result event reports failure', async () => {

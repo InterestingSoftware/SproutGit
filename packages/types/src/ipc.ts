@@ -63,6 +63,7 @@ export const IPC = {
   CHAT_START: 'chat:start',
   CHAT_SEND: 'chat:send',
   CHAT_STOP: 'chat:stop',
+  CHAT_RESPOND_PERMISSION: 'chat:respondPermission',
   EVENT_CHAT_STREAM: 'event:chatStream',
   EVENT_CHAT_EXIT: 'event:chatExit',
   // ── Settings tool tests (editor / diff / merge / shell / commit-msg-gen) ──
@@ -301,9 +302,10 @@ export type IpcMap = {
   'agent:launch': { args: [args: { workspacePath: string; worktreePath: string }];     result: string };
   'agent:test':   { args: [];                                                          result: ToolTestResult };
   // ── Chat (Integrated agent mode) ─────────────────────────────────────────
-  'chat:start': { args: [args: { worktreePath: string; prompt: string }]; result: string };
-  'chat:send':  { args: [args: { sessionId: string; prompt: string }];    result: void };
-  'chat:stop':  { args: [sessionId: string];                              result: void };
+  'chat:start':             { args: [args: { worktreePath: string; initialPrompt?: string }];       result: string };
+  'chat:send':              { args: [args: { sessionId: string; prompt: string }];                  result: void };
+  'chat:stop':              { args: [sessionId: string];                                            result: void };
+  'chat:respondPermission': { args: [args: { sessionId: string; requestId: string; optionId: string }]; result: void };
   // ── Settings tool tests ──────────────────────────────────────────────────
   'tooltest:editor':    { args: [command: string];                                    result: ToolTestResult };
   'tooltest:diffTool':  { args: [command: string];                                    result: ToolTestResult };

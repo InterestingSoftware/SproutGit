@@ -1,9 +1,9 @@
 /**
  * The invocation mode for the configured AI agent.
  * - `terminal`: spawned as a raw PTY session in a Terminal tab (works for any CLI).
- * - `integrated`: spawned with structured streaming output and rendered as a
- *   chat UI in the Chat tab. Only offered when the configured command is
- *   recognized as supporting structured streaming output (currently: Claude Code).
+ * - `integrated`: spawned in Agent Client Protocol (ACP) mode and rendered as
+ *   a chat UI in the Chat tab. Only offered when the configured command is
+ *   recognized as supporting ACP mode — see `commandSupportsIntegratedMode`.
  */
 export type AgentInvocationMode = 'integrated' | 'terminal';
 

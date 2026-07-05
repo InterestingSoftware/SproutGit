@@ -14,7 +14,7 @@ vi.mock('../terminal.js', () => ({ manager: { spawn: vi.fn() }, sessionWindows: 
 
 import { IPC } from '@sproutgit/types';
 import { openConfigDb, saveAgentConfig, type ConfigDb } from '@sproutgit/database';
-import { registerAgentHandlers, commandSupportsIntegratedMode } from '../agents.js';
+import { registerAgentHandlers, commandSupportsIntegratedMode, getAcpLaunchSpec } from '../agents.js';
 
 // These tests deliberately do NOT mock node:child_process or
 // tool-test-helpers -- same rationale as tool-test.test.ts: the whole point
@@ -52,12 +52,67 @@ describe('commandSupportsIntegratedMode', () => {
     expect(commandSupportsIntegratedMode('"C:\\Program Files\\claude\\claude"')).toBe(true);
   });
 
-  it('does not recognize other CLIs', () => {
-    expect(commandSupportsIntegratedMode('kiro')).toBe(false);
-    expect(commandSupportsIntegratedMode('codex')).toBe(false);
-    expect(commandSupportsIntegratedMode('gemini')).toBe(false);
+  it('recognizes every ACP-capable preset CLI, case-insensitively', () => {
+    expect(commandSupportsIntegratedMode('gemini')).toBe(true);
+    expect(commandSupportsIntegratedMode('GEMINI')).toBe(true);
+    expect(commandSupportsIntegratedMode('codex')).toBe(true);
+    expect(commandSupportsIntegratedMode('kiro')).toBe(true);
+    expect(commandSupportsIntegratedMode('kiro-cli')).toBe(true);
+    expect(commandSupportsIntegratedMode('cursor-agent')).toBe(true);
+  });
+
+  it('does not recognize unknown commands', () => {
     expect(commandSupportsIntegratedMode(process.execPath)).toBe(false);
     expect(commandSupportsIntegratedMode('')).toBe(false);
+  });
+});
+
+describe('getAcpLaunchSpec', () => {
+  it('returns null for an unrecognized command', () => {
+    expect(getAcpLaunchSpec(process.execPath, [])).toBeNull();
+    expect(getAcpLaunchSpec('', [])).toBeNull();
+  });
+
+  it('spawns the separate claude-agent-acp adapter for Claude Code, ignoring configured args', () => {
+    expect(getAcpLaunchSpec('claude', ['--dangerously-skip-permissions'])).toEqual({
+      bin: 'claude-agent-acp',
+      args: [],
+      label: 'Claude Code',
+      npmPackage: '@agentclientprotocol/claude-agent-acp',
+    });
+  });
+
+  it('spawns the separate codex-acp adapter for Codex CLI, ignoring configured args', () => {
+    expect(getAcpLaunchSpec('codex', ['--model', 'o3'])).toEqual({
+      bin: 'codex-acp',
+      args: [],
+      label: 'Codex CLI',
+      npmPackage: '@agentclientprotocol/codex-acp',
+    });
+  });
+
+  it('appends --acp to the configured Gemini CLI command', () => {
+    expect(getAcpLaunchSpec('gemini', ['--model', 'gemini-3-pro'])).toEqual({
+      bin: 'gemini',
+      args: ['--model', 'gemini-3-pro', '--acp'],
+      label: 'Gemini CLI',
+    });
+  });
+
+  it('appends the acp subcommand to the configured Kiro CLI command', () => {
+    expect(getAcpLaunchSpec('kiro-cli', [])).toEqual({
+      bin: 'kiro-cli',
+      args: ['acp'],
+      label: 'Kiro CLI',
+    });
+  });
+
+  it('appends the acp subcommand to the configured Cursor CLI command', () => {
+    expect(getAcpLaunchSpec('cursor-agent', [])).toEqual({
+      bin: 'cursor-agent',
+      args: ['acp'],
+      label: 'Cursor CLI',
+    });
   });
 });
 

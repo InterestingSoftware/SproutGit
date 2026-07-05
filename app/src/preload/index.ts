@@ -402,7 +402,7 @@ const api = {
   },
 
   // ── Chat (Integrated agent mode) ─────────────────────────────────────────
-  chatStart: (args: { worktreePath: string; prompt: string }): Promise<string> =>
+  chatStart: (args: { worktreePath: string; initialPrompt?: string }): Promise<string> =>
     invoke(IPC.CHAT_START, args),
 
   chatSend: (args: { sessionId: string; prompt: string }): Promise<void> =>
@@ -410,6 +410,9 @@ const api = {
 
   chatStop: (sessionId: string): Promise<void> =>
     invoke(IPC.CHAT_STOP, sessionId),
+
+  chatRespondPermission: (args: { sessionId: string; requestId: string; optionId: string }): Promise<void> =>
+    invoke(IPC.CHAT_RESPOND_PERMISSION, args),
 
   onChatStream: (callback: (event: ChatSessionEvent) => void) => {
     const handler = (_e: Electron.IpcRendererEvent, payload: ChatSessionEvent) => callback(payload);

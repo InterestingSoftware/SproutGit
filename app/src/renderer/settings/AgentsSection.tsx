@@ -12,17 +12,20 @@ interface Props {
 /** Known agent CLI presets — quick-pick buttons in the row's Edit panel. */
 const AGENT_PRESETS: { id: string; name: string; command: string; supportsIntegrated: boolean }[] = [
   { id: 'claude-code', name: 'Claude Code', command: 'claude', supportsIntegrated: true },
-  { id: 'kiro', name: 'Kiro', command: 'kiro', supportsIntegrated: false },
-  { id: 'cursor', name: 'Cursor', command: 'cursor-agent', supportsIntegrated: false },
-  { id: 'codex', name: 'Codex CLI', command: 'codex', supportsIntegrated: false },
-  { id: 'gemini', name: 'Gemini CLI', command: 'gemini', supportsIntegrated: false },
+  { id: 'kiro', name: 'Kiro', command: 'kiro', supportsIntegrated: true },
+  { id: 'cursor', name: 'Cursor', command: 'cursor-agent', supportsIntegrated: true },
+  { id: 'codex', name: 'Codex CLI', command: 'codex', supportsIntegrated: true },
+  { id: 'gemini', name: 'Gemini CLI', command: 'gemini', supportsIntegrated: true },
 ];
 
-/** Mirrors the main process's commandSupportsIntegratedMode() — only Claude Code, for now. */
+/** The set of command basenames recognized as ACP-capable — mirrors the main process's ACP_PRESETS table in agents.ts. */
+const ACP_CAPABLE_TOKENS = new Set(['claude', 'claude-code', 'gemini', 'codex', 'kiro', 'kiro-cli', 'cursor-agent']);
+
+/** Mirrors the main process's commandSupportsIntegratedMode(). */
 function commandSupportsIntegratedMode(command: string): boolean {
   const trimmed = command.trim().replace(/^["']|["']$/g, '');
   const token = trimmed.split(/\s+/)[0]?.split(/[\\/]/).pop()?.toLowerCase() ?? '';
-  return token === 'claude' || token === 'claude-code';
+  return ACP_CAPABLE_TOKENS.has(token);
 }
 
 /**
@@ -146,7 +149,7 @@ export function AgentsSection({ onToast }: Props) {
                   onClick={() => integratedSupported && setMode('integrated')}
                   disabled={!integratedSupported}
                   data-testid="btn-agent-mode-integrated"
-                  title={integratedSupported ? 'Structured chat in the Chat tab' : 'Only available for Claude Code'}
+                  title={integratedSupported ? 'Structured chat in the Chat tab' : 'This command is not recognized as ACP-capable'}
                 >
                   Integrated
                 </button>
@@ -161,7 +164,7 @@ export function AgentsSection({ onToast }: Props) {
                 </button>
               </div>
               {!integratedSupported && (
-                <span className="text-[10px] text-(--sg-text-faint)">Integrated mode currently requires Claude Code.</span>
+                <span className="text-[10px] text-(--sg-text-faint)">Integrated mode requires an ACP-capable agent (Claude Code, Gemini CLI, Codex CLI, Kiro, or Cursor).</span>
               )}
             </div>
           }

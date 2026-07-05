@@ -45,16 +45,104 @@ function resolveIssueUrl(issueRef: string, patterns: IssueTrackerPattern[]): str
   return '';
 }
 
+/** The resolved argv to spawn a configured agent in Agent Client Protocol (ACP) mode. */
+export type AcpLaunchSpec = { bin: string; args: string[] };
+
+interface AcpPreset {
+  /** Matches against the lowercased basename of the configured command. */
+  match(token: string): boolean;
+  label: string;
+  /**
+   * npm package providing the ACP adapter binary, for presets whose ACP
+   * support ships as a separate adapter rather than a flag on the CLI
+   * itself — surfaced in the "binary not found" error so the user knows
+   * what to install.
+   */
+  npmPackage?: string;
+  /** Builds the argv to spawn in ACP mode from the user's configured command. */
+  build(ctx: { configuredBin: string; configuredArgs: string[] }): AcpLaunchSpec;
+}
+
 /**
- * Recognizes commands that support structured streaming output ("Integrated"
- * mode). For now this is specifically Claude Code's CLI — verified via
- * `claude --help`: `-p`/`--print` plus `--output-format stream-json`
- * (with `--verbose`) emits line-delimited JSON on stdout. Any other command
- * (Kiro, Codex, Gemini, custom) only gets Terminal mode.
+ * Per-preset ACP invocation table, verified against each CLI's own docs:
+ *
+ * - Claude Code: the `claude` CLI has no built-in ACP mode. The official
+ *   adapter is the separate `@agentclientprotocol/claude-agent-acp` package
+ *   (bin `claude-agent-acp`), which speaks ACP using the Claude Agent SDK
+ *   directly — it does not shell out to `claude` itself, so the user's
+ *   configured command/args are irrelevant to it.
+ * - Gemini CLI: native support via the `--acp` flag
+ *   (`--experimental-acp` is a deprecated alias for the same flag).
+ * - Codex CLI: like Claude, has no built-in ACP mode. The official adapter
+ *   is `@agentclientprotocol/codex-acp` (bin `codex-acp`), a standalone
+ *   binary that bundles its own Codex runtime.
+ * - Kiro CLI: native support via the `acp` subcommand (`kiro-cli acp`).
+ * - Cursor CLI: native support via the `acp` subcommand (`cursor-agent acp`).
  */
-export function commandSupportsIntegratedMode(command: string): boolean {
-  const token = splitCommand(command).bin.split(/[\\/]/).pop()?.toLowerCase() ?? '';
+const ACP_PRESETS: readonly AcpPreset[] = [
+  {
+    match: token => token === 'claude' || token === 'claude-code',
+    label: 'Claude Code',
+    npmPackage: '@agentclientprotocol/claude-agent-acp',
+    build: () => ({ bin: 'claude-agent-acp', args: [] }),
+  },
+  {
+    match: token => token === 'gemini',
+    label: 'Gemini CLI',
+    build: ({ configuredBin, configuredArgs }) => ({ bin: configuredBin, args: [...configuredArgs, '--acp'] }),
+  },
+  {
+    match: token => token === 'codex',
+    label: 'Codex CLI',
+    npmPackage: '@agentclientprotocol/codex-acp',
+    build: () => ({ bin: 'codex-acp', args: [] }),
+  },
+  {
+    match: token => token === 'kiro' || token === 'kiro-cli',
+    label: 'Kiro CLI',
+    build: ({ configuredBin, configuredArgs }) => ({ bin: configuredBin, args: [...configuredArgs, 'acp'] }),
+  },
+  {
+    match: token => token === 'cursor-agent',
+    label: 'Cursor CLI',
+    build: ({ configuredBin, configuredArgs }) => ({ bin: configuredBin, args: [...configuredArgs, 'acp'] }),
+  },
+];
+
+function commandToken(command: string): string {
+  return splitCommand(command).bin.split(/[\\/]/).pop()?.toLowerCase() ?? '';
+}
+
+function findAcpPreset(command: string): AcpPreset | undefined {
+  const token = commandToken(command);
+  return ACP_PRESETS.find(p => p.match(token));
+}
+
+/** Whether `command` resolves to Claude Code's own CLI — the only one known to support `-p`/`--print` non-interactive mode. */
+function commandIsClaudeCli(command: string): boolean {
+  const token = commandToken(command);
   return token === 'claude' || token === 'claude-code';
+}
+
+/** Recognizes commands that support Agent Client Protocol (ACP) mode ("Integrated" mode). */
+export function commandSupportsIntegratedMode(command: string): boolean {
+  return findAcpPreset(command) !== undefined;
+}
+
+/**
+ * Resolves the argv to spawn for the configured agent's ACP mode, or `null`
+ * if it isn't recognized. For CLIs with native ACP support this augments
+ * the user's configured command/args with the right flag or subcommand; for
+ * agents whose ACP support ships as a separate adapter package, this
+ * ignores the configured command entirely and returns that adapter's own
+ * binary name (still subject to PATH resolution by the caller).
+ */
+export function getAcpLaunchSpec(command: string, args: string[]): (AcpLaunchSpec & { label: string; npmPackage?: string }) | null {
+  const preset = findAcpPreset(command);
+  if (!preset) return null;
+  const { bin: configuredBin, args: leadingArgs } = splitCommand(command);
+  const launch = preset.build({ configuredBin, configuredArgs: [...leadingArgs, ...args] });
+  return preset.npmPackage ? { ...launch, label: preset.label, npmPackage: preset.npmPackage } : { ...launch, label: preset.label };
 }
 
 async function buildAgentEnv(args: { workspacePath: string; worktreePath: string }): Promise<Record<string, string>> {
@@ -151,10 +239,12 @@ export function registerAgentHandlers(configDb: ConfigDb, getWindow: () => Brows
   // Actually runs the configured agent command with a small fixed real
   // prompt and confirms non-empty, non-error stdout comes back — not just
   // `<cmd> --version`. Only Claude Code's non-interactive prompt flag (-p)
-  // is known (same invocation chat.ts's spawnClaudeTurn uses); any other
-  // configured command would likely just hang waiting for interactive
-  // input on a bare positional prompt, so we confirm the binary resolves
-  // and stop there rather than guessing at a flag.
+  // is known; any other configured command would likely just hang waiting
+  // for interactive input on a bare positional prompt, so we confirm the
+  // binary resolves and stop there rather than guessing at a flag. This is
+  // independent of ACP support (commandSupportsIntegratedMode) — that gates
+  // the Chat tab, which spawns a different ACP-mode invocation entirely
+  // (see chat.ts), not this raw `-p` smoke test.
   handle(IPC.AGENT_TEST, async (): Promise<ToolTestResult> => {
     const agent = getAgentConfig(configDb);
     const { bin, args: leadingArgs } = splitCommand(agent.command);
@@ -163,7 +253,7 @@ export function registerAgentHandlers(configDb: ConfigDb, getWindow: () => Brows
     const resolved = await resolveCommandPath(bin);
     if (!resolved) return errResult(bin, `Command not found on PATH: ${bin}`);
 
-    if (!commandSupportsIntegratedMode(agent.command)) {
+    if (!commandIsClaudeCli(agent.command)) {
       return okResult(resolved, `Found ${resolved}. This command's non-interactive prompt flag isn't known, so a live prompt test wasn't run — only Claude Code supports that right now.`);
     }
 

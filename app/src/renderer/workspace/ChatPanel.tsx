@@ -1,24 +1,26 @@
 import { useEffect, useRef, useState } from 'react';
-import { Bot, User, Wrench, Send, Loader2 } from 'lucide-react';
+import { Bot, User, Wrench, Send, Loader2, ShieldQuestion } from 'lucide-react';
 import { api } from '../api.js';
-import type { ChatMessage, ChatStreamEvent, ChatToolUse } from '@sproutgit/types';
+import type { ChatMessage, ChatPermissionRequest, ChatStreamEvent, ChatToolUse } from '@sproutgit/types';
 
 type Props = {
   worktreePath: string;
 };
 
 /**
- * Integrated AI agent chat — spawns the configured agent (Claude Code, in
- * Integrated mode) with structured streaming output and renders the parsed
- * stream as a proper chat UI: streamed assistant bubbles, a prompt input at
- * the bottom, and tool-use/tool-result content rendered distinctly rather
- * than as raw terminal text.
+ * Integrated AI agent chat — spawns the configured agent's Agent Client
+ * Protocol (ACP) mode and renders the translated session updates as a proper
+ * chat UI: streamed assistant bubbles, a prompt input at the bottom,
+ * tool-use/tool-result content rendered distinctly rather than as raw
+ * terminal text, and inline permission-request prompts when the agent asks
+ * for authorization before running a tool.
  */
 export function ChatPanel({ worktreePath }: Props) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [prompt, setPrompt] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [pendingPermission, setPendingPermission] = useState<ChatPermissionRequest | null>(null);
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const sessionIdRef = useRef<string | null>(null);
 
@@ -27,6 +29,7 @@ export function ChatPanel({ worktreePath }: Props) {
     setMessages([]);
     sessionIdRef.current = null;
     setError(null);
+    setPendingPermission(null);
   }, [worktreePath]);
 
   useEffect(() => {
@@ -37,6 +40,7 @@ export function ChatPanel({ worktreePath }: Props) {
     const offExit = api.onChatExit(({ sessionId: sid }) => {
       if (sid !== sessionIdRef.current) return;
       setBusy(false);
+      setPendingPermission(null);
     });
     return () => { offStream(); offExit(); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -66,6 +70,9 @@ export function ChatPanel({ worktreePath }: Props) {
       case 'assistant_message_end':
         setMessages(prev => prev.map(m => m.id === event.messageId ? { ...m, streaming: false } : m));
         break;
+      case 'permission_request':
+        setPendingPermission({ requestId: event.requestId, toolUse: event.toolUse, options: event.options });
+        break;
       case 'result':
         setBusy(false);
         if (!event.success) setError(event.summary || 'The agent reported an error.');
@@ -74,6 +81,17 @@ export function ChatPanel({ worktreePath }: Props) {
         setBusy(false);
         setError(event.message);
         break;
+    }
+  }
+
+  async function respondToPermission(optionId: string) {
+    if (!pendingPermission || !sessionIdRef.current) return;
+    const { requestId } = pendingPermission;
+    setPendingPermission(null);
+    try {
+      await api.chatRespondPermission({ sessionId: sessionIdRef.current, requestId, optionId });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
     }
   }
 
@@ -86,7 +104,7 @@ export function ChatPanel({ worktreePath }: Props) {
     setBusy(true);
     try {
       if (!sessionIdRef.current) {
-        const id = await api.chatStart({ worktreePath, prompt: trimmed });
+        const id = await api.chatStart({ worktreePath, initialPrompt: trimmed });
         sessionIdRef.current = id;
       } else {
         await api.chatSend({ sessionId: sessionIdRef.current, prompt: trimmed });
@@ -120,6 +138,9 @@ export function ChatPanel({ worktreePath }: Props) {
         {messages.map(m => (
           <ChatBubble key={m.id} message={m} />
         ))}
+        {pendingPermission && (
+          <PermissionRequestCard request={pendingPermission} onRespond={optionId => void respondToPermission(optionId)} />
+        )}
         {error && (
           <div className="rounded border border-(--sg-danger)/30 bg-(--sg-danger)/8 px-3 py-2 text-xs text-(--sg-danger)" data-testid="chat-error">
             {error}
@@ -193,6 +214,43 @@ function ToolUseBlock({ toolUse }: { toolUse: ChatToolUse }) {
           {toolUse.result.length > 500 ? `${toolUse.result.slice(0, 500)}…` : toolUse.result}
         </div>
       )}
+    </div>
+  );
+}
+
+/** Buttons matching an option's `PermissionOptionKind` — allow options lean on the primary accent, reject options on danger. */
+function permissionOptionClasses(kind: ChatPermissionRequest['options'][number]['kind']): string {
+  if (kind === 'allow_once' || kind === 'allow_always') {
+    return 'bg-(--sg-primary) text-white hover:bg-(--sg-primary-hover)';
+  }
+  return 'border border-(--sg-danger)/40 text-(--sg-danger) hover:bg-(--sg-danger)/10';
+}
+
+function PermissionRequestCard({ request, onRespond }: { request: ChatPermissionRequest; onRespond: (optionId: string) => void }) {
+  return (
+    <div className="rounded-lg border border-(--sg-border) bg-(--sg-surface-raised) px-3 py-2.5" data-testid="chat-permission-request">
+      <div className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wide text-(--sg-text-dim)">
+        <ShieldQuestion size={12} /> Permission requested
+      </div>
+      <p className="mt-1 text-xs text-(--sg-text)">
+        The agent wants to run <span className="font-medium">{request.toolUse.name}</span>.
+      </p>
+      <pre className="mt-1.5 overflow-x-auto whitespace-pre-wrap break-all rounded border border-(--sg-border) bg-(--sg-bg) px-2 py-1.5 font-mono text-[10px] text-(--sg-text-faint)">
+        {JSON.stringify(request.toolUse.input, null, 2)}
+      </pre>
+      <div className="mt-2 flex flex-wrap gap-1.5">
+        {request.options.map(option => (
+          <button
+            key={option.id}
+            type="button"
+            className={`cursor-pointer rounded-md border-none px-2.5 py-1 text-[11px] font-medium ${permissionOptionClasses(option.kind)}`}
+            onClick={() => onRespond(option.id)}
+            data-testid="btn-chat-permission-option"
+          >
+            {option.name}
+          </button>
+        ))}
+      </div>
     </div>
   );
 }
