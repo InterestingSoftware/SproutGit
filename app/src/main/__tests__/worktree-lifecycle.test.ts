@@ -26,6 +26,8 @@ function initTestRepo(): string {
 
 const FAKE_WINDOW = { webContents: { send: vi.fn() } } as unknown as Electron.BrowserWindow;
 const NO_WINDOW = () => null;
+// runTriggerHooks is mocked above, so the configDb passed through to it is never touched.
+const FAKE_CONFIG_DB = {} as Parameters<typeof createWorktreeWithHooks>[2];
 
 describe('worktree-lifecycle', () => {
   let repoPath: string;
@@ -56,7 +58,7 @@ describe('worktree-lifecycle', () => {
         managedWorktreesPath,
         fromRef: 'HEAD',
         newBranch: 'feature-a',
-      }, NO_WINDOW);
+      }, NO_WINDOW, FAKE_CONFIG_DB);
       expect(result.branch).toBe('feature-a');
       expect(result.worktreePath).toBe(join(managedWorktreesPath, 'feature-a'));
     });
@@ -68,7 +70,7 @@ describe('worktree-lifecycle', () => {
         managedWorktreesPath,
         fromRef: 'HEAD',
         newBranch: 'feature-b',
-      }, NO_WINDOW);
+      }, NO_WINDOW, FAKE_CONFIG_DB);
       expect(runTriggerHooksMock).not.toHaveBeenCalled();
     });
 
@@ -80,7 +82,7 @@ describe('worktree-lifecycle', () => {
         fromRef: 'HEAD',
         newBranch: 'feature-c',
         initiatingWorktreePath: repoPath,
-      }, () => FAKE_WINDOW);
+      }, () => FAKE_WINDOW, FAKE_CONFIG_DB);
 
       expect(runTriggerHooksMock).toHaveBeenCalledTimes(2);
       expect(runTriggerHooksMock.mock.calls[0]![0]).toMatchObject({
@@ -104,7 +106,7 @@ describe('worktree-lifecycle', () => {
         newBranch: 'feature-d',
         issueRef: 'ABC-123',
         issueTitle: 'Fix the thing',
-      }, NO_WINDOW);
+      }, NO_WINDOW, FAKE_CONFIG_DB);
 
       const db = openWorkspaceDb(join(repoPath, '.sproutgit', 'state.db'));
       const row = db.select().from(worktreeMetadata).where(eq(worktreeMetadata.worktreePath, result.worktreePath)).get();
@@ -120,7 +122,7 @@ describe('worktree-lifecycle', () => {
         managedWorktreesPath,
         fromRef: 'HEAD',
         newBranch: 'feature-e',
-      }, NO_WINDOW);
+      }, NO_WINDOW, FAKE_CONFIG_DB);
 
       const db = openWorkspaceDb(join(repoPath, '.sproutgit', 'state.db'));
       const row = db.select().from(worktreeMetadata).where(eq(worktreeMetadata.worktreePath, result.worktreePath)).get();
@@ -137,7 +139,7 @@ describe('worktree-lifecycle', () => {
         managedWorktreesPath,
         fromRef: 'HEAD',
         newBranch: 'to-remove',
-      }, NO_WINDOW);
+      }, NO_WINDOW, FAKE_CONFIG_DB);
 
       const closeForPathSpy = vi.spyOn(manager, 'closeForPath').mockImplementation(() => undefined);
       try {
@@ -148,7 +150,7 @@ describe('worktree-lifecycle', () => {
           worktreePath: created.worktreePath,
           deleteBranch: true,
           branchName: 'to-remove',
-        }, NO_WINDOW);
+        }, NO_WINDOW, FAKE_CONFIG_DB);
         expect(closeForPathSpy).toHaveBeenCalledWith(created.worktreePath);
       } finally {
         closeForPathSpy.mockRestore();
@@ -162,7 +164,7 @@ describe('worktree-lifecycle', () => {
         managedWorktreesPath,
         fromRef: 'HEAD',
         newBranch: 'to-remove-2',
-      }, NO_WINDOW);
+      }, NO_WINDOW, FAKE_CONFIG_DB);
       runTriggerHooksMock.mockClear();
       const closeForPathSpy = vi.spyOn(manager, 'closeForPath').mockImplementation(() => undefined);
 
@@ -176,7 +178,7 @@ describe('worktree-lifecycle', () => {
           branchName: 'to-remove-2',
           initiatingWorktreePath: repoPath,
           afterRemoveWorktreePath: repoPath,
-        }, () => FAKE_WINDOW);
+        }, () => FAKE_WINDOW, FAKE_CONFIG_DB);
 
         expect(runTriggerHooksMock).toHaveBeenCalledTimes(2);
         expect(runTriggerHooksMock.mock.calls[0]![0]).toMatchObject({
@@ -201,7 +203,7 @@ describe('worktree-lifecycle', () => {
           managedWorktreesPath,
           worktreePath: '/not/a/real/worktree',
           deleteBranch: false,
-        }, () => FAKE_WINDOW)).rejects.toThrow(/not a registered worktree/);
+        }, () => FAKE_WINDOW, FAKE_CONFIG_DB)).rejects.toThrow(/not a registered worktree/);
         expect(closeForPathSpy).not.toHaveBeenCalled();
         expect(runTriggerHooksMock).not.toHaveBeenCalled();
       } finally {

@@ -1,6 +1,7 @@
 import { existsSync } from 'node:fs';
 import type { BrowserWindow } from 'electron';
 import { IPC } from '@sproutgit/types';
+import type { ConfigDb } from '@sproutgit/database';
 import { getGitInfo, isBareRepoPath } from '@sproutgit/git';
 import { listWorktrees } from '@sproutgit/git/worktrees';
 import { getCommitGraph, countCommits, listRefs } from '@sproutgit/git/commits';
@@ -29,7 +30,7 @@ function assertWorkingTreePath(worktreePath: string): void {
   }
 }
 
-export function registerGitHandlers(getWindow: () => BrowserWindow | null): void {
+export function registerGitHandlers(getWindow: () => BrowserWindow | null, configDb: ConfigDb): void {
   // ── git info ──────────────────────────────────────────────────────────────
   handle(IPC.GIT_INFO, async () => {
     return getGitInfo();
@@ -54,7 +55,7 @@ export function registerGitHandlers(getWindow: () => BrowserWindow | null): void
     issueRef?: string | null;
     issueTitle?: string | null;
   }) => {
-    return createWorktreeWithHooks(args, getWindow);
+    return createWorktreeWithHooks(args, getWindow, configDb);
   });
 
   // Runs the full remove lifecycle (before/after_worktree_remove hooks,
@@ -71,7 +72,7 @@ export function registerGitHandlers(getWindow: () => BrowserWindow | null): void
     initiatingWorktreePath?: string | null;
     afterRemoveWorktreePath?: string | null;
   }) => {
-    await removeWorktreeWithHooks(args, getWindow);
+    await removeWorktreeWithHooks(args, getWindow, configDb);
   });
 
   // ── commits ───────────────────────────────────────────────────────────────

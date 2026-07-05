@@ -70,13 +70,13 @@ old/                    ← Legacy Tauri/SvelteKit source (do NOT modify)
 
 - **IPC handlers:** `app/src/main/ipc/`
   - `git.ts` — Git operations (delegates to `@sproutgit/git`)
-  - `workspace.ts` — workspace CRUD, recent workspaces, hooks, worktree metadata
+  - `workspace.ts` — workspace CRUD, recent workspaces, worktree metadata, hook run audit log
   - `workspace-init.ts` — import, init, inspect workspace (creates `.sproutgit/` layout)
   - `terminal.ts` — PTY create/write/resize/kill (delegates to `@sproutgit/terminal`)
   - `settings.ts` — user settings stored in config DB
   - `system.ts` — OS utilities (dialog, open external, home dir)
   - `github.ts` — GitHub OAuth + repo listing
-  - `hooks.ts` — workspace lifecycle hook execution
+  - `hooks.ts` — hook CRUD (local-hooks.json), repo-hook trust, and lifecycle execution — see "Hooks" below
   - `watcher.ts` — chokidar filesystem watcher → push events to renderer
   - `update.ts` — electron-updater auto-update
   - `agents.ts` — coding agent roster CRUD + launching an agent as a PTY session in a worktree
@@ -155,8 +155,8 @@ Located in `app/src/renderer/workspace/`:
 
 - **`node:sqlite`** (built into Electron ≥32) — no native binary dependencies
 - Drizzle ORM for schema and migrations
-- **Config DB:** `userData/config.db` — user settings, recent workspaces
-- **Workspace DB:** `<workspacePath>/.sproutgit/state.db` — worktree metadata, hooks, per-workspace UI state, etc.
+- **Config DB:** `userData/config.db` — user settings, recent workspaces, per-worktree per-hook trust decisions
+- **Workspace DB:** `<workspacePath>/.sproutgit/state.db` — worktree metadata, hook run audit log, per-workspace UI state, etc. Machine-local, never committed to git. Hook *definitions* themselves no longer live here — see "Hooks" below — this DB only keeps a legacy `hookDefinitions`/`hookDependencies` table pair around as a one-time migration source for workspaces created before that change.
 - Schema in `packages/database/src/schema/`
 - Migrations in `packages/database/migrations/` (two folders: `config/` and `workspace/`)
 - **Always generate migrations with drizzle-kit — never write migration SQL by hand.**
@@ -193,11 +193,38 @@ Key modules:
 ```
 <workspacePath>/
   .sproutgit/
-    root/           ← bare git repository (git init --bare)
-    worktrees/      ← managed worktrees (one subdirectory per worktree)
-    state.db        ← workspace SQLite database
+    root/               ← bare git repository (git init --bare)
+    worktrees/          ← managed worktrees (one subdirectory per worktree)
+    state.db            ← workspace SQLite database
+    local-hooks.json     ← local hook definitions (machine-local, not tracked by git)
   .sproutgit/root.git → symlink for compatibility (if needed)
 ```
+
+Inside each worktree's own working copy (i.e. tracked by git, alongside the
+project's source), an optional `sproutgit.hooks.json` lets a repo ship
+lifecycle hooks that travel with `git clone`/`pull` instead of staying local
+to one machine. See "Hooks" below.
+
+---
+
+## Hooks (`local-hooks.json` / `sproutgit.hooks.json`)
+
+Local and repo hooks are stored **the same way** — a JSON file of
+`HookFileDefinition`s (`packages/types/src/hooks.ts`) — just in different
+files with different write/trust policies. This is the "native"
+differentiation: which file a hook was read from, not a bolted-on DB flag.
+
+- **Local:** `<workspacePath>/.sproutgit/local-hooks.json`. Not tracked by git,
+  private to this machine, freely created/edited/deleted through the app
+  (Workspace Hooks UI → `HOOK_CREATE`/`UPDATE`/`DELETE`/`TOGGLE`). Always
+  trusted — nothing external ever wrote it.
+- **Repo:** `<worktreePath>/sproutgit.hooks.json`. Tracked by git, travels
+  with clone/pull, **read-only from the app** — edit the file and commit to
+  change it. Surfaced in the UI with a "repo" badge and a lock icon.
+- Shape: `{ "version": 1, "hooks": [ { name, trigger, executionTarget, shell, script, dependsOn?, ... } ] }`. Hooks are identified by `name` within their own file (not a DB id), and `dependsOn` references other hooks in the *same* file by name — a local hook can't depend on a repo hook or vice versa, since the two files are parsed and validated independently.
+- Reading/writing/hashing lives in `app/src/main/hooks-file.ts` (`readHooksFile`, `writeLocalHooksFile`, `hashHookDefinition`). A hook's id throughout the app is `local:<name>` or `repo:<name>` (`makeHookId`/`parseHookId`).
+- **Security-critical:** the repo file arrives via `git checkout`, so its scripts must never run automatically. Trust is **per hook**, not per file (`app/src/main/hooks-trust.ts`: `isHookTrusted`/`trustHook`) — editing or adding one hook doesn't invalidate trust already granted to the rest, keyed by a sha256 hash of that hook's own content. Never bypass `isHookTrusted()` to "just run it".
+- Both sources are merged live on every read (`getEffectiveHooks` in `app/src/main/ipc/hooks.ts`) — nothing is cached in a DB. Workspaces created before this change had local hooks in the workspace DB's `hookDefinitions`/`hookDependencies` tables; the first read after upgrading migrates those rows into `local-hooks.json` once (`migrateLegacyLocalHooksIfNeeded`) and the DB tables are ignored from then on.
 
 ---
 

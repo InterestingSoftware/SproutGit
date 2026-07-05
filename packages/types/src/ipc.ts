@@ -41,6 +41,7 @@ export const IPC = {
   HOOK_UPDATE: 'hook:update',
   HOOK_DELETE: 'hook:delete',
   HOOK_RUN_LOG: 'hook:runLog',
+  HOOK_TRUST: 'hook:trust',
   // ── Terminal ─────────────────────────────────────────────────────────────
   TERMINAL_CREATE: 'terminal:create',
   TERMINAL_WRITE: 'terminal:write',
@@ -190,12 +191,13 @@ import type {
 } from './git.js';
 import type { WorkspaceInitResult, WorkspaceStatus, RecentWorkspace, WorktreeProvenance, NestedRepoSyncRule, ImportRepoMode, CreateWorktreeResult } from './workspace.js';
 import type {
-  WorkspaceHook,
   WorkspaceHookScope,
   WorkspaceHookTrigger,
   HookExecutionTarget,
   WorkspaceHookShell,
   WorktreeSwitchHookSource,
+  HookUpsertInput,
+  HookListResult,
 } from './hooks.js';
 import type { EditorInfo, GitToolInfo, ToolTestResult } from './tools.js';
 import type { GitHubAuthStatus, DeviceCodeResponse, GitHubPollResult, GitHubEmailSuggestion, GitHubRepo } from './github.js';
@@ -286,11 +288,12 @@ export type IpcMap = {
   'nestedRepo:upsert': { args: [args: { workspacePath: string; repoRelativePath: string; enabled: boolean }];              result: void };
   'nestedRepo:delete': { args: [args: { workspacePath: string; repoRelativePath: string }];                                result: void };
   // ── Hooks ─────────────────────────────────────────────────────────────────
-  'hook:list':      { args: [workspacePath: string];                                                         result: WorkspaceHook[] };
-  'hook:create':    { args: [args: { workspacePath: string; id: string; name: string; scope: WorkspaceHookScope; trigger: WorkspaceHookTrigger; executionTarget: HookExecutionTarget; shell: WorkspaceHookShell; script: string; enabled?: boolean; critical?: boolean; switchOncePerSession?: boolean; switchRunOnCreate?: boolean; switchRunOnDelete?: boolean; keepOpenOnCompletion?: boolean; timeoutSeconds?: number; dependencyIds?: string[] }]; result: void };
-  'hook:update':    { args: [args: { workspacePath: string; id: string; name?: string; scope?: WorkspaceHookScope; trigger?: WorkspaceHookTrigger; executionTarget?: HookExecutionTarget; shell?: WorkspaceHookShell; script?: string; enabled?: boolean; critical?: boolean; switchOncePerSession?: boolean; switchRunOnCreate?: boolean; switchRunOnDelete?: boolean; keepOpenOnCompletion?: boolean; timeoutSeconds?: number; dependencyIds?: string[] }]; result: void };
+  'hook:list':      { args: [args: { workspacePath: string; worktreePath: string | null }];                  result: HookListResult };
+  'hook:create':    { args: [args: { workspacePath: string } & HookUpsertInput];                             result: void };
+  'hook:update':    { args: [args: { workspacePath: string; id: string } & Partial<HookUpsertInput>];        result: void };
   'hook:delete':    { args: [args: { workspacePath: string; id: string }];                                   result: void };
   'hook:toggle':    { args: [args: { workspacePath: string; id: string; enabled: boolean }];                 result: void };
+  'hook:trust':     { args: [args: { worktreePath: string; hookId: string }];                                result: void };
   'hook:run':       { args: [args: { workspacePath: string; hookId: string; worktreePath: string; trigger: WorkspaceHookTrigger; initiatingWorktreePath?: string | null }]; result: void };
   'hook:runSwitch':   { args: [args: { workspacePath: string; targetWorktreePath: string; initiatingWorktreePath?: string | null; source?: WorktreeSwitchHookSource }]; result: void };
   'hook:runCreate':   { args: [args: { workspacePath: string; newWorktreePath: string; initiatingWorktreePath?: string | null }]; result: void };

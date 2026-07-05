@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { IPC } from '@sproutgit/types';
 import type { McpServerStatus } from '@sproutgit/types';
+import type { ConfigDb } from '@sproutgit/database';
 
 const { handleMock } = vi.hoisted(() => ({ handleMock: vi.fn() }));
 vi.mock('electron', () => ({ ipcMain: { handle: handleMock } }));
@@ -12,10 +13,12 @@ import { registerMcpHandlers } from '../mcp.js';
 import { stopAllMcpServers, deriveDefaultPort } from '../../mcp-bridge.js';
 
 type AnyHandler = (event: unknown, ...args: unknown[]) => unknown;
+// None of these tests exercise the MCP create_worktree/remove_worktree tools, so configDb is never touched.
+const FAKE_CONFIG_DB = {} as ConfigDb;
 
 function registerAndGetHandlers(): (channel: string) => AnyHandler {
   handleMock.mockClear();
-  registerMcpHandlers(() => null);
+  registerMcpHandlers(() => null, FAKE_CONFIG_DB);
   return (channel: string) => {
     const call = handleMock.mock.calls.find(c => c[0] === channel);
     if (!call) throw new Error(`${channel} handler was not registered`);

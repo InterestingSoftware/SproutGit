@@ -22,11 +22,9 @@ import type {
   ImportRepoMode,
   HookProgressEvent,
   HookTerminalLaunchEvent,
-  WorkspaceHook,
-  WorkspaceHookScope,
+  HookListResult,
+  HookUpsertInput,
   WorkspaceHookTrigger,
-  HookExecutionTarget,
-  WorkspaceHookShell,
   WorktreeChangedEvent,
   GitOpProgressEvent,
   TerminalInfo,
@@ -287,45 +285,13 @@ const api = {
     invoke(IPC.NESTED_REPO_DELETE, { workspacePath, repoRelativePath }),
 
   // ── Hooks ─────────────────────────────────────────────────────────────────
-  listHooks: (workspacePath: string): Promise<WorkspaceHook[]> =>
-    invoke(IPC.HOOK_LIST, workspacePath),
+  listHooks: (workspacePath: string, worktreePath: string | null): Promise<HookListResult> =>
+    invoke(IPC.HOOK_LIST, { workspacePath, worktreePath }),
 
-  createHook: (args: {
-    workspacePath: string;
-    id: string;
-    name: string;
-    scope: WorkspaceHookScope;
-    trigger: WorkspaceHookTrigger;
-    executionTarget: HookExecutionTarget;
-    shell: WorkspaceHookShell;
-    script: string;
-    enabled?: boolean;
-    critical?: boolean;
-    switchOncePerSession?: boolean;
-    switchRunOnCreate?: boolean;
-    switchRunOnDelete?: boolean;
-    keepOpenOnCompletion?: boolean;
-    timeoutSeconds?: number;
-  }): Promise<void> =>
+  createHook: (args: { workspacePath: string } & HookUpsertInput): Promise<void> =>
     invoke(IPC.HOOK_CREATE, args),
 
-  updateHook: (args: {
-    workspacePath: string;
-    id: string;
-    name?: string;
-    scope?: WorkspaceHookScope;
-    trigger?: WorkspaceHookTrigger;
-    executionTarget?: HookExecutionTarget;
-    shell?: WorkspaceHookShell;
-    script?: string;
-    enabled?: boolean;
-    critical?: boolean;
-    switchOncePerSession?: boolean;
-    switchRunOnCreate?: boolean;
-    switchRunOnDelete?: boolean;
-    keepOpenOnCompletion?: boolean;
-    timeoutSeconds?: number;
-  }): Promise<void> =>
+  updateHook: (args: { workspacePath: string; id: string } & Partial<HookUpsertInput>): Promise<void> =>
     invoke(IPC.HOOK_UPDATE, args),
 
   deleteHook: (workspacePath: string, id: string): Promise<void> =>
@@ -333,6 +299,9 @@ const api = {
 
   toggleHook: (workspacePath: string, id: string, enabled: boolean): Promise<void> =>
     invoke(IPC.HOOK_TOGGLE, { workspacePath, id, enabled }),
+
+  trustHook: (worktreePath: string, hookId: string): Promise<void> =>
+    invoke(IPC.HOOK_TRUST, { worktreePath, hookId }),
 
   runHook: (args: {
     workspacePath: string;
