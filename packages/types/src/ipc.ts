@@ -154,6 +154,12 @@ export const IPC = {
   ISSUETRACKER_LIST: 'issuetracker:list',
   // ── Providers ────────────────────────────────────────────────────────────
   PROVIDER_FETCH_ISSUE: 'provider:fetchIssue',
+  // ── MCP server ───────────────────────────────────────────────────────────
+  MCP_STATUS: 'mcp:status',
+  MCP_ENSURE_STARTED: 'mcp:ensureStarted',
+  MCP_SET_ENABLED: 'mcp:setEnabled',
+  MCP_WRITE_CLIENT_CONFIG: 'mcp:writeClientConfig',
+  MCP_GET_MANUAL_SNIPPET: 'mcp:getManualSnippet',
 } as const;
 
 export type IpcChannel = (typeof IPC)[keyof typeof IPC];
@@ -191,6 +197,7 @@ import type { CommitMessageGeneratorSettings, CommitMessageGenerateResult } from
 import type { IssueTrackerPattern } from './issuetracker.js';
 import type { ProviderIssue } from './providers.js';
 import type { FileTreeNode, FileReadResult } from './files.js';
+import type { McpClientId, McpServerStatus, McpConfigWriteResult } from './mcp.js';
 
 /** Shape of one row returned by WORKTREE_GET_META / WORKTREE_SET_META. */
 export type WorktreeMetaRow = {
@@ -349,6 +356,12 @@ export type IpcMap = {
   'issuetracker:list':  { args: [worktreePath: string]; result: IssueTrackerPattern[] };
   // ── Providers ─────────────────────────────────────────────────────────────
   'provider:fetchIssue': { args: [url: string]; result: ProviderIssue | null };
+  // ── MCP server ────────────────────────────────────────────────────────────
+  'mcp:status':            { args: [workspacePath: string];                                          result: McpServerStatus };
+  'mcp:ensureStarted':     { args: [workspacePath: string];                                          result: McpServerStatus };
+  'mcp:setEnabled':        { args: [args: { workspacePath: string; enabled: boolean }];               result: McpServerStatus };
+  'mcp:writeClientConfig': { args: [args: { workspacePath: string; client: McpClientId }];            result: McpConfigWriteResult };
+  'mcp:getManualSnippet':  { args: [args: { workspacePath: string; client?: McpClientId }];           result: string };
 };
 
 /** Union of all invoke-able channel strings. */

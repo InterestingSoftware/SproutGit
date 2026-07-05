@@ -21,6 +21,8 @@ import { registerFileHandlers } from './ipc/files.js';
 import { registerUpdateHandlers, startUpdateCheck } from './ipc/update.js';
 import { registerIssueTrackerHandlers } from './ipc/issuetracker.js';
 import { registerProviderHandlers } from './ipc/providers.js';
+import { registerMcpHandlers } from './ipc/mcp.js';
+import { stopAllMcpServers } from './mcp-bridge.js';
 import { openConfigDb } from '@sproutgit/database';
 import { IPC } from '@sproutgit/types';
 
@@ -269,7 +271,8 @@ app.whenReady().then(() => {
   if (isE2EMode) log.info('[e2e] file handlers ok');
   registerIssueTrackerHandlers();
   registerProviderHandlers(userDataPath);
-  if (isE2EMode) log.info('[e2e] issue tracker / provider handlers ok');
+  registerMcpHandlers();
+  if (isE2EMode) log.info('[e2e] issue tracker / provider / mcp handlers ok');
   // Skip update handler registration in E2E mode. On Linux CI, electron-updater
   // initialises AppImageUpdater which accesses D-Bus / libsecret and hangs for
   // ~20 s when no real session bus is available. Auto-update is irrelevant in tests.
@@ -307,5 +310,6 @@ app.on('window-all-closed', () => {
 });
 
 app.on('before-quit', () => {
+  void stopAllMcpServers();
   void shutdownTelemetry();
 });

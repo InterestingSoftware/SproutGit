@@ -285,6 +285,24 @@ function WorkspaceInner() {
       .catch(() => undefined);
   }, [workspacePath]);
 
+  // ── MCP server auto-start ────────────────────────────────────────────
+  // No-op unless the user previously enabled MCP for this workspace in
+  // Settings — this just makes "enabled" survive across app restarts.
+  // Gated on gitRepoPath for the same reason as the file watcher below:
+  // checking/persisting MCP state touches .sproutgit/state.db, which would
+  // otherwise get created (via openWorkspaceDb's side effect) inside a
+  // not-yet-migrated plain repo and make its working tree look dirty right
+  // as the legacy-layout bare-repo migration runs.
+  // Intentionally no stop-on-unmount: like background terminal sessions,
+  // the server should keep running while the app is open even after
+  // navigating away from this workspace view; it's torn down on workspace
+  // close (WORKSPACE_CLOSE) and app quit instead.
+  useEffect(() => {
+    if (!gitRepoPath) return;
+    void api.mcpEnsureStarted(workspacePath).catch(() => undefined);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [gitRepoPath]);
+
   // ── Close terminals when switching to a DIFFERENT workspace ──────────
   // We use a ref so the cleanup only fires when the path genuinely changes
   // (not when the component unmounts on navigation to the Projects screen).

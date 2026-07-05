@@ -6,6 +6,7 @@ import { join } from 'path';
 import { recentWorkspaces } from '@sproutgit/database/schema/config';
 import { log } from '../telemetry.js';
 import { stopWatchingPath } from './watcher.js';
+import { stopMcpServer } from '../mcp-bridge.js';
 import { waitForIdleRepo } from '@sproutgit/git';
 import {
   worktreeMetadata,
@@ -89,6 +90,13 @@ export function registerWorkspaceHandlers(configDb: ConfigDb): void {
     // this repo to settle, so its process doesn't still hold a file handle
     // on root the moment after this call returns.
     await waitForIdleRepo(gitRepoPath);
+
+    // Release the MCP socket server too — same reasoning as the watcher
+    // below: an open listener on a socket file inside .sproutgit/ would
+    // block removing that directory on Windows, and leaving it running
+    // after the workspace closes would let a stale bridge connection keep
+    // operating against a workspace the UI no longer considers open.
+    await stopMcpServer(workspacePath);
 
     const db = workspaceDbCache.get(workspacePath);
     if (db) {

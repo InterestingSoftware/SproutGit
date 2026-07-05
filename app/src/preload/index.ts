@@ -48,6 +48,9 @@ import type {
   FileTreeNode,
   FileReadResult,
   FileChangedEvent,
+  McpClientId,
+  McpServerStatus,
+  McpConfigWriteResult,
 } from '@sproutgit/types';
 
 /**
@@ -640,6 +643,22 @@ const api = {
   // ── Providers ────────────────────────────────────────────────────────────
   fetchProviderIssue: (url: string): Promise<ProviderIssue | null> =>
     invoke(IPC.PROVIDER_FETCH_ISSUE, url),
+
+  // ── MCP server ────────────────────────────────────────────────────────────
+  mcpStatus: (workspacePath: string): Promise<McpServerStatus> =>
+    invoke(IPC.MCP_STATUS, workspacePath),
+
+  mcpEnsureStarted: (workspacePath: string): Promise<McpServerStatus> =>
+    invoke(IPC.MCP_ENSURE_STARTED, workspacePath),
+
+  mcpSetEnabled: (workspacePath: string, enabled: boolean): Promise<McpServerStatus> =>
+    invoke(IPC.MCP_SET_ENABLED, { workspacePath, enabled }),
+
+  mcpWriteClientConfig: (workspacePath: string, client: McpClientId): Promise<McpConfigWriteResult> =>
+    invoke(IPC.MCP_WRITE_CLIENT_CONFIG, { workspacePath, client }),
+
+  mcpGetManualSnippet: (workspacePath: string, client?: McpClientId): Promise<string> =>
+    invoke(IPC.MCP_GET_MANUAL_SNIPPET, client ? { workspacePath, client } : { workspacePath }),
 };
 
 contextBridge.exposeInMainWorld('api', api);
