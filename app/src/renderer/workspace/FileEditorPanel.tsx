@@ -1,7 +1,6 @@
 import { X, AlertTriangle, RotateCcw, FileWarning, Save } from 'lucide-react';
-import { MonacoEditor } from '@sproutgit/ui';
+import { MonacoEditor, languageForPath } from '@sproutgit/ui';
 import type { FileTab } from '../stores/editor-store.js';
-import { languageForPath } from './file-language.js';
 
 type Props = {
   tabs: FileTab[];

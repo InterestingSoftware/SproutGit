@@ -52,9 +52,15 @@ importers:
       '@sproutgit/database':
         specifier: workspace:*
         version: link:../packages/database
+      '@sproutgit/fs-watch':
+        specifier: workspace:*
+        version: link:../packages/fs-watch
       '@sproutgit/git':
         specifier: workspace:*
         version: link:../packages/git
+      '@sproutgit/mcp-client-config':
+        specifier: workspace:*
+        version: link:../packages/mcp-client-config
       '@sproutgit/paths':
         specifier: workspace:*
         version: link:../packages/paths
@@ -76,9 +82,6 @@ importers:
       '@tanstack/react-router':
         specifier: ^1.170.16
         version: 1.170.16(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
-      chokidar:
-        specifier: ^4.0.3
-        version: 4.0.3
       electron-log:
         specifier: ^5.4.4
         version: 5.4.4
@@ -232,6 +235,25 @@ importers:
         specifier: ^4.1.9
         version: 4.1.9(@types/node@26.1.0)(jsdom@29.1.1(@noble/hashes@2.2.0))(vite@8.1.2(@types/node@26.1.0)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.22.4)(yaml@2.9.0))
 
+  packages/fs-watch:
+    dependencies:
+      chokidar:
+        specifier: ^4.0.3
+        version: 4.0.3
+    devDependencies:
+      '@sproutgit/ts-config':
+        specifier: workspace:*
+        version: link:../ts-config
+      '@types/node':
+        specifier: ^26.1.0
+        version: 26.1.0
+      typescript:
+        specifier: npm:@typescript/native-preview@7.0.0-dev.20260701.1
+        version: '@typescript/native-preview@7.0.0-dev.20260701.1'
+      vitest:
+        specifier: ^4.1.9
+        version: 4.1.9(@types/node@26.1.0)(jsdom@29.1.1(@noble/hashes@2.2.0))(vite@8.1.2(@types/node@26.1.0)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.22.4)(yaml@2.9.0))
+
   packages/git:
     dependencies:
       '@sproutgit/paths':
@@ -243,6 +265,25 @@ importers:
       simple-git:
         specifier: ^3.36.0
         version: 3.36.0(supports-color@8.1.1)
+    devDependencies:
+      '@sproutgit/ts-config':
+        specifier: workspace:*
+        version: link:../ts-config
+      '@types/node':
+        specifier: ^26.1.0
+        version: 26.1.0
+      typescript:
+        specifier: npm:@typescript/native-preview@7.0.0-dev.20260701.1
+        version: '@typescript/native-preview@7.0.0-dev.20260701.1'
+      vitest:
+        specifier: ^4.1.9
+        version: 4.1.9(@types/node@26.1.0)(jsdom@29.1.1(@noble/hashes@2.2.0))(vite@8.1.2(@types/node@26.1.0)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.22.4)(yaml@2.9.0))
+
+  packages/mcp-client-config:
+    dependencies:
+      '@sproutgit/types':
+        specifier: workspace:*
+        version: link:../types
     devDependencies:
       '@sproutgit/ts-config':
         specifier: workspace:*
