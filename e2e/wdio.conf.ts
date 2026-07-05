@@ -24,6 +24,19 @@ export const config: WebdriverIO.Config = {
   exclude: [],
   maxInstances: 1,
 
+  // Retry a whole spec file once if it fails. Driving a real Electron app
+  // through ChromeDriver in CI is inherently subject to rare, non-deterministic
+  // infrastructure flakes that no amount of test logic can prevent — the
+  // ChromeDriver process crashing mid-session, "Timeout exceeded to get the
+  // ContextId" from the CDP bridge, a session dying on a momentarily-overloaded
+  // runner. Without a retry, one such hiccup in any single spec fails the
+  // entire suite. One retry (with a fresh session) turns those transient
+  // failures into a self-heal while still surfacing a genuinely-broken spec,
+  // which fails both times. Deferred so a flaky spec re-runs at the end of the
+  // queue on a clean session rather than immediately.
+  specFileRetries: 1,
+  specFileRetriesDeferred: true,
+
   capabilities: [
     {
       browserName: 'electron',
