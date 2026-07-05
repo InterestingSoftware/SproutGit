@@ -8,19 +8,25 @@ type Props = {
   filePath?: string;
 };
 
+// Unified diff file headers are always "--- a/path" / "+++ b/path" (or /dev/null),
+// i.e. the marker followed by a space — unlike an added/removed line whose content
+// happens to start with "++"/"--", which has no space right after the marker.
+const OLD_FILE_HEADER = /^--- /;
+const NEW_FILE_HEADER = /^\+\+\+ /;
+
 /** Parse unified diff lines into annotated tokens for highlighting. */
 function parseDiffLines(raw: string): { kind: 'add' | 'del' | 'ctx' | 'meta'; text: string }[] {
   return raw.split('\n').map(line => {
-    if (line.startsWith('+') && !line.startsWith('+++'))
+    if (line.startsWith('+') && !NEW_FILE_HEADER.test(line))
       return { kind: 'add' as const, text: line };
-    if (line.startsWith('-') && !line.startsWith('---'))
+    if (line.startsWith('-') && !OLD_FILE_HEADER.test(line))
       return { kind: 'del' as const, text: line };
     if (
       line.startsWith('@@') ||
       line.startsWith('diff ') ||
       line.startsWith('index ') ||
-      line.startsWith('---') ||
-      line.startsWith('+++')
+      OLD_FILE_HEADER.test(line) ||
+      NEW_FILE_HEADER.test(line)
     )
       return { kind: 'meta' as const, text: line };
     return { kind: 'ctx' as const, text: line };
