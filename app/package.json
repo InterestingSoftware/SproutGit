@@ -36,13 +36,6 @@
       "!out/**/*.map",
       "package.json"
     ],
-    "extraResources": [
-      {
-        "from": "../packages/mcp-server/bin",
-        "to": "mcp-bridge",
-        "filter": ["**/*"]
-      }
-    ],
     "extraMetadata": {
       "main": "out/main/index.js"
     },

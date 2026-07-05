@@ -19,15 +19,20 @@ const CLIENTS: { id: McpClientId; name: string }[] = [
 
 export function McpSection({ onToast, workspacePath }: Props) {
   const [status, setStatus] = useState<McpServerStatus | null>(null);
+  const [portInput, setPortInput] = useState('');
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
+  const [savingPort, setSavingPort] = useState(false);
   const [writingClient, setWritingClient] = useState<McpClientId | null>(null);
   const [copied, setCopied] = useState(false);
 
   useEffect(() => {
     if (!workspacePath) { setLoading(false); return; }
     setLoading(true);
-    void api.mcpStatus(workspacePath).then(setStatus).catch(() => undefined).finally(() => setLoading(false));
+    void api.mcpStatus(workspacePath)
+      .then(s => { setStatus(s); setPortInput(String(s.port)); })
+      .catch(() => undefined)
+      .finally(() => setLoading(false));
   }, [workspacePath]);
 
   async function toggleEnabled() {
@@ -41,6 +46,20 @@ export function McpSection({ onToast, workspacePath }: Props) {
       onToast(String(err), 'error');
     } finally {
       setBusy(false);
+    }
+  }
+
+  async function savePort(port: number | null) {
+    setSavingPort(true);
+    try {
+      const next = await api.mcpSetPort(workspacePath, port);
+      setStatus(next);
+      setPortInput(String(next.port));
+      onToast(`MCP server port set to ${next.port}`, 'success');
+    } catch (err) {
+      onToast(String(err), 'error');
+    } finally {
+      setSavingPort(false);
     }
   }
 
@@ -68,6 +87,8 @@ export function McpSection({ onToast, workspacePath }: Props) {
     }
   }
 
+  const portChanged = status !== null && portInput.trim() !== '' && Number(portInput) !== status.port;
+
   return (
     <section className="rounded-lg border border-(--sg-border) bg-(--sg-surface)" data-testid="mcp-section">
       <div className="border-b border-(--sg-border) px-5 py-4">
@@ -75,7 +96,7 @@ export function McpSection({ onToast, workspacePath }: Props) {
           <Plug size={15} /> MCP Server
         </h2>
         <p className="mt-1 text-xs text-(--sg-text-faint)">
-          Expose this workspace to MCP-capable agents (list/create worktrees, check status) over a local socket — no network exposure, no token required.
+          Expose this workspace to MCP-capable agents (list/create worktrees, check status) over a token-protected local HTTP endpoint.
         </p>
       </div>
 
@@ -89,7 +110,7 @@ export function McpSection({ onToast, workspacePath }: Props) {
             <div>
               <p className="sg-heading text-xs font-semibold text-(--sg-text)">Enable for this workspace</p>
               <p className="text-[11px] text-(--sg-text-faint)">
-                {status?.running && status.socketPath ? `Running at ${status.socketPath}` : 'Not running'}
+                {status?.running ? `Running at http://127.0.0.1:${status.port}/mcp` : 'Not running'}
               </p>
             </div>
             <label className="inline-flex cursor-pointer items-center gap-2 text-xs text-(--sg-text-dim)" data-testid="mcp-enabled-toggle">
@@ -103,7 +124,42 @@ export function McpSection({ onToast, workspacePath }: Props) {
             </label>
           </div>
 
-          {status?.enabled && status.running && (
+          <div className="px-5 py-4">
+            <p className="sg-heading text-xs font-semibold text-(--sg-text)">Port</p>
+            <p className="mt-1 text-[11px] text-(--sg-text-faint)">
+              Stable per workspace by default. Change it here if something else on your machine is already using it.
+            </p>
+            <div className="mt-2 flex items-center gap-2">
+              <input
+                type="number"
+                min={1024}
+                max={65535}
+                value={portInput}
+                onChange={e => setPortInput(e.target.value)}
+                className="w-28 rounded border border-(--sg-input-border) bg-(--sg-input-bg) px-2.5 py-1.5 text-xs text-(--sg-text)"
+                data-testid="mcp-port-input"
+              />
+              <button
+                type="button"
+                className="rounded border border-(--sg-border) px-3 py-1.5 text-xs text-(--sg-text) disabled:opacity-50"
+                disabled={!portChanged || savingPort}
+                onClick={() => void savePort(Number(portInput))}
+                data-testid="mcp-port-save"
+              >
+                {savingPort ? 'Saving…' : 'Save'}
+              </button>
+              <button
+                type="button"
+                className="rounded border border-(--sg-border) px-3 py-1.5 text-xs text-(--sg-text-dim) disabled:opacity-50"
+                disabled={savingPort}
+                onClick={() => void savePort(null)}
+              >
+                Reset to default
+              </button>
+            </div>
+          </div>
+
+          {status?.enabled && (
             <div className="px-5 py-4">
               <p className="sg-heading text-xs font-semibold text-(--sg-text)">Connect an agent</p>
               <p className="mt-1 text-[11px] text-(--sg-text-faint)">

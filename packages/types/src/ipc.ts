@@ -158,6 +158,7 @@ export const IPC = {
   MCP_STATUS: 'mcp:status',
   MCP_ENSURE_STARTED: 'mcp:ensureStarted',
   MCP_SET_ENABLED: 'mcp:setEnabled',
+  MCP_SET_PORT: 'mcp:setPort',
   MCP_WRITE_CLIENT_CONFIG: 'mcp:writeClientConfig',
   MCP_GET_MANUAL_SNIPPET: 'mcp:getManualSnippet',
 } as const;
@@ -360,6 +361,7 @@ export type IpcMap = {
   'mcp:status':            { args: [workspacePath: string];                                          result: McpServerStatus };
   'mcp:ensureStarted':     { args: [workspacePath: string];                                          result: McpServerStatus };
   'mcp:setEnabled':        { args: [args: { workspacePath: string; enabled: boolean }];               result: McpServerStatus };
+  'mcp:setPort':           { args: [args: { workspacePath: string; port: number | null }];            result: McpServerStatus };
   'mcp:writeClientConfig': { args: [args: { workspacePath: string; client: McpClientId }];            result: McpConfigWriteResult };
   'mcp:getManualSnippet':  { args: [args: { workspacePath: string; client?: McpClientId }];           result: string };
 };

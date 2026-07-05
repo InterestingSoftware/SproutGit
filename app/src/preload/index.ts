@@ -654,6 +654,9 @@ const api = {
   mcpSetEnabled: (workspacePath: string, enabled: boolean): Promise<McpServerStatus> =>
     invoke(IPC.MCP_SET_ENABLED, { workspacePath, enabled }),
 
+  mcpSetPort: (workspacePath: string, port: number | null): Promise<McpServerStatus> =>
+    invoke(IPC.MCP_SET_PORT, { workspacePath, port }),
+
   mcpWriteClientConfig: (workspacePath: string, client: McpClientId): Promise<McpConfigWriteResult> =>
     invoke(IPC.MCP_WRITE_CLIENT_CONFIG, { workspacePath, client }),
 
