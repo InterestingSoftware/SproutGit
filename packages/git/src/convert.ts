@@ -164,6 +164,22 @@ export async function convertToBareWithWorktree(
   const rollback = async (originalError: unknown): Promise<never> => {
     try {
       try {
+        // Undo in the reverse order they were applied: clear the
+        // worktree-scoped `core.bare` before disabling the extension that
+        // makes `config.worktree` meaningful, then clear the extension flag
+        // and the shared-config fallback. `moveDir` below carries
+        // `config.worktree` back with the rest of the directory, so any of
+        // these left set would make the restored plain repo look bare too.
+        await gitForPath(barePath).raw(['config', '--worktree', '--unset', 'core.bare']);
+      } catch {
+        // Not set — nothing to unset.
+      }
+      try {
+        await gitForPath(barePath).raw(['config', '--unset', 'extensions.worktreeConfig']);
+      } catch {
+        // Not set — nothing to unset.
+      }
+      try {
         await gitForPath(barePath).raw(['config', 'core.bare', 'false']);
       } catch {
         // If config-writing itself failed, the directory may not even be a
@@ -179,7 +195,15 @@ export async function convertToBareWithWorktree(
 
   const bareGit = gitForPath(barePath);
   try {
-    await bareGit.raw(['config', 'core.bare', 'true']);
+    // `core.bare` must live in `config.worktree`, not the shared config: once
+    // linked worktrees exist, a shared `core.bare = true` is inherited by
+    // every one of them (they'd have no working tree either), breaking all
+    // working-tree commands with "this operation must be run in a work
+    // tree". Enabling `extensions.worktreeConfig` first scopes the setting
+    // to just this (the bare/root) worktree — see `git help worktree`'s
+    // "CONFIGURATION FILE" section for the recommended pattern.
+    await bareGit.raw(['config', 'extensions.worktreeConfig', 'true']);
+    await bareGit.raw(['config', '--worktree', 'core.bare', 'true']);
     try {
       await bareGit.raw(['config', '--unset', 'core.worktree']);
     } catch {
