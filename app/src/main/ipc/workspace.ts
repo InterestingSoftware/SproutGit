@@ -31,6 +31,23 @@ function getWorkspaceDb(workspacePath: string) {
   return db;
 }
 
+/**
+ * Closes and evicts the cached workspace-DB connection for `workspacePath`,
+ * if one is open. Exported so callers that need the underlying sqlite file
+ * to actually be removable/renamable right after this call — the
+ * WORKSPACE_CLOSE handler below, and worktree-lifecycle.ts's tests, which
+ * hit this same cache indirectly via setWorktreeMeta() — can force it
+ * closed instead of leaving it cached for the rest of the process
+ * lifetime (an open handle blocks deleting the directory on Windows).
+ */
+export function closeWorkspaceDbCache(workspacePath: string): void {
+  const db = workspaceDbCache.get(workspacePath);
+  if (db) {
+    db.close();
+    workspaceDbCache.delete(workspacePath);
+  }
+}
+
 export interface SetWorktreeMetaArgs {
   workspacePath: string;
   worktreePath: string;
@@ -142,11 +159,7 @@ export function registerWorkspaceHandlers(configDb: ConfigDb): void {
     // operating against a workspace the UI no longer considers open.
     await stopMcpServer(workspacePath);
 
-    const db = workspaceDbCache.get(workspacePath);
-    if (db) {
-      db.close();
-      workspaceDbCache.delete(workspacePath);
-    }
+    closeWorkspaceDbCache(workspacePath);
     // Release the fs.watch handles on root too — same reason as the DB
     // close above: on Windows an open watch handle blocks removing the
     // directory it's watching, so anything about to delete this workspace

@@ -10,6 +10,7 @@ const { runTriggerHooksMock } = vi.hoisted(() => ({ runTriggerHooksMock: vi.fn()
 vi.mock('../ipc/hooks.js', () => ({ runTriggerHooks: runTriggerHooksMock }));
 
 import { manager } from '../ipc/terminal.js';
+import { closeWorkspaceDbCache } from '../ipc/workspace.js';
 import { createWorktreeWithHooks, removeWorktreeWithHooks } from '../worktree-lifecycle.js';
 
 function initTestRepo(): string {
@@ -38,6 +39,12 @@ describe('worktree-lifecycle', () => {
   });
 
   afterEach(() => {
+    // setWorktreeMeta() (called by createWorktreeWithHooks when issueRef is
+    // given) goes through workspace.ts's cached db connection, which stays
+    // open for the process lifetime by design (closed on WORKSPACE_CLOSE in
+    // the real app) — an open sqlite handle blocks deleting the directory
+    // on Windows, so it must be force-closed before cleanup here.
+    closeWorkspaceDbCache(repoPath);
     rmSync(repoPath, { recursive: true, force: true });
   });
 
