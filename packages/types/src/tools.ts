@@ -2,6 +2,8 @@ export type EditorInfo = {
   id: string;
   name: string;
   command: string;
+  /** The actual invocable command — an absolute path when only found via a known .app bundle fallback (no CLI shim on PATH), otherwise same as `command`. Use this when writing git config so the configured value works without relying on PATH. */
+  resolvedCommand: string;
   installed: boolean;
 };
 
@@ -9,6 +11,8 @@ export type GitToolInfo = {
   id: string;
   name: string;
   command: string;
+  /** See EditorInfo.resolvedCommand. */
+  resolvedCommand: string;
   installed: boolean;
   supportsDiff: boolean;
   supportsMerge: boolean;

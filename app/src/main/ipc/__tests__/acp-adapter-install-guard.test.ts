@@ -7,7 +7,10 @@ const { handleMock, installAcpAdapterMock } = vi.hoisted(() => ({
   handleMock: vi.fn(),
   installAcpAdapterMock: vi.fn(),
 }));
-vi.mock('electron', () => ({ ipcMain: { handle: handleMock } }));
+vi.mock('electron', () => ({
+  ipcMain: { handle: handleMock },
+  BrowserWindow: { fromWebContents: (sender: unknown) => sender ?? null },
+}));
 vi.mock('../../telemetry.js', () => ({ log: { error: vi.fn(), info: vi.fn(), warn: vi.fn() } }));
 vi.mock('../terminal.js', () => ({ manager: { spawn: vi.fn() }, sessionWindows: new Map() }));
 vi.mock('../acp-adapters.js', async importOriginal => ({
@@ -23,7 +26,7 @@ type Handler = (event: unknown, npmPackage: string) => Promise<void>;
 
 function getHandler(configDb: ConfigDb, userDataPath: string): Handler {
   handleMock.mockClear();
-  registerAgentHandlers(configDb, () => null, userDataPath);
+  registerAgentHandlers(configDb, userDataPath);
   const call = handleMock.mock.calls.find(c => c[0] === IPC.AGENT_ACP_ADAPTER_INSTALL);
   if (!call) throw new Error(`${IPC.AGENT_ACP_ADAPTER_INSTALL} handler was not registered`);
   return call[1] as Handler;

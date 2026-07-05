@@ -95,7 +95,7 @@ type Handler = (event: unknown, ...args: unknown[]) => Promise<unknown>;
 const FAKE_CONFIG_DB = {} as ConfigDb;
 
 function getHandlers(): Map<string, Handler> {
-  registerGitHandlers(() => null, FAKE_CONFIG_DB);
+  registerGitHandlers(FAKE_CONFIG_DB);
   const map = new Map<string, Handler>();
   for (const [channel, fn] of handleMock.mock.calls) map.set(channel as string, fn as Handler);
   return map;

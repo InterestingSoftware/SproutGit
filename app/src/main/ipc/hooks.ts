@@ -13,7 +13,7 @@
  *    arrives via `git checkout`.
  */
 import { existsSync } from 'node:fs';
-import { ipcMain, type BrowserWindow } from 'electron';
+import { ipcMain, BrowserWindow } from 'electron';
 import { IPC } from '@sproutgit/types';
 import type {
   WorkspaceHookTrigger,
@@ -421,9 +421,9 @@ export async function runTriggerHooks(args: RunTriggerHooksArgs, win: BrowserWin
   }
 }
 
-export function registerHookHandlers(getWindow: () => BrowserWindow | null, configDb: ConfigDb): void {
+export function registerHookHandlers(configDb: ConfigDb): void {
   ipcMain.handle(IPC.HOOK_RUN, async (_e, args: RunHookArgs) => {
-    const win = getWindow();
+    const win = BrowserWindow.fromWebContents(_e.sender);
     if (!win) return;
     await runHook(args, win, configDb);
   });
@@ -549,7 +549,7 @@ export function registerHookHandlers(getWindow: () => BrowserWindow | null, conf
     initiatingWorktreePath?: string | null;
     source?: WorktreeSwitchHookSource;
   }) => {
-    const win = getWindow();
+    const win = BrowserWindow.fromWebContents(_e.sender);
     if (!win) return;
 
     const source = args.source ?? 'manual';
@@ -584,7 +584,7 @@ export function registerHookHandlers(getWindow: () => BrowserWindow | null, conf
     newWorktreePath: string;
     initiatingWorktreePath?: string | null;
   }) => {
-    const win = getWindow();
+    const win = BrowserWindow.fromWebContents(_e.sender);
     if (!win) return;
 
     const hooks = getEffectiveHooksForTrigger(args.workspacePath, args.newWorktreePath, configDb, 'after_worktree_create');
@@ -600,7 +600,7 @@ export function registerHookHandlers(getWindow: () => BrowserWindow | null, conf
   });
 
   ipcMain.handle(IPC.HOOK_RUN_TRIGGER, async (_e, args: RunTriggerHooksArgs) => {
-    const win = getWindow();
+    const win = BrowserWindow.fromWebContents(_e.sender);
     if (!win) return;
     await runTriggerHooks(args, win, configDb);
   });

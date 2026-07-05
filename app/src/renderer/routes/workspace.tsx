@@ -14,8 +14,8 @@ import {
   WindowControls,
   UpdateBadge,
 } from '@sproutgit/ui';
-import { GitBranch, Terminal, GitMerge, X, ChevronRight, ChevronDown, Settings, Plus, Columns2, Rows3, LayoutGrid, Pencil, PanelTop, SquareSplitHorizontal, ChevronsRight, Trash2, Bot, FileCode2 } from 'lucide-react';
-import type { CommitEntry, DiffFileEntry, WorktreeInfo, WorktreeSwitchHookSource, AgentConfig, FileChangedEvent } from '@sproutgit/types';
+import { GitBranch, Terminal, GitMerge, X, ChevronRight, ChevronDown, Settings, Plus, Columns2, Rows3, LayoutGrid, Pencil, PanelTop, SquareSplitHorizontal, ChevronsRight, Trash2, Bot, FileCode2, AppWindow, FolderOpen } from 'lucide-react';
+import type { CommitEntry, DiffFileEntry, WorktreeInfo, WorktreeSwitchHookSource, AgentConfig, FileChangedEvent, RecentWorkspace } from '@sproutgit/types';
 import { useToast } from '../toast-context.js';
 import { reportError } from '../error-reporting.js';
 import { useUpdateStore } from '../stores/update-store.js';
@@ -67,6 +67,13 @@ import {
 type WorkspaceSearch = { path: string };
 
 // ── Shared helpers ────────────────────────────────────────────────────────────
+
+/** Last path segment, tolerating both '/' (macOS/Linux) and '\' (Windows) separators. */
+function workspaceBaseName(p: string): string {
+  const trimmed = p.trim().replace(/[\\/]+$/g, '');
+  const idx = Math.max(trimmed.lastIndexOf('/'), trimmed.lastIndexOf('\\'));
+  return idx === -1 ? trimmed : trimmed.slice(idx + 1);
+}
 
 async function runSwitchAndTriggerHooks(args: {
   workspacePath: string;
@@ -255,6 +262,7 @@ function WorkspaceInner() {
   const [deleteTarget, setDeleteTarget] = useState<WorktreeInfo | null>(null);
   const [showNewWorktree, setShowNewWorktree] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(() => sessionStorage.getItem('sg_sidebar_collapsed') === '1');
+  const [recentWorkspaces, setRecentWorkspaces] = useState<RecentWorkspace[]>([]);
 
   // Commit diff state
   const [selectedCommits, setSelectedCommits] = useState<CommitEntry[]>([]);
@@ -287,6 +295,32 @@ function WorkspaceInner() {
   useEffect(() => {
     resetWorkspaceStore(workspacePath);
   }, [workspacePath]);
+
+  // ── Recent workspaces (for the title bar's workspace switcher) ─────────
+
+  async function loadRecentWorkspaces(): Promise<RecentWorkspace[]> {
+    try {
+      const ws = await api.listRecentWorkspaces();
+      const sorted = [...ws].sort((a, b) => new Date(b.lastOpenedAt).getTime() - new Date(a.lastOpenedAt).getTime());
+      setRecentWorkspaces(sorted);
+      return sorted;
+    } catch {
+      return recentWorkspaces;
+    }
+  }
+
+  useEffect(() => {
+    void loadRecentWorkspaces();
+    // loadRecentWorkspaces is redefined every render (it closes over
+    // recentWorkspaces for its error fallback) — only re-run on navigation.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [workspacePath]);
+
+  function switchWorkspace(path: string) {
+    if (path === workspacePath) return;
+    void api.addRecentWorkspace(path);
+    void navigate({ to: '/workspace', search: { path } });
+  }
 
   // ── Default shell preference ──────────────────────────────────────────
   useEffect(() => {
@@ -1066,9 +1100,26 @@ function WorkspaceInner() {
               <span>Projects</span>
             </button>
             <div className="h-3 w-px bg-(--sg-border)" />
-            <span className="text-xs font-medium text-(--sg-text) truncate max-w-40">
-              {workspacePath.split('/').pop()}
-            </span>
+            <button
+              className="group/switcher flex items-center gap-0.5 rounded-md px-1.5 py-0.5 -mx-1.5 text-xs font-medium text-(--sg-text) transition-colors hover:bg-(--sg-surface-raised) border-none bg-transparent cursor-pointer max-w-45 min-w-0"
+              style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}
+              title="Switch workspace"
+              data-testid="btn-workspace-switcher"
+              onClick={async e => {
+                const fresh = await loadRecentWorkspaces();
+                const others = fresh.filter(w => w.workspacePath !== workspacePath);
+                contextMenu.open(e, others.length > 0
+                  ? others.map(w => ({
+                    label: workspaceBaseName(w.workspacePath),
+                    icon: <FolderOpen size={14} />,
+                    onClick: () => switchWorkspace(w.workspacePath),
+                  }))
+                  : [{ label: 'No other recent workspaces', disabled: true, onClick: () => undefined }]);
+              }}
+            >
+              <span className="truncate">{workspaceBaseName(workspacePath)}</span>
+              <ChevronDown size={12} className="text-(--sg-text-faint) shrink-0 opacity-60 group-hover/switcher:opacity-100" />
+            </button>
             <ChevronRight size={12} className="text-(--sg-text-faint) shrink-0" />
             <span className="flex items-center gap-1 font-mono text-xs text-(--sg-primary) truncate max-w-50">
               <GitBranch size={12} className="shrink-0" />
@@ -1077,6 +1128,9 @@ function WorkspaceInner() {
           </div>
           <div className="flex items-center h-full pr-1 gap-0.5 shrink-0" style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}>
             <UpdateBadge state={updateState} onInstall={() => void api.installUpdate()} />
+            <button className="inline-flex items-center justify-center p-2 bg-transparent border-none cursor-pointer text-(--sg-text-faint) rounded-sm transition-colors hover:text-(--sg-text) hover:bg-(--sg-surface-raised)" title="New Window" onClick={() => void api.openNewWindow()}>
+              <AppWindow size={16} />
+            </button>
             <button className="inline-flex items-center justify-center p-2 bg-transparent border-none cursor-pointer text-(--sg-text-faint) rounded-sm transition-colors hover:text-(--sg-text) hover:bg-(--sg-surface-raised)" title="Settings" onClick={() => void navigate({ to: '/settings', search: { workspace: workspacePath } })}>
               <Settings size={16} />
             </button>
