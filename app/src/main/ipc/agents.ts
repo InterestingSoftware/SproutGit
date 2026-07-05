@@ -10,7 +10,7 @@
  */
 import type { BrowserWindow } from 'electron';
 import { execFile } from 'node:child_process';
-import { IPC } from '@sproutgit/types';
+import { IPC, ACP_PRESET_TOKENS } from '@sproutgit/types';
 import type { AcpAdapterStatus, AgentConfig, IssueTrackerPattern, ToolTestResult } from '@sproutgit/types';
 import { openWorkspaceDb, eq, getAgentConfig, saveAgentConfig, type ConfigDb } from '@sproutgit/database';
 import { worktreeMetadata } from '@sproutgit/database/schema/workspace';
@@ -84,7 +84,7 @@ interface AcpPreset {
  */
 const ACP_PRESETS: readonly AcpPreset[] = [
   {
-    match: token => token === 'claude' || token === 'claude-code',
+    match: token => (ACP_PRESET_TOKENS.claudeCode as readonly string[]).includes(token),
     label: 'Claude Code',
     npmPackage: '@agentclientprotocol/claude-agent-acp',
     // The adapter's platform optionalDependency is a self-contained,
@@ -93,12 +93,12 @@ const ACP_PRESETS: readonly AcpPreset[] = [
     build: () => ({ bin: 'claude-agent-acp', args: [] }),
   },
   {
-    match: token => token === 'gemini',
+    match: token => (ACP_PRESET_TOKENS.gemini as readonly string[]).includes(token),
     label: 'Gemini CLI',
     build: ({ configuredBin, configuredArgs }) => ({ bin: configuredBin, args: [...configuredArgs, '--acp'] }),
   },
   {
-    match: token => token === 'codex',
+    match: token => (ACP_PRESET_TOKENS.codex as readonly string[]).includes(token),
     label: 'Codex CLI',
     npmPackage: '@agentclientprotocol/codex-acp',
     // Same story as Claude's adapter: bundles a full compiled Codex binary.
@@ -106,12 +106,12 @@ const ACP_PRESETS: readonly AcpPreset[] = [
     build: () => ({ bin: 'codex-acp', args: [] }),
   },
   {
-    match: token => token === 'kiro' || token === 'kiro-cli',
+    match: token => (ACP_PRESET_TOKENS.kiro as readonly string[]).includes(token),
     label: 'Kiro CLI',
     build: ({ configuredBin, configuredArgs }) => ({ bin: configuredBin, args: [...configuredArgs, 'acp'] }),
   },
   {
-    match: token => token === 'cursor-agent',
+    match: token => (ACP_PRESET_TOKENS.cursor as readonly string[]).includes(token),
     label: 'Cursor CLI',
     build: ({ configuredBin, configuredArgs }) => ({ bin: configuredBin, args: [...configuredArgs, 'acp'] }),
   },
@@ -124,6 +124,11 @@ function commandToken(command: string): string {
 function findAcpPreset(command: string): AcpPreset | undefined {
   const token = commandToken(command);
   return ACP_PRESETS.find(p => p.match(token));
+}
+
+/** Whether `npmPackage` is one of the ACP adapter packages this app actually knows about — guards AGENT_ACP_ADAPTER_INSTALL against installing an arbitrary renderer-supplied package name. */
+function isKnownAcpAdapterPackage(npmPackage: string): boolean {
+  return ACP_PRESETS.some(p => p.npmPackage === npmPackage);
 }
 
 /** Whether `command` resolves to Claude Code's own CLI — the only one known to support `-p`/`--print` non-interactive mode. */
@@ -221,6 +226,9 @@ export function registerAgentHandlers(configDb: ConfigDb, getWindow: () => Brows
   });
 
   handle(IPC.AGENT_ACP_ADAPTER_INSTALL, async (_e, npmPackage: string) => {
+    if (!isKnownAcpAdapterPackage(npmPackage)) {
+      throw new Error(`Refusing to install unrecognized package "${npmPackage}".`);
+    }
     const win = getWindow();
     await installAcpAdapter(userDataPath, npmPackage, event => {
       if (win && !win.isDestroyed()) win.webContents.send(IPC.EVENT_AGENT_ACP_ADAPTER_INSTALL, event);

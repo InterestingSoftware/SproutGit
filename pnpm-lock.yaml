@@ -32,10 +32,10 @@ importers:
   app:
     dependencies:
       '@agentclientprotocol/claude-agent-acp':
-        specifier: ^0.55.0
+        specifier: 0.55.0
         version: 0.55.0(@anthropic-ai/sdk@0.110.0(zod@4.4.3))(@modelcontextprotocol/sdk@1.29.0(zod@4.4.3))
       '@agentclientprotocol/codex-acp':
-        specifier: ^1.1.0
+        specifier: 1.1.0
         version: 1.1.0
       '@agentclientprotocol/sdk':
         specifier: ^1.1.0

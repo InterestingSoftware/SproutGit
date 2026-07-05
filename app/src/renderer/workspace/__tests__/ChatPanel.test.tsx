@@ -92,15 +92,13 @@ describe('ChatPanel', () => {
     await user.type(screen.getByTestId('input-chat-prompt'), 'first');
     await user.click(screen.getByTestId('btn-chat-send'));
     await waitFor(() => expect(chatStartMock).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(onChatStreamMock).toHaveBeenCalled());
 
-    // Simulate the turn completing (busy -> false). This must happen only
-    // after chatStart()'s promise resolution has flushed (which sets
-    // sessionIdRef.current) — otherwise the exit handler's sessionId-match
-    // guard sees a still-null ref and no-ops. flushPromises() below drains
-    // the microtask queue first.
-    await flushPromises();
-    const exitCb = captureExitCallback();
-    exitCb({ sessionId: 'session-1', exitCode: 0 });
+    // A turn completes via a 'result' stream event while the underlying ACP
+    // session/process stays alive — the process only exits when the whole
+    // chat session ends, not after each turn (see the exit test below).
+    const streamCb = captureStreamCallback();
+    streamCb({ sessionId: 'session-1', event: { type: 'result', success: true, summary: '' } });
     await waitFor(() => expect((screen.getByTestId('btn-chat-send') as HTMLButtonElement).disabled).toBe(true));
 
     await user.type(screen.getByTestId('input-chat-prompt'), 'second');
@@ -108,6 +106,31 @@ describe('ChatPanel', () => {
 
     expect(chatSendMock).toHaveBeenCalledWith({ sessionId: 'session-1', prompt: 'second' });
     expect(chatStartMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('a message sent after the session process exits starts a new session rather than reusing the dead one', async () => {
+    const user = userEvent.setup();
+    chatStartMock.mockResolvedValue({ sessionId: 'session-1', configOptions: [] });
+    render(<ChatPanel worktreePath="/ws/wt" />);
+
+    await user.type(screen.getByTestId('input-chat-prompt'), 'first');
+    await user.click(screen.getByTestId('btn-chat-send'));
+    await waitFor(() => expect(chatStartMock).toHaveBeenCalledTimes(1));
+
+    // flushPromises() drains the microtask queue so chatStart()'s promise
+    // resolution (which sets sessionIdRef.current) has run before the exit
+    // handler's sessionId-match guard checks it.
+    await flushPromises();
+    const exitCb = captureExitCallback();
+    exitCb({ sessionId: 'session-1', exitCode: 1 });
+    await waitFor(() => expect((screen.getByTestId('btn-chat-send') as HTMLButtonElement).disabled).toBe(true));
+
+    chatStartMock.mockResolvedValue({ sessionId: 'session-2', configOptions: [] });
+    await user.type(screen.getByTestId('input-chat-prompt'), 'second');
+    await user.click(screen.getByTestId('btn-chat-send'));
+
+    expect(chatStartMock).toHaveBeenCalledTimes(2);
+    expect(chatSendMock).not.toHaveBeenCalled();
   });
 
   it('renders streamed assistant_text_delta events appended into the same message bubble', async () => {

@@ -58,3 +58,22 @@ export type AcpAdapterInstallEvent = {
   status: 'progress' | 'done' | 'error';
   message: string;
 };
+
+/**
+ * The recognized command-basename tokens for each ACP-capable preset — the
+ * single source of truth for "is this command ACP-capable". The main
+ * process's per-preset invocation table (app/src/main/ipc/agents.ts) and the
+ * renderer's Settings UI (which can't import main-process code across the
+ * IPC boundary) both derive their token matching from this list, so they
+ * can't drift out of sync with each other.
+ */
+export const ACP_PRESET_TOKENS = {
+  claudeCode: ['claude', 'claude-code'],
+  gemini: ['gemini'],
+  codex: ['codex'],
+  kiro: ['kiro', 'kiro-cli'],
+  cursor: ['cursor-agent'],
+} satisfies Record<string, readonly string[]>;
+
+/** Flattened set of every token recognized by any ACP preset above. */
+export const ACP_CAPABLE_TOKENS: readonly string[] = Object.values(ACP_PRESET_TOKENS).flat();

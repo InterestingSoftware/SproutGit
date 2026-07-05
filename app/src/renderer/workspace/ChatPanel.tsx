@@ -41,8 +41,10 @@ export function ChatPanel({ worktreePath }: Props) {
     });
     const offExit = api.onChatExit(({ sessionId: sid }) => {
       if (sid !== sessionIdRef.current) return;
+      sessionIdRef.current = null;
       setBusy(false);
       setPendingPermission(null);
+      setConfigOptions([]);
     });
     return () => { offStream(); offExit(); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -240,7 +242,7 @@ function ToolUseBlock({ toolUse }: { toolUse: ChatToolUse }) {
 /** Buttons matching an option's `PermissionOptionKind` — allow options lean on the primary accent, reject options on danger. */
 function permissionOptionClasses(kind: ChatPermissionRequest['options'][number]['kind']): string {
   if (kind === 'allow_once' || kind === 'allow_always') {
-    return 'bg-(--sg-primary) text-white hover:bg-(--sg-primary-hover)';
+    return 'border-none bg-(--sg-primary) text-white hover:bg-(--sg-primary-hover)';
   }
   return 'border border-(--sg-danger)/40 text-(--sg-danger) hover:bg-(--sg-danger)/10';
 }
@@ -262,7 +264,7 @@ function PermissionRequestCard({ request, onRespond }: { request: ChatPermission
           <button
             key={option.id}
             type="button"
-            className={`cursor-pointer rounded-md border-none px-2.5 py-1 text-[11px] font-medium ${permissionOptionClasses(option.kind)}`}
+            className={`cursor-pointer rounded-md px-2.5 py-1 text-[11px] font-medium ${permissionOptionClasses(option.kind)}`}
             onClick={() => onRespond(option.id)}
             data-testid="btn-chat-permission-option"
           >

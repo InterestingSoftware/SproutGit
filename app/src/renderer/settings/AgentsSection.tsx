@@ -1,6 +1,7 @@
 import { Bot, CheckCircle2, Download, Loader2, RefreshCw } from 'lucide-react';
 import { api } from '../api.js';
 import { useEffect, useRef, useState } from 'react';
+import { ACP_CAPABLE_TOKENS } from '@sproutgit/types';
 import type { AcpAdapterStatus, AgentConfig, AgentInvocationMode } from '@sproutgit/types';
 import type { ToastData } from '@sproutgit/ui';
 import { SettingsToolRow, type ToolPreset } from './SettingsToolRow.js';
@@ -18,14 +19,14 @@ const AGENT_PRESETS: { id: string; name: string; command: string; supportsIntegr
   { id: 'gemini', name: 'Gemini CLI', command: 'gemini', supportsIntegrated: true },
 ];
 
-/** The set of command basenames recognized as ACP-capable — mirrors the main process's ACP_PRESETS table in agents.ts. */
-const ACP_CAPABLE_TOKENS = new Set(['claude', 'claude-code', 'gemini', 'codex', 'kiro', 'kiro-cli', 'cursor-agent']);
+/** The set of command basenames recognized as ACP-capable, shared with the main process's ACP_PRESETS table via @sproutgit/types so the two can't drift apart. */
+const ACP_CAPABLE_TOKEN_SET = new Set(ACP_CAPABLE_TOKENS);
 
 /** Mirrors the main process's commandSupportsIntegratedMode(). */
 function commandSupportsIntegratedMode(command: string): boolean {
   const trimmed = command.trim().replace(/^["']|["']$/g, '');
   const token = trimmed.split(/\s+/)[0]?.split(/[\\/]/).pop()?.toLowerCase() ?? '';
-  return ACP_CAPABLE_TOKENS.has(token);
+  return ACP_CAPABLE_TOKEN_SET.has(token);
 }
 
 /**
@@ -69,6 +70,7 @@ export function AgentsSection({ onToast }: Props) {
   const [installing, setInstalling] = useState(false);
   const [installMessage, setInstallMessage] = useState('');
   const installingPackageRef = useRef<string | null>(null);
+  const installingLabelRef = useRef<string>('Adapter');
 
   function refreshAdapterStatus() {
     void api.getAcpAdapterStatus().then(setAdapterStatus).catch(() => setAdapterStatus(null));
@@ -89,7 +91,7 @@ export function AgentsSection({ onToast }: Props) {
       if (event.status === 'done') {
         setInstalling(false);
         installingPackageRef.current = null;
-        onToast(`${adapterStatus?.label ?? 'Adapter'} installed`, 'success');
+        onToast(`${installingLabelRef.current} installed`, 'success');
         refreshAdapterStatus();
       } else if (event.status === 'error') {
         setInstalling(false);
@@ -124,6 +126,7 @@ export function AgentsSection({ onToast }: Props) {
     setInstalling(true);
     setInstallMessage('Starting install…');
     installingPackageRef.current = adapterStatus.npmPackage;
+    installingLabelRef.current = adapterStatus.label;
     void api.installAcpAdapter(adapterStatus.npmPackage).catch(err => {
       setInstalling(false);
       installingPackageRef.current = null;
