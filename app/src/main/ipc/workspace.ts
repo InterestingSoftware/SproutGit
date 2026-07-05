@@ -46,11 +46,15 @@ export function workspaceDbPath(workspacePath: string): string {
  */
 function withWorkspaceDb<T>(
   workspacePath: string,
-  fn: (db: ReturnType<typeof openWorkspaceDb>) => T,
+  // `T extends Promise<unknown> ? never : T` rejects async/Promise-returning
+  // callbacks at the call site — db.close() below runs synchronously right
+  // after fn(db) returns, so an async fn would have its connection closed
+  // out from under it before any awaited work inside it actually finishes.
+  fn: (db: ReturnType<typeof openWorkspaceDb>) => T extends Promise<unknown> ? never : T,
 ): T {
   const db = openWorkspaceDb(workspaceDbPath(workspacePath));
   try {
-    return fn(db);
+    return fn(db) as T;
   } finally {
     db.close();
   }
