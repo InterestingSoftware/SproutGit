@@ -256,9 +256,6 @@ importers:
       '@sproutgit/git':
         specifier: workspace:*
         version: link:../git
-      '@sproutgit/paths':
-        specifier: workspace:*
-        version: link:../paths
       '@sproutgit/types':
         specifier: workspace:*
         version: link:../types

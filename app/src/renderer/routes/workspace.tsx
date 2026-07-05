@@ -671,21 +671,18 @@ function WorkspaceInner() {
         } catch { /* non-critical */ }
       }
 
-      // before_worktree_remove: runs in the worktree being deleted
-      try {
-        await api.runTriggerHooks({
-          workspacePath,
-          trigger: 'before_worktree_remove',
-          worktreePath: wt.path,
-          initiatingWorktreePath: activeWorktree?.path ?? null,
-        });
-      } catch { /* non-critical */ }
+      // before/after_worktree_remove hooks and terminal cleanup now run
+      // server-side as part of the worktree:delete IPC call itself (see
+      // app/src/main/worktree-lifecycle.ts). afterRemoveWorktreePath is the
+      // UI's own "next active worktree" concept (no MCP equivalent), passed
+      // through explicitly so the after-hook's env vars still reflect it.
+      const afterRemoveWorktreePath = (nextWt ?? activeWorktree)?.path ?? null;
 
-      await api.closeTerminalsForPath(wt.path);
       // Switch the active worktree away *before* the mutation so that no git
       // queries fire on the deleted path while or after the deletion runs.
       if (isDeletingActive) useWorkspaceStore.setState({ activeWorktree: nextWt });
       await deleteWorktreeMutation.mutateAsync({
+        workspacePath,
         rootRepoPath: gitRepoPath,
         ...(workspaceStatus?.worktreesPath ? { managedWorktreesPath: workspaceStatus.worktreesPath } : {}),
         worktreePath: wt.path,
@@ -693,17 +690,9 @@ function WorkspaceInner() {
         // owns it. The main process re-enforces this guard server-side too.
         deleteBranch: !wt.isExternal && !!wt.branch,
         branchName: wt.branch ?? null,
+        initiatingWorktreePath: activeWorktree?.path ?? null,
+        afterRemoveWorktreePath,
       });
-
-      // after_worktree_remove: runs in the now-active worktree
-      if (nextWt ?? activeWorktree) {
-        void api.runTriggerHooks({
-          workspacePath,
-          trigger: 'after_worktree_remove',
-          worktreePath: (nextWt ?? activeWorktree)!.path,
-          initiatingWorktreePath: null,
-        }).catch(() => undefined);
-      }
 
       toast('Worktree removed', 'success');
     } catch (err) {
@@ -1520,24 +1509,16 @@ function WorkspaceInner() {
         managedWorktreesPath={workspaceStatus?.worktreesPath ?? ''}
         refs={refs}
         issueTrackerPatterns={issueTrackerPatterns}
+        initiatingWorktreePath={activeWorktree?.path ?? null}
         onClose={() => setShowNewWorktree(false)}
-        onBeforeCreate={async () => {
-          await api.runTriggerHooks({
-            workspacePath,
-            trigger: 'before_worktree_create',
-            worktreePath: activeWorktree?.path ?? workspacePath,
-            initiatingWorktreePath: activeWorktree?.path ?? null,
-          });
-        }}
         onCreated={(newWorktreePath) => {
+          // Hooks (before/after_worktree_create) and issue-ref provenance now
+          // run server-side as part of the worktree:create IPC call itself
+          // (see app/src/main/worktree-lifecycle.ts) — the only thing left
+          // for the renderer to do here is its own UI-state bookkeeping.
           setPendingNewWorktreePath(newWorktreePath);
           void qc.invalidateQueries({ queryKey: qk.worktrees(gitRepoPath) });
           void qc.invalidateQueries({ queryKey: qk.refs(gitRepoPath) });
-          void api.runCreateHooks({
-            workspacePath,
-            newWorktreePath,
-            initiatingWorktreePath: activeWorktree?.path ?? null,
-          }).catch((err: unknown) => toast(`Create hooks failed: ${String(err)}`, 'error'));
         }}
         onToast={(msg, v) => toast(msg, v)}
       />

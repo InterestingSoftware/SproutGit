@@ -15,7 +15,7 @@ type AnyHandler = (event: unknown, ...args: unknown[]) => unknown;
 
 function registerAndGetHandlers(): (channel: string) => AnyHandler {
   handleMock.mockClear();
-  registerMcpHandlers();
+  registerMcpHandlers(() => null);
   return (channel: string) => {
     const call = handleMock.mock.calls.find(c => c[0] === channel);
     if (!call) throw new Error(`${channel} handler was not registered`);

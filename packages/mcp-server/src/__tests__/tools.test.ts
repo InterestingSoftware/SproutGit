@@ -3,6 +3,7 @@ import { execSync } from 'node:child_process';
 import { mkdtempSync, rmSync, writeFileSync, realpathSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
+import { createManagedWorktree, deleteManagedWorktree } from '@sproutgit/git';
 import type { McpServerContext } from '../context.js';
 import {
   listWorktreesHandler,
@@ -47,6 +48,12 @@ describe('mcp tool handlers', () => {
       gitRepoPath: repoPath,
       managedWorktreesPath,
       mutatingToolsEnabled: () => mutatingEnabled,
+      // Plain pass-throughs to @sproutgit/git — this package's tests exercise
+      // the tool logic in isolation from the host app's hook/provenance
+      // orchestration (app/src/main/worktree-lifecycle.ts), which is
+      // covered by its own tests instead.
+      createWorktree: args => createManagedWorktree(repoPath, managedWorktreesPath, args.fromRef, args.newBranch),
+      removeWorktree: async args => { await deleteManagedWorktree(repoPath, args.worktreePath, args.deleteBranch, args.branchName ?? null); },
     };
   });
 
@@ -114,8 +121,17 @@ describe('mcp tool handlers', () => {
       expect(worktrees.some((w: { branch: string }) => w.branch === 'feature-b')).toBe(true);
     });
 
-    it('remove_worktree refuses a path outside the managed worktrees directory', async () => {
-      const result = await removeWorktreeHandler(context, { worktreePath: repoPath, deleteBranch: false });
+    it('remove_worktree surfaces an error thrown by context.removeWorktree as an error result', async () => {
+      // Path-containment validation itself now lives in the injected
+      // context.removeWorktree implementation (app/src/main/worktree-
+      // lifecycle.ts in the real app — see its own tests), not in this
+      // handler. This just confirms the handler converts a thrown error
+      // into an isError result rather than letting it propagate.
+      const throwingContext: McpServerContext = {
+        ...context,
+        removeWorktree: async () => { throw new Error("not inside this workspace's managed worktrees directory"); },
+      };
+      const result = await removeWorktreeHandler(throwingContext, { worktreePath: repoPath, deleteBranch: false });
       expect(result.isError).toBe(true);
       expect(firstText(result)).toMatch(/not inside this workspace's managed worktrees directory/);
     });

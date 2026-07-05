@@ -15,8 +15,10 @@
 import { createServer as createHttpServer, type Server } from 'node:http';
 import { createHash } from 'node:crypto';
 import type { AddressInfo } from 'node:net';
+import type { BrowserWindow } from 'electron';
 import { createHttpApp, type McpServerContext } from '@sproutgit/mcp-server';
 import { log } from './telemetry.js';
+import { createWorktreeWithHooks, removeWorktreeWithHooks } from './worktree-lifecycle.js';
 
 export type McpServerParams = {
   workspacePath: string;
@@ -60,7 +62,10 @@ export function deriveDefaultPort(workspacePath: string): number {
  * different port silently, since that would break any client config already
  * written against the requested one.
  */
-export async function startMcpServer(params: McpServerParams): Promise<number> {
+export async function startMcpServer(
+  params: McpServerParams,
+  getWindow: () => BrowserWindow | null,
+): Promise<number> {
   const existing = runningServers.get(params.workspacePath);
   if (existing) return existing.port;
 
@@ -72,6 +77,30 @@ export async function startMcpServer(params: McpServerParams): Promise<number> {
     // Settings UI for enabling mutating MCP tools exists. Until then,
     // create_worktree/remove_worktree are implemented but always refuse.
     mutatingToolsEnabled: () => false,
+    // Both point at the exact same functions the renderer's worktree:create/
+    // worktree:delete IPC handlers use (see ipc/git.ts) — an MCP-driven
+    // worktree change runs the same hooks and provenance recording as a
+    // UI-driven one. initiatingWorktreePath is null here since an MCP call
+    // has no "worktree currently in view" the way the UI does.
+    createWorktree: args => createWorktreeWithHooks({
+      workspacePath: params.workspacePath,
+      rootRepoPath: params.gitRepoPath,
+      managedWorktreesPath: params.managedWorktreesPath,
+      fromRef: args.fromRef,
+      newBranch: args.newBranch,
+      initiatingWorktreePath: null,
+    }, getWindow),
+    removeWorktree: async args => {
+      await removeWorktreeWithHooks({
+        workspacePath: params.workspacePath,
+        rootRepoPath: params.gitRepoPath,
+        managedWorktreesPath: params.managedWorktreesPath,
+        worktreePath: args.worktreePath,
+        deleteBranch: args.deleteBranch,
+        branchName: args.branchName ?? null,
+        initiatingWorktreePath: null,
+      }, getWindow);
+    },
   };
 
   const app = createHttpApp(context, params.token);

@@ -1,5 +1,6 @@
 import { join } from 'node:path';
 import { randomBytes } from 'node:crypto';
+import type { BrowserWindow } from 'electron';
 import { IPC } from '@sproutgit/types';
 import type { McpClientId, McpServerStatus } from '@sproutgit/types';
 import { openWorkspaceDb, eq } from '@sproutgit/database';
@@ -85,7 +86,7 @@ function paramsFor(workspacePath: string) {
   };
 }
 
-export function registerMcpHandlers(): void {
+export function registerMcpHandlers(getWindow: () => BrowserWindow | null): void {
   handle(IPC.MCP_STATUS, (_e, workspacePath: string) => statusFor(workspacePath));
 
   // Called when a workspace opens — starts the server only if the user
@@ -94,7 +95,7 @@ export function registerMcpHandlers(): void {
   // workspace-mount effect.
   handle(IPC.MCP_ENSURE_STARTED, async (_e, workspacePath: string) => {
     if (readEnabled(workspacePath)) {
-      await startMcpServer(paramsFor(workspacePath));
+      await startMcpServer(paramsFor(workspacePath), getWindow);
     }
     return statusFor(workspacePath);
   });
@@ -102,7 +103,7 @@ export function registerMcpHandlers(): void {
   handle(IPC.MCP_SET_ENABLED, async (_e, args: { workspacePath: string; enabled: boolean }) => {
     writeState(args.workspacePath, ENABLED_KEY, String(args.enabled));
     if (args.enabled) {
-      await startMcpServer(paramsFor(args.workspacePath));
+      await startMcpServer(paramsFor(args.workspacePath), getWindow);
     } else {
       await stopMcpServer(args.workspacePath);
     }
@@ -122,7 +123,7 @@ export function registerMcpHandlers(): void {
     }
     if (getMcpStatus(args.workspacePath).running) {
       await stopMcpServer(args.workspacePath);
-      await startMcpServer(paramsFor(args.workspacePath));
+      await startMcpServer(paramsFor(args.workspacePath), getWindow);
     }
     return statusFor(args.workspacePath);
   });

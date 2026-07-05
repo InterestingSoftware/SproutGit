@@ -75,6 +75,11 @@ describe('createHttpApp', () => {
       gitRepoPath: repoPath,
       managedWorktreesPath: join(repoPath, '.sproutgit', 'worktrees'),
       mutatingToolsEnabled: () => false,
+      // Never actually invoked by this file's tests (only initialize +
+      // tools/list are exercised, not tools/call) — stubbed just to satisfy
+      // the type.
+      createWorktree: () => { throw new Error('not implemented in this test'); },
+      removeWorktree: () => { throw new Error('not implemented in this test'); },
     };
     const app = createHttpApp(context, TOKEN);
     server = createServer(app);

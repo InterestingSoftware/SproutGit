@@ -11,13 +11,14 @@ type Props = {
   managedWorktreesPath: string;
   refs: RefInfo[];
   issueTrackerPatterns?: IssueTrackerPattern[];
+  /** The worktree the user was viewing when opening this dialog, if any — recorded as the operation's initiating worktree (env var for hooks). */
+  initiatingWorktreePath: string | null;
   onClose: () => void;
-  onBeforeCreate?: () => Promise<void>;
   onCreated: (newWorktreePath: string) => void;
   onToast: (msg: string, variant: 'success' | 'error') => void;
 };
 
-export function NewWorktreeDialog({ open, workspacePath, gitRepoPath, managedWorktreesPath, refs, issueTrackerPatterns = [], onClose, onBeforeCreate, onCreated, onToast }: Props) {
+export function NewWorktreeDialog({ open, workspacePath, gitRepoPath, managedWorktreesPath, refs, issueTrackerPatterns = [], initiatingWorktreePath, onClose, onCreated, onToast }: Props) {
   const dialogRef = useRef<HTMLDialogElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -83,21 +84,16 @@ export function NewWorktreeDialog({ open, workspacePath, gitRepoPath, managedWor
     setCreating(true);
     onClose(); // Optimistically close; pending branch shown in sidebar
     try {
-      if (onBeforeCreate) await onBeforeCreate();
       const result = await api.createWorktree({
+        workspacePath,
         rootRepoPath: gitRepoPath,
         managedWorktreesPath,
         fromRef: branchFrom || 'HEAD',
         newBranch: branchName.trim(),
+        initiatingWorktreePath,
+        issueRef: effectiveIssueRef,
+        issueTitle: issuePreview?.title ?? null,
       });
-      if (effectiveIssueRef) {
-        await api.setWorktreeMeta({
-          workspacePath,
-          worktreePath: result.worktreePath,
-          issueRef: effectiveIssueRef,
-          issueTitle: issuePreview?.title ?? null,
-        });
-      }
       onToast('Worktree created', 'success');
       setBranchName('');
       setBranchFrom('HEAD');

@@ -31,6 +31,50 @@ function getWorkspaceDb(workspacePath: string) {
   return db;
 }
 
+export interface SetWorktreeMetaArgs {
+  workspacePath: string;
+  worktreePath: string;
+  branch?: string;
+  sourceRef?: string;
+  rootRepoPath?: string;
+  issueRef?: string | null;
+  issueTitle?: string | null;
+}
+
+/**
+ * Upserts worktree provenance/issue-ref metadata. Exported standalone so
+ * worktree-lifecycle.ts (shared by both the renderer's worktree:create IPC
+ * call and the MCP create_worktree tool) can record it directly, without a
+ * client-side IPC round-trip.
+ */
+export function setWorktreeMeta(args: SetWorktreeMetaArgs): void {
+  const db = getWorkspaceDb(args.workspacePath);
+  const now = new Date();
+  db.insert(worktreeMetadata)
+    .values({
+      worktreePath: args.worktreePath,
+      branch: args.branch ?? '',
+      sourceRef: args.sourceRef ?? '',
+      rootRepoPath: args.rootRepoPath ?? '',
+      issueRef: args.issueRef ?? null,
+      issueTitle: args.issueTitle ?? null,
+      createdAt: now,
+      updatedAt: now,
+    })
+    .onConflictDoUpdate({
+      target: worktreeMetadata.worktreePath,
+      set: {
+        branch: args.branch ?? '',
+        sourceRef: args.sourceRef ?? '',
+        rootRepoPath: args.rootRepoPath ?? '',
+        issueRef: args.issueRef ?? null,
+        issueTitle: args.issueTitle ?? null,
+        updatedAt: now,
+      },
+    })
+    .run();
+}
+
 export function registerWorkspaceHandlers(configDb: ConfigDb): void {
   // ── Recent workspaces ─────────────────────────────────────────────────────
   handle(IPC.WORKSPACE_LIST_RECENT, () => {
@@ -118,40 +162,8 @@ export function registerWorkspaceHandlers(configDb: ConfigDb): void {
       .get() ?? null;
   });
 
-  handle(IPC.WORKTREE_SET_META, (_e, args: {
-    workspacePath: string;
-    worktreePath: string;
-    branch?: string;
-    sourceRef?: string;
-    rootRepoPath?: string;
-    issueRef?: string | null;
-    issueTitle?: string | null;
-  }) => {
-    const db = getWorkspaceDb(args.workspacePath);
-    const now = new Date();
-    db.insert(worktreeMetadata)
-      .values({
-        worktreePath: args.worktreePath,
-        branch: args.branch ?? '',
-        sourceRef: args.sourceRef ?? '',
-        rootRepoPath: args.rootRepoPath ?? '',
-        issueRef: args.issueRef ?? null,
-        issueTitle: args.issueTitle ?? null,
-        createdAt: now,
-        updatedAt: now,
-      })
-      .onConflictDoUpdate({
-        target: worktreeMetadata.worktreePath,
-        set: {
-          branch: args.branch ?? '',
-          sourceRef: args.sourceRef ?? '',
-          rootRepoPath: args.rootRepoPath ?? '',
-          issueRef: args.issueRef ?? null,
-          issueTitle: args.issueTitle ?? null,
-          updatedAt: now,
-        },
-      })
-      .run();
+  handle(IPC.WORKTREE_SET_META, (_e, args: SetWorktreeMetaArgs) => {
+    setWorktreeMeta(args);
   });
 
   // Drops worktree_metadata rows for paths git no longer reports (deleted

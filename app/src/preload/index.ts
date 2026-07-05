@@ -88,19 +88,26 @@ const api = {
     invoke(IPC.GIT_LIST_WORKTREES, repoPath, managedWorktreesPath),
 
   createWorktree: (args: {
+    workspacePath: string;
     rootRepoPath: string;
     managedWorktreesPath: string;
     fromRef: string;
     newBranch: string;
+    initiatingWorktreePath?: string | null;
+    issueRef?: string | null;
+    issueTitle?: string | null;
   }): Promise<CreateWorktreeResult> =>
     invoke(IPC.WORKTREE_CREATE, args),
 
   deleteWorktree: (args: {
+    workspacePath: string;
     rootRepoPath: string;
     managedWorktreesPath?: string;
     worktreePath: string;
     deleteBranch: boolean;
     branchName?: string | null;
+    initiatingWorktreePath?: string | null;
+    afterRemoveWorktreePath?: string | null;
   }): Promise<void> =>
     invoke(IPC.WORKTREE_DELETE, args),
 

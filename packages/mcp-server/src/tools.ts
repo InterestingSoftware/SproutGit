@@ -1,21 +1,8 @@
 import { z } from 'zod';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
-import { listWorktrees, createManagedWorktree, deleteManagedWorktree, getWorktreeStatus } from '@sproutgit/git';
-import { isPathWithin, canonicalize } from '@sproutgit/paths';
+import { listWorktrees, getWorktreeStatus } from '@sproutgit/git';
 import type { McpServerContext } from './context.js';
-
-/**
- * True when `childPath` is `parentPath` itself or nested inside it, resolved
- * through realpath first — mirrors packages/git/src/worktrees.ts's own
- * isWithinCanonical() helper. isPathWithin() alone is documented as pure
- * path-string comparison with no symlink resolution, so a symlink under (or
- * pointing out of) managedWorktreesPath could otherwise pass or fail the
- * containment check incorrectly.
- */
-function isWithinCanonical(childPath: string, parentPath: string): boolean {
-  return isPathWithin(canonicalize(childPath), canonicalize(parentPath));
-}
 
 function textResult(value: unknown): CallToolResult {
   return { content: [{ type: 'text', text: typeof value === 'string' ? value : JSON.stringify(value, null, 2) }] };
@@ -72,7 +59,7 @@ export async function createWorktreeHandler(
 ): Promise<CallToolResult> {
   if (!context.mutatingToolsEnabled()) return errorResult(MUTATING_TOOLS_DISABLED_MESSAGE);
   try {
-    const result = await createManagedWorktree(context.gitRepoPath, context.managedWorktreesPath, args.fromRef, args.newBranch);
+    const result = await context.createWorktree({ fromRef: args.fromRef, newBranch: args.newBranch });
     return textResult(result);
   } catch (error) {
     return errorResult(error instanceof Error ? error.message : String(error));
@@ -84,17 +71,14 @@ export async function removeWorktreeHandler(
   args: { worktreePath: string; deleteBranch: boolean; branchName?: string | undefined },
 ): Promise<CallToolResult> {
   if (!context.mutatingToolsEnabled()) return errorResult(MUTATING_TOOLS_DISABLED_MESSAGE);
-  // Defense in depth: only ever remove a worktree this workspace itself
-  // manages — never a path outside managedWorktreesPath (e.g. the repo root
-  // itself, or an unrelated directory).
-  if (!isWithinCanonical(args.worktreePath, context.managedWorktreesPath)) {
-    return errorResult(`"${args.worktreePath}" is not inside this workspace's managed worktrees directory.`);
-  }
   if (args.deleteBranch && !args.branchName) {
     return errorResult('branchName is required when deleteBranch is true.');
   }
   try {
-    await deleteManagedWorktree(context.gitRepoPath, args.worktreePath, args.deleteBranch, args.branchName ?? null);
+    // context.removeWorktree validates worktreePath against the repo's
+    // actual registered worktrees (canonicalized) and throws if it isn't
+    // one — see app/src/main/worktree-lifecycle.ts.
+    await context.removeWorktree({ worktreePath: args.worktreePath, deleteBranch: args.deleteBranch, branchName: args.branchName ?? null });
     return textResult({ removed: args.worktreePath, deleteBranch: args.deleteBranch, branchName: args.branchName ?? null });
   } catch (error) {
     return errorResult(error instanceof Error ? error.message : String(error));
