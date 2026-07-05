@@ -291,6 +291,20 @@ function WorkspaceInner() {
   // so TerminalPane (which reads pendingData as an ever-growing stream) can
   // still compute correct write deltas after a trim.
   const terminalDroppedLenRef = useRef<Map<string, number>>(new Map());
+  const terminalBuffersHydratedRef = useRef(false);
+  // The store's terminalSessions survive WorkspaceInner unmounting/remounting
+  // (e.g. navigating to Projects and back) so background PTYs keep their
+  // pendingData/droppedLen, but these refs do not — they'd otherwise reset to
+  // empty and the next onTerminalData event would clobber the preserved
+  // buffer with just the newest chunk. Reseed once per mount, synchronously
+  // during render so it happens before the onTerminalData listener attaches.
+  if (!terminalBuffersHydratedRef.current) {
+    terminalBuffersHydratedRef.current = true;
+    for (const sess of useWorkspaceStore.getState().terminalSessions) {
+      terminalDataRef.current.set(sess.id, sess.pendingData);
+      terminalDroppedLenRef.current.set(sess.id, sess.droppedLen);
+    }
+  }
   const renameInputRef = useRef<HTMLInputElement | null>(null);
   const lastWorktreeWorkspaceRef = useRef('');
 
@@ -540,15 +554,30 @@ function WorkspaceInner() {
 
   useEffect(() => {
     const offData = api.onTerminalData((id: string, data: string) => {
-      const combined = (terminalDataRef.current.get(id) ?? '') + data;
-      let buffer = combined;
-      if (combined.length > TERMINAL_BUFFER_CAP) {
-        const overflow = combined.length - TERMINAL_BUFFER_CAP;
-        buffer = combined.slice(overflow);
-        terminalDroppedLenRef.current.set(id, (terminalDroppedLenRef.current.get(id) ?? 0) + overflow);
+      const prevBuffer = terminalDataRef.current.get(id) ?? '';
+      const prevDropped = terminalDroppedLenRef.current.get(id) ?? 0;
+      let buffer: string;
+      let droppedLen: number;
+      if (data.length >= TERMINAL_BUFFER_CAP) {
+        // A single chunk alone meets/exceeds the cap — skip concatenating it
+        // with the old buffer so we never allocate a temporary string larger
+        // than the cap (the old buffer is entirely superseded anyway).
+        const overflow = data.length - TERMINAL_BUFFER_CAP;
+        buffer = data.slice(overflow);
+        droppedLen = prevDropped + prevBuffer.length + overflow;
+      } else {
+        const combined = prevBuffer + data;
+        if (combined.length > TERMINAL_BUFFER_CAP) {
+          const overflow = combined.length - TERMINAL_BUFFER_CAP;
+          buffer = combined.slice(overflow);
+          droppedLen = prevDropped + overflow;
+        } else {
+          buffer = combined;
+          droppedLen = prevDropped;
+        }
       }
       terminalDataRef.current.set(id, buffer);
-      const droppedLen = terminalDroppedLenRef.current.get(id) ?? 0;
+      terminalDroppedLenRef.current.set(id, droppedLen);
       useWorkspaceStore.setState(s => ({
         terminalSessions: s.terminalSessions.map(sess =>
           sess.id === id ? { ...sess, pendingData: buffer, droppedLen } : sess
