@@ -16,7 +16,8 @@ SproutGit is an Electron-based, cross-platform Git desktop app with a **worktree
 **Dev command:** `pnpm dev`  
 **Test command:** `pnpm test` (unit) / `pnpm test:e2e` (WebdriverIO E2E)  
 **Typecheck:** `pnpm typecheck`  
-**Lint:** `pnpm lint`
+**Lint:** `pnpm lint`  
+**Dead code / unused deps:** `pnpm knip` (config: `knip.jsonc`) — CI gates on the files/dependencies/binaries categories only (`--exclude exports,types`); run without flags locally to see everything, including intentionally-unused library exports in `packages/ui` and `e2e/helpers*`.
 
 ---
 

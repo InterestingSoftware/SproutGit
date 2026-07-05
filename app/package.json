@@ -167,9 +167,6 @@
     "@agentclientprotocol/claude-agent-acp": "0.55.0",
     "@agentclientprotocol/codex-acp": "1.1.0",
     "@agentclientprotocol/sdk": "^1.1.0",
-    "@fontsource/fira-code": "^5.2.7",
-    "@fontsource/plus-jakarta-sans": "^5.2.8",
-    "@fontsource/space-grotesk": "^5.2.10",
     "chokidar": "^4.0.3",
     "@sproutgit/database": "workspace:*",
     "@sproutgit/git": "workspace:*",
@@ -180,7 +177,6 @@
     "@sproutgit/ui": "workspace:*",
     "@tanstack/react-query": "^5.101.2",
     "@tanstack/react-router": "^1.170.16",
-    "chokidar": "^4.0.3",
     "electron-log": "^5.4.4",
     "electron-updater": "^6.8.9",
     "highlight.js": "^11.11.1",
@@ -191,7 +187,6 @@
     "zustand": "^5.0.14"
   },
   "devDependencies": {
-    "@electron/rebuild": "^4.1.0",
     "@sproutgit/mcp-server": "workspace:*",
     "@sproutgit/ts-config": "workspace:*",
     "@tailwindcss/vite": "^4.3.2",

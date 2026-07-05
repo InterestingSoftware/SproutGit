@@ -8,13 +8,13 @@
     "test:e2e": "pnpm --filter @sproutgit/e2e test",
     "screenshots": "pnpm --filter @sproutgit/e2e screenshots",
     "lint": "oxlint --config .oxlintrc.json app/src packages/ui/src packages/git/src packages/terminal/src packages/types/src packages/paths/src packages/mcp-server/src",
+    "knip": "knip",
     "typecheck": "turbo typecheck",
     "format": "prettier --write \"**/*.{ts,tsx,json,css,md}\" --ignore-path .gitignore",
     "postinstall": "node scripts/patch-electron-plist.mjs"
   },
   "devDependencies": {
-    "concurrently": "^10.0.3",
-    "cross-env": "^10.1.0",
+    "knip": "^6.24.0",
     "oxlint": "^1.72.0",
     "prettier": "^3.9.4",
     "turbo": "^2.10.2"

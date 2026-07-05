@@ -39,6 +39,12 @@ jobs:
             turbo-lint-${{ runner.os }}-
       - run: pnpm typecheck
       - run: pnpm lint
+      # Gate only on files/dependencies/binaries — high-confidence categories
+      # with no legitimate exceptions. Unused-exports/types are excluded
+      # because packages/ui and e2e/helpers* intentionally export library-style
+      # helpers that aren't consumed anywhere in this repo yet; run `pnpm knip`
+      # locally (no flags) to see the full report including those.
+      - run: pnpm knip --exclude exports,types
 
   # ── Unit / Vite tests (all 3 platforms) ───────────────────────────────────
   test:
