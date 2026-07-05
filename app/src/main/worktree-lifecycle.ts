@@ -20,6 +20,7 @@ import type { BrowserWindow } from 'electron';
 import { canonicalize } from '@sproutgit/paths';
 import { createManagedWorktree, deleteManagedWorktree, listWorktrees } from '@sproutgit/git';
 import type { CreateWorktreeResult } from '@sproutgit/types';
+import type { ConfigDb } from '@sproutgit/database';
 import { runTriggerHooks } from './ipc/hooks.js';
 import { setWorktreeMeta } from './ipc/workspace.js';
 import { manager } from './ipc/terminal.js';
@@ -39,6 +40,7 @@ export type CreateWorktreeWithHooksParams = {
 export async function createWorktreeWithHooks(
   params: CreateWorktreeWithHooksParams,
   getWindow: () => BrowserWindow | null,
+  configDb: ConfigDb,
 ): Promise<CreateWorktreeResult> {
   const win = getWindow();
   const initiatingWorktreePath = params.initiatingWorktreePath ?? null;
@@ -53,7 +55,7 @@ export async function createWorktreeWithHooks(
       trigger: 'before_worktree_create',
       worktreePath: initiatingWorktreePath ?? params.workspacePath,
       initiatingWorktreePath,
-    }, win);
+    }, win, configDb);
   }
 
   const result = await createManagedWorktree(params.rootRepoPath, params.managedWorktreesPath, params.fromRef, params.newBranch);
@@ -73,7 +75,7 @@ export async function createWorktreeWithHooks(
       trigger: 'after_worktree_create',
       worktreePath: result.worktreePath,
       initiatingWorktreePath,
-    }, win);
+    }, win, configDb);
   }
 
   return result;
@@ -94,6 +96,7 @@ export type RemoveWorktreeWithHooksParams = {
 export async function removeWorktreeWithHooks(
   params: RemoveWorktreeWithHooksParams,
   getWindow: () => BrowserWindow | null,
+  configDb: ConfigDb,
 ): Promise<void> {
   // Validate against git's own worktree list rather than trusting the
   // caller-supplied path — only ever remove a path git itself has
@@ -119,7 +122,7 @@ export async function removeWorktreeWithHooks(
       trigger: 'before_worktree_remove',
       worktreePath: match.path,
       initiatingWorktreePath,
-    }, win);
+    }, win, configDb);
   }
 
   // Stale PTY sessions pointing at a directory that's about to be deleted
@@ -134,6 +137,6 @@ export async function removeWorktreeWithHooks(
       trigger: 'after_worktree_remove',
       worktreePath: params.afterRemoveWorktreePath ?? params.workspacePath,
       initiatingWorktreePath,
-    }, win);
+    }, win, configDb);
   }
 }

@@ -47,7 +47,7 @@ function resolveIssueUrl(issueRef: string, patterns: IssueTrackerPattern[]): str
 }
 
 /** The resolved argv to spawn a configured agent in Agent Client Protocol (ACP) mode. */
-export type AcpLaunchSpec = { bin: string; args: string[] };
+type AcpLaunchSpec = { bin: string; args: string[] };
 
 interface AcpPreset {
   /** Matches against the lowercased basename of the configured command. */
