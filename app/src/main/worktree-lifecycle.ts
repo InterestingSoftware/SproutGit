@@ -129,7 +129,17 @@ export async function removeWorktreeWithHooks(
   // should never linger, regardless of who triggered the removal.
   manager.closeForPath(match.path);
 
-  await deleteManagedWorktree(params.rootRepoPath, match.path, deleteBranch, params.branchName ?? null);
+  // Same external-worktree carve-out as the branch-deletion guard above: an
+  // external worktree lives outside managedWorktreesPath by definition, so
+  // only pass it through for the path containment check when this is a
+  // worktree we actually manage.
+  await deleteManagedWorktree(
+    params.rootRepoPath,
+    match.path,
+    deleteBranch,
+    params.branchName ?? null,
+    match.isExternal ? undefined : params.managedWorktreesPath
+  );
 
   if (win) {
     await runTriggerHooks({
