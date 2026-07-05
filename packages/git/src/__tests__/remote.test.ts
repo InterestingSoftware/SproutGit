@@ -25,7 +25,15 @@ function createRepo(dir: string): void {
 // nothing new to fetch, or real updates came in. fetchWorktree() must
 // distinguish all three so the UI can show an honest, specific message
 // instead of a generic "Fetched" that's indistinguishable from a no-op.
-describe('fetchWorktree', () => {
+//
+// Each of these does several real git subprocess spawns for setup (init,
+// config, commit, remote add, push, clone) plus the fetch itself under
+// test — comfortably under the 5s default on macOS/Linux, but Windows CI
+// runners are measurably slower to spawn git processes and have
+// intermittently timed out here under load (see convert.test.ts for the
+// same pattern). Raise the suite-wide timeout rather than each call site
+// individually.
+describe('fetchWorktree', { timeout: 20_000 }, () => {
   it('reports hadNoRemotes and skips the fetch entirely when there are no remotes', async () => {
     const dir = tempDir('sg-fetch-noremote-');
     createRepo(dir);

@@ -4,9 +4,8 @@ import { IPC } from '@sproutgit/types';
 import { log } from '../telemetry.js';
 
 function send(channel: string, ...args: unknown[]): void {
-  const win = BrowserWindow.getAllWindows()[0];
-  if (win && !win.isDestroyed()) {
-    win.webContents.send(channel, ...args);
+  for (const win of BrowserWindow.getAllWindows()) {
+    if (!win.isDestroyed()) win.webContents.send(channel, ...args);
   }
 }
 

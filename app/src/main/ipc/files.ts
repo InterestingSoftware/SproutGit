@@ -7,7 +7,7 @@
  * root and rejects anything that escapes it (symlink traversal, `..`, or an
  * absolute path outside the root) before touching the filesystem.
  */
-import { ipcMain, type BrowserWindow } from 'electron';
+import { ipcMain, BrowserWindow } from 'electron';
 import { IPC } from '@sproutgit/types';
 import type { FileTreeNode, FileReadResult, FileChangedEvent } from '@sproutgit/types';
 import { promises as fs } from 'node:fs';
@@ -184,7 +184,34 @@ async function buildTree(worktreeRoot: string): Promise<FileTreeNode[]> {
 // covers the working tree's file *content* so open editor tabs can detect
 // external edits (e.g. an AI agent or another tool writing to a file).
 
-const activeFileWatchers = new Map<string, Closable>();
+// Multiple windows can watch the same worktree (e.g. the same workspace open
+// in two windows), so each entry tracks every subscribing window and
+// broadcasts to all of them rather than a single one.
+type FileWatchEntry = { watcher: Closable; windows: Set<BrowserWindow> };
+
+const activeFileWatchers = new Map<string, FileWatchEntry>();
+
+// A window that's abruptly closed (not navigated away from first) never
+// calls FILE_WATCH_STOP, which would otherwise leave the recursive watcher
+// running with no live subscriber — on Windows that also holds a handle
+// blocking anything that needs to delete/rename the watched worktree. Sweep
+// it out of every entry on 'closed', tearing down any left with zero
+// subscribers. Each window only needs this wired up once, regardless of how
+// many worktrees it ends up watching over its lifetime.
+const windowsWithCloseCleanup = new WeakSet<BrowserWindow>();
+
+function ensureCleanupOnClose(win: BrowserWindow): void {
+  if (windowsWithCloseCleanup.has(win)) return;
+  windowsWithCloseCleanup.add(win);
+  win.once('closed', () => {
+    for (const [worktreePath, entry] of activeFileWatchers) {
+      if (entry.windows.delete(win) && entry.windows.size === 0) {
+        closeWatcher(entry.watcher);
+        activeFileWatchers.delete(worktreePath);
+      }
+    }
+  });
+}
 
 function isAlwaysIgnoredPath(path: string): boolean {
   return path.split(/[\\/]+/).some(segment => ALWAYS_IGNORED_DIRS.has(segment));
@@ -192,8 +219,16 @@ function isAlwaysIgnoredPath(path: string): boolean {
 
 function startFileWatch(worktreePath: string, win: BrowserWindow): void {
   const root = resolve(worktreePath);
-  if (activeFileWatchers.has(root)) return;
+  const existing = activeFileWatchers.get(root);
+  if (existing) {
+    // Already watching this worktree (e.g. from another window) — just add
+    // this window as another subscriber to the same underlying watcher.
+    existing.windows.add(win);
+    ensureCleanupOnClose(win);
+    return;
+  }
 
+  const windows = new Set([win]);
   const watcher = watchRecursive(
     root,
     (event: RecursiveWatchEvent, absolutePath: string) => {
@@ -203,24 +238,34 @@ function startFileWatch(worktreePath: string, win: BrowserWindow): void {
       const relPath = toRelative(root, absolutePath);
       const type: FileChangedEvent['type'] = event === 'unlink' ? 'deleted' : event === 'add' ? 'created' : 'changed';
       const fileEvent: FileChangedEvent = { worktreePath: root, relativePath: relPath, absolutePath, type };
-      win.webContents.send(IPC.EVENT_FILE_CHANGED, fileEvent);
+      for (const w of windows) {
+        if (w.isDestroyed()) { windows.delete(w); continue; }
+        w.webContents.send(IPC.EVENT_FILE_CHANGED, fileEvent);
+      }
     },
     isAlwaysIgnoredPath,
   );
-  if (watcher) activeFileWatchers.set(root, watcher); // null if the worktree path doesn't exist (yet) on macOS/Windows
+  if (watcher) {
+    activeFileWatchers.set(root, { watcher, windows }); // null if the worktree path doesn't exist (yet) on macOS/Windows
+    ensureCleanupOnClose(win);
+  }
 }
 
-function stopFileWatch(worktreePath: string): void {
+function stopFileWatch(worktreePath: string, win?: BrowserWindow): void {
   const root = resolve(worktreePath);
-  const watcher = activeFileWatchers.get(root);
-  if (!watcher) return;
-  closeWatcher(watcher);
-  activeFileWatchers.delete(root);
+  const entry = activeFileWatchers.get(root);
+  if (!entry) return;
+
+  if (win) entry.windows.delete(win);
+  if (!win || entry.windows.size === 0) {
+    closeWatcher(entry.watcher);
+    activeFileWatchers.delete(root);
+  }
 }
 
 // ── IPC registration ──────────────────────────────────────────────────────────
 
-export function registerFileHandlers(getWindow: () => BrowserWindow | null): void {
+export function registerFileHandlers(): void {
   ipcMain.handle(IPC.FILE_LIST_TREE, (_e, worktreePath: string) => buildTree(worktreePath));
 
   ipcMain.handle(IPC.FILE_READ, async (_e, args: { worktreePath: string; relativePath: string }): Promise<FileReadResult> => {
@@ -240,12 +285,12 @@ export function registerFileHandlers(getWindow: () => BrowserWindow | null): voi
   });
 
   ipcMain.handle(IPC.FILE_WATCH_START, (_e, worktreePath: string) => {
-    const win = getWindow();
+    const win = BrowserWindow.fromWebContents(_e.sender);
     if (!win) return;
     startFileWatch(worktreePath, win);
   });
 
   ipcMain.handle(IPC.FILE_WATCH_STOP, (_e, worktreePath: string) => {
-    stopFileWatch(worktreePath);
+    stopFileWatch(worktreePath, BrowserWindow.fromWebContents(_e.sender) ?? undefined);
   });
 }
