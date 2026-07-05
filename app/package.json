@@ -106,26 +106,17 @@
     "win": {
       "target": [
         {
-          "target": "nsis",
-          "arch": [
-            "x64"
-          ]
+          "target": "nsis"
         }
       ]
     },
     "linux": {
       "target": [
         {
-          "target": "AppImage",
-          "arch": [
-            "x64"
-          ]
+          "target": "AppImage"
         },
         {
-          "target": "deb",
-          "arch": [
-            "x64"
-          ]
+          "target": "deb"
         }
       ],
       "artifactName": "${productName}-${version}-${arch}.${ext}",
@@ -133,7 +124,8 @@
     },
     "nsis": {
       "oneClick": false,
-      "allowToChangeInstallationDirectory": true
+      "allowToChangeInstallationDirectory": true,
+      "artifactName": "${productName}-Setup-${version}-${arch}.${ext}"
     },
     "dmg": {
       "title": "SproutGit ${version}",
@@ -167,9 +159,10 @@
     "@agentclientprotocol/claude-agent-acp": "0.55.0",
     "@agentclientprotocol/codex-acp": "1.1.0",
     "@agentclientprotocol/sdk": "^1.1.0",
-    "chokidar": "^4.0.3",
     "@sproutgit/database": "workspace:*",
+    "@sproutgit/fs-watch": "workspace:*",
     "@sproutgit/git": "workspace:*",
+    "@sproutgit/mcp-client-config": "workspace:*",
     "@sproutgit/paths": "workspace:*",
     "@sproutgit/provider-github": "workspace:*",
     "@sproutgit/terminal": "workspace:*",
