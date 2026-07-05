@@ -7,13 +7,7 @@ import { api } from './api.js';
  * hook progress, etc.) stays in Zustand (workspace-store.ts).
  */
 
-import {
-  useQuery,
-  useQueries,
-  useMutation,
-  useQueryClient,
-  type UseQueryOptions,
-} from '@tanstack/react-query';
+import { useQuery, useQueries, useMutation, useQueryClient } from '@tanstack/react-query';
 import type { CommitEntry, RefInfo, WorktreeInfo, WorkspaceStatus, WorktreePushStatus, IssueTrackerPattern, FetchSummary, FileTreeNode } from '@sproutgit/types';
 
 // ── Query key factory ─────────────────────────────────────────────────────────
@@ -121,24 +115,6 @@ export function usePushStatus(worktreePath: string | undefined) {
   });
 }
 
-// ── Worktree file status ──────────────────────────────────────────────────────
-
-export function useWorktreeStatus(worktreePath: string | undefined) {
-  return useQuery({
-    queryKey: qk.worktreeStatus(worktreePath ?? ''),
-    queryFn: async () => {
-      const result = await api.getStatus(worktreePath!) as { files: import('@sproutgit/types').StatusFileEntry[] };
-      return result.files;
-    },
-    enabled: !!worktreePath,
-    staleTime: 0, // always fresh for the staging panel
-    retry: 0,
-    // Don't bubble status errors to the global QueryCache.onError toast —
-    // transient failures (e.g. worktree deleted mid-flight) are self-healing.
-    throwOnError: false,
-  });
-}
-
 // ── Worktree change counts (badge numbers in sidebar) ─────────────────────────
 
 /**
@@ -173,78 +149,7 @@ export function useWorktreeChangeCounts(
   return counts;
 }
 
-// ── Diff ──────────────────────────────────────────────────────────────────────
-
-export function useDiffFiles(repoPath: string, range: string | null) {
-  return useQuery({
-    queryKey: qk.diffFiles(repoPath, range ?? ''),
-    queryFn: () =>
-      api.getDiffFiles(repoPath, range!) as Promise<import('@sproutgit/types').DiffFileEntry[]>,
-    enabled: !!repoPath && !!range,
-    staleTime: Infinity,
-  });
-}
-
-export function useDiffContent(
-  repoPath: string,
-  range: string | null,
-  file: string | null,
-  staged?: boolean,
-  opts?: Partial<UseQueryOptions<string>>,
-) {
-  return useQuery({
-    queryKey: qk.diffContent(repoPath, range ?? '', file ?? '', staged),
-    queryFn: async () => {
-      if (staged !== undefined) {
-        // Working-tree diff (unstaged)
-        if (!staged) return api.getWorkingDiff(repoPath, file!) as Promise<string>;
-        // Staged diff
-        return api.getDiffContent(repoPath, 'HEAD', file!) as Promise<string>;
-      }
-      return api.getDiffContent(repoPath, range!, file!) as Promise<string>;
-    },
-    enabled: !!repoPath && !!range && !!file,
-    staleTime: Infinity,
-    ...opts,
-  });
-}
-
 // ── Mutations ─────────────────────────────────────────────────────────────────
-
-export function useStageFiles(worktreePath: string, gitRepoPath: string) {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: (paths: string[]) => api.stageFiles(worktreePath, paths) as Promise<void>,
-    onSuccess: () => {
-      void qc.invalidateQueries({ queryKey: qk.worktreeStatus(worktreePath) });
-      void qc.invalidateQueries({ queryKey: qk.worktreeChangeCounts(gitRepoPath) });
-    },
-  });
-}
-
-export function useUnstageFiles(worktreePath: string, gitRepoPath: string) {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: (paths: string[]) => api.unstageFiles(worktreePath, paths) as Promise<void>,
-    onSuccess: () => {
-      void qc.invalidateQueries({ queryKey: qk.worktreeStatus(worktreePath) });
-      void qc.invalidateQueries({ queryKey: qk.worktreeChangeCounts(gitRepoPath) });
-    },
-  });
-}
-
-export function useCreateCommit(worktreePath: string, gitRepoPath: string) {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: (message: string) => api.createCommit(worktreePath, message) as Promise<void>,
-    onSuccess: () => {
-      void qc.invalidateQueries({ queryKey: qk.worktreeStatus(worktreePath) });
-      void qc.invalidateQueries({ queryKey: qk.commits(gitRepoPath) });
-      void qc.invalidateQueries({ queryKey: qk.commitCount(gitRepoPath) });
-      void qc.invalidateQueries({ queryKey: qk.refs(gitRepoPath) });
-    },
-  });
-}
 
 export function useFetch(worktreePath: string, gitRepoPath: string) {
   const qc = useQueryClient();

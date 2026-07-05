@@ -1,6 +1,6 @@
 import { app } from 'electron';
 import { handle } from './handle.js';
-import { IPC, type WorkspaceHookShell, type WorkspaceHookTrigger, type WorkspaceHookScope, type HookExecutionTarget } from '@sproutgit/types';
+import { IPC } from '@sproutgit/types';
 import { openConfigDb, openWorkspaceDb, eq, notInArray } from '@sproutgit/database';
 import { join } from 'path';
 import { recentWorkspaces } from '@sproutgit/database/schema/config';
@@ -10,8 +10,6 @@ import { stopMcpServer } from '../mcp-bridge.js';
 import { waitForIdleRepo } from '@sproutgit/git';
 import {
   worktreeMetadata,
-  hookDefinitions,
-  hookDependencies,
   hookRuns,
   nestedRepoSyncRules,
   workspaceState,
@@ -19,14 +17,18 @@ import {
 
 type ConfigDb = ReturnType<typeof openConfigDb>;
 
+/** Path to a workspace's per-workspace sqlite state file. Shared by every IPC module that opens this DB (workspace.ts, hooks.ts, agents.ts, mcp.ts) so the on-disk layout is defined in exactly one place. */
+export function workspaceDbPath(workspacePath: string): string {
+  return join(workspacePath, '.sproutgit', 'state.db');
+}
+
 // Per-workspace DB instances are cached by path.
 const workspaceDbCache = new Map<string, ReturnType<typeof openWorkspaceDb>>();
 
 function getWorkspaceDb(workspacePath: string) {
   const cached = workspaceDbCache.get(workspacePath);
   if (cached) return cached;
-  const dbPath = join(workspacePath, '.sproutgit', 'state.db');
-  const db = openWorkspaceDb(dbPath);
+  const db = openWorkspaceDb(workspaceDbPath(workspacePath));
   workspaceDbCache.set(workspacePath, db);
   return db;
 }
@@ -191,111 +193,9 @@ export function registerWorkspaceHandlers(configDb: ConfigDb): void {
       .run();
   });
 
-  // ── Hook definitions ──────────────────────────────────────────────────────
-  handle(IPC.HOOK_LIST, (_e, workspacePath: string) => {
-    const db = getWorkspaceDb(workspacePath);
-    const hooks = db.select().from(hookDefinitions).all();
-    const deps = db.select().from(hookDependencies).all();
-    const depsMap = new Map<string, string[]>();
-    for (const dep of deps) {
-      if (!depsMap.has(dep.hookId)) depsMap.set(dep.hookId, []);
-      depsMap.get(dep.hookId)!.push(dep.dependsOnId);
-    }
-    return hooks.map(h => ({ ...h, dependencyIds: depsMap.get(h.id) ?? [] }));
-  });
-
-  handle(IPC.HOOK_CREATE, (_e, args: {
-    workspacePath: string;
-    id: string;
-    name: string;
-    scope: WorkspaceHookScope;
-    trigger: WorkspaceHookTrigger;
-    executionTarget: HookExecutionTarget;
-    shell: WorkspaceHookShell;
-    script: string;
-    enabled?: boolean;
-    critical?: boolean;
-    switchOncePerSession?: boolean;
-    switchRunOnCreate?: boolean;
-    switchRunOnDelete?: boolean;
-    keepOpenOnCompletion?: boolean;
-    timeoutSeconds?: number;
-    dependencyIds?: string[];
-  }) => {
-    const db = getWorkspaceDb(args.workspacePath);
-    const now = new Date();
-    db.insert(hookDefinitions).values({
-      id: args.id,
-      name: args.name,
-      scope: args.scope,
-      trigger: args.trigger,
-      executionTarget: args.executionTarget,
-      shell: args.shell,
-      script: args.script,
-      enabled: args.enabled !== false,
-      critical: args.critical ?? false,
-      switchOncePerSession: args.switchOncePerSession ?? false,
-      switchRunOnCreate: args.switchRunOnCreate ?? true,
-      switchRunOnDelete: args.switchRunOnDelete ?? false,
-      keepOpenOnCompletion: args.keepOpenOnCompletion ?? false,
-      timeoutSeconds: args.timeoutSeconds ?? 300,
-      createdAt: now,
-      updatedAt: now,
-    }).run();
-    for (const depId of args.dependencyIds ?? []) {
-      db.insert(hookDependencies).values({ hookId: args.id, dependsOnId: depId }).run();
-    }
-  });
-
-  handle(IPC.HOOK_UPDATE, (_e, args: {
-    workspacePath: string;
-    id: string;
-    name?: string;
-    scope?: WorkspaceHookScope;
-    trigger?: WorkspaceHookTrigger;
-    executionTarget?: HookExecutionTarget;
-    shell?: WorkspaceHookShell;
-    script?: string;
-    enabled?: boolean;
-    critical?: boolean;
-    switchOncePerSession?: boolean;
-    switchRunOnCreate?: boolean;
-    switchRunOnDelete?: boolean;
-    keepOpenOnCompletion?: boolean;
-    timeoutSeconds?: number;
-    dependencyIds?: string[];
-  }) => {
-    const db = getWorkspaceDb(args.workspacePath);
-    const set: Record<string, unknown> = { updatedAt: new Date() };
-    if (args.name !== undefined) set['name'] = args.name;
-    if (args.scope !== undefined) set['scope'] = args.scope;
-    if (args.trigger !== undefined) set['trigger'] = args.trigger;
-    if (args.executionTarget !== undefined) set['executionTarget'] = args.executionTarget;
-    if (args.shell !== undefined) set['shell'] = args.shell;
-    if (args.script !== undefined) set['script'] = args.script;
-    if (args.enabled !== undefined) set['enabled'] = args.enabled;
-    if (args.critical !== undefined) set['critical'] = args.critical;
-    if (args.switchOncePerSession !== undefined) set['switchOncePerSession'] = args.switchOncePerSession;
-    if (args.switchRunOnCreate !== undefined) set['switchRunOnCreate'] = args.switchRunOnCreate;
-    if (args.switchRunOnDelete !== undefined) set['switchRunOnDelete'] = args.switchRunOnDelete;
-    if (args.keepOpenOnCompletion !== undefined) set['keepOpenOnCompletion'] = args.keepOpenOnCompletion;
-    if (args.timeoutSeconds !== undefined) set['timeoutSeconds'] = args.timeoutSeconds;
-    db.update(hookDefinitions)
-      .set(set as never)
-      .where(eq(hookDefinitions.id, args.id))
-      .run();
-    if (args.dependencyIds !== undefined) {
-      db.delete(hookDependencies).where(eq(hookDependencies.hookId, args.id)).run();
-      for (const depId of args.dependencyIds) {
-        db.insert(hookDependencies).values({ hookId: args.id, dependsOnId: depId }).run();
-      }
-    }
-  });
-
-  handle(IPC.HOOK_DELETE, (_e, args: { workspacePath: string; id: string }) => {
-    const db = getWorkspaceDb(args.workspacePath);
-    db.delete(hookDefinitions).where(eq(hookDefinitions.id, args.id)).run();
-  });
+  // Hook CRUD/listing (HOOK_LIST/CREATE/UPDATE/DELETE/TOGGLE) live in
+  // ipc/hooks.ts now — they read/write local-hooks.json and merge in repo
+  // hooks, rather than the DB tables this file used to own directly.
 
   handle(IPC.HOOK_RUN_LOG, (_e, args: {
     workspacePath: string;

@@ -8,7 +8,6 @@
     "screenshots": "CAPTURE_SCREENSHOTS=1 SCREENSHOT_TARGET=../website/src/assets/screenshots wdio run wdio.conf.ts --spec specs/hero-screenshots.spec.ts"
   },
   "devDependencies": {
-    "@sproutgit/types": "workspace:*",
     "@types/mocha": "^10.0.10",
     "@wdio/cli": "^9.29.1",
     "@wdio/globals": "^9.29.1",
