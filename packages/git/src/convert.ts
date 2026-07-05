@@ -161,23 +161,30 @@ export async function convertToBareWithWorktree(
   // moving the directory back, then move it back to `sourceGitDir` — order
   // matters, since after the move `gitForPath(barePath)` no longer points
   // anywhere valid.
+  // Recorded once we know whether we're the ones turning the extension on,
+  // so rollback only unsets it if this function enabled it — a source repo
+  // that already had the extension on (prior migration, external tooling)
+  // must come back exactly as it was, not with the extension stripped.
+  let worktreeConfigWasAlreadyEnabled = false;
+
   const rollback = async (originalError: unknown): Promise<never> => {
     try {
       try {
         // Undo in the reverse order they were applied: clear the
-        // worktree-scoped `core.bare` before disabling the extension that
-        // makes `config.worktree` meaningful, then clear the extension flag
-        // and the shared-config fallback. `moveDir` below carries
-        // `config.worktree` back with the rest of the directory, so any of
-        // these left set would make the restored plain repo look bare too.
+        // worktree-scoped `core.bare` before touching the extension flag —
+        // `moveDir` below carries `config.worktree` back with the rest of
+        // the directory, so a leftover override would make the restored
+        // plain repo look bare too.
         await gitForPath(barePath).raw(['config', '--worktree', '--unset', 'core.bare']);
       } catch {
         // Not set — nothing to unset.
       }
-      try {
-        await gitForPath(barePath).raw(['config', '--unset', 'extensions.worktreeConfig']);
-      } catch {
-        // Not set — nothing to unset.
+      if (!worktreeConfigWasAlreadyEnabled) {
+        try {
+          await gitForPath(barePath).raw(['config', '--unset', 'extensions.worktreeConfig']);
+        } catch {
+          // Not set — nothing to unset.
+        }
       }
       try {
         await gitForPath(barePath).raw(['config', 'core.bare', 'false']);
@@ -202,6 +209,12 @@ export async function convertToBareWithWorktree(
     // tree". Enabling `extensions.worktreeConfig` first scopes the setting
     // to just this (the bare/root) worktree — see `git help worktree`'s
     // "CONFIGURATION FILE" section for the recommended pattern.
+    try {
+      const existing = await bareGit.raw(['config', '--get', 'extensions.worktreeConfig']);
+      worktreeConfigWasAlreadyEnabled = existing.trim() === 'true';
+    } catch {
+      worktreeConfigWasAlreadyEnabled = false;
+    }
     await bareGit.raw(['config', 'extensions.worktreeConfig', 'true']);
     await bareGit.raw(['config', '--worktree', 'core.bare', 'true']);
     try {
