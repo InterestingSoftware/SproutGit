@@ -11,6 +11,7 @@ export function AppSection() {
   const [checkingForUpdates, setCheckingForUpdates] = useState(false);
   const [releaseNotes, setReleaseNotes] = useState<string | null>(null);
   const [releaseNotesLoading, setReleaseNotesLoading] = useState(false);
+  const [updateError, setUpdateError] = useState<string | null>(null);
 
   const { updateState, setUpdateState } = useUpdateStore();
 
@@ -20,7 +21,7 @@ export function AppSection() {
   }, []);
 
   useEffect(() => {
-    const offChecking = api.onUpdateChecking(() => { setUpdateState({ status: 'checking' }); setCheckingForUpdates(true); });
+    const offChecking = api.onUpdateChecking(() => { setUpdateState({ status: 'checking' }); setCheckingForUpdates(true); setUpdateError(null); });
     const offAvailable = api.onUpdateAvailable((version: string) => {
       setUpdateState({ status: 'available', version });
       setCheckingForUpdates(false);
@@ -28,7 +29,12 @@ export function AppSection() {
     const offNotAvailable = api.onUpdateNotAvailable(() => { setUpdateState({ status: 'up-to-date' }); setCheckingForUpdates(false); });
     const offDownloading = api.onUpdateDownloading((progress: number) => setUpdateState({ status: 'downloading', progress }));
     const offReady = api.onUpdateReady(() => setUpdateState({ status: 'ready' }));
-    const offError = api.onUpdateError(() => { setUpdateState({ status: 'idle' }); setCheckingForUpdates(false); });
+    const offError = api.onUpdateError((message: string) => {
+      console.error('[update] auto-update failed:', message);
+      setUpdateError(message);
+      setUpdateState({ status: 'idle' });
+      setCheckingForUpdates(false);
+    });
     return () => { offChecking(); offAvailable(); offNotAvailable(); offDownloading(); offReady(); offError(); };
   }, [setUpdateState]);
 
@@ -97,13 +103,13 @@ export function AppSection() {
 
       {!import.meta.env.DEV && <div className="mt-4 pt-4 border-t border-(--sg-border) flex flex-col gap-3">
         <div className="flex items-center justify-between gap-3">
-          <span className="text-xs text-(--sg-text-dim)">
+          <span className={`text-xs ${updateState.status === 'idle' && updateError ? 'text-(--sg-danger)' : 'text-(--sg-text-dim)'}`}>
             {updateState.status === 'up-to-date' && 'SproutGit is up to date.'}
             {updateState.status === 'checking' && 'Checking for updates…'}
             {updateState.status === 'available' && `Update ${(updateState as { status: 'available'; version: string }).version} is available`}
             {updateState.status === 'downloading' && `Downloading… ${Math.round((updateState as { status: 'downloading'; progress: number }).progress)}%`}
             {updateState.status === 'ready' && 'Update downloaded and ready to install.'}
-            {updateState.status === 'idle' && 'Check for the latest version.'}
+            {updateState.status === 'idle' && (updateError ? `Update failed: ${updateError}` : 'Check for the latest version.')}
           </span>
           <div className="flex gap-2 shrink-0">
             {updateState.status === 'ready' ? (
