@@ -29,14 +29,15 @@ import {
   type StopReason,
 } from '@agentclientprotocol/sdk';
 import { IPC } from '@sproutgit/types';
-import type { AgentConfig, ChatStreamEvent } from '@sproutgit/types';
+import type { AgentConfig, ChatConfigOption, ChatStreamEvent } from '@sproutgit/types';
 import type { ConfigDb } from '@sproutgit/database';
 import { getAgentConfig } from '@sproutgit/database';
 import { handle } from './handle.js';
 import { log } from '../telemetry.js';
-import { translateSessionUpdate, translatePermissionRequest, type TurnState } from './chat-acp-events.js';
+import { translateSessionUpdate, translatePermissionRequest, toChatConfigOptions, type TurnState } from './chat-acp-events.js';
 import { resolveCommandPath } from './tool-test-helpers.js';
 import { commandSupportsIntegratedMode, getAcpLaunchSpec } from './agents.js';
+import { resolveAcpAdapterBin } from './acp-adapters.js';
 
 type ChatSession = {
   id: string;
@@ -48,6 +49,8 @@ type ChatSession = {
   pendingPermissions: Map<string, (outcome: RequestPermissionOutcome) => void>;
   /** True while a `session/prompt` call is in flight for this session. */
   busy: boolean;
+  /** Latest known set of agent-exposed session settings (model choice, etc.) — see ACP's `session/set_config_option`. */
+  configOptions: ChatConfigOption[];
 };
 
 const sessions = new Map<string, ChatSession>();
@@ -81,6 +84,9 @@ function createClientHandlers(getSession: () => ChatSession): Client {
     sessionUpdate: notification => {
       const session = getSession();
       const events = translateSessionUpdate(notification.update, session.turn);
+      for (const event of events) {
+        if (event.type === 'config_options') session.configOptions = event.options;
+      }
       const win = sessionWindows.get(session.id);
       for (const event of events) send(win, session.id, event);
     },
@@ -99,13 +105,17 @@ function createClientHandlers(getSession: () => ChatSession): Client {
  * exiting early (bad binary, missing auth, etc.) so a startup failure
  * surfaces as a clear rejection instead of a hang.
  */
-async function spawnAcpSession(agent: AgentConfig, worktreePath: string): Promise<ChatSession> {
+async function spawnAcpSession(agent: AgentConfig, worktreePath: string, userDataPath: string): Promise<ChatSession> {
   const spec = getAcpLaunchSpec(agent.command, agent.args);
   if (!spec) throw new Error('The configured agent does not support Agent Client Protocol (ACP) mode.');
 
-  const resolvedBin = await resolveCommandPath(spec.bin);
+  const resolvedBin = spec.npmPackage
+    ? await resolveAcpAdapterBin(userDataPath, spec)
+    : await resolveCommandPath(spec.bin);
   if (!resolvedBin) {
-    const hint = spec.npmPackage ? ` Install it with: npm install -g ${spec.npmPackage}` : '';
+    const hint = spec.npmPackage
+      ? ` Install it from Settings → AI Agent, or run: npm install -g ${spec.npmPackage}`
+      : '';
     throw new Error(`Could not find "${spec.bin}" (${spec.label}'s ACP mode) on PATH.${hint}`);
   }
 
@@ -134,6 +144,7 @@ async function spawnAcpSession(agent: AgentConfig, worktreePath: string): Promis
     turn: { messageId: null, messageIdSeq: { current: 0 } },
     pendingPermissions: new Map(),
     busy: false,
+    configOptions: [],
   };
 
   child.on('exit', code => {
@@ -154,8 +165,9 @@ async function spawnAcpSession(agent: AgentConfig, worktreePath: string): Promis
   await Promise.race([
     (async () => {
       await connection.initialize({ protocolVersion: PROTOCOL_VERSION, clientCapabilities: {} });
-      const { sessionId } = await connection.newSession({ cwd: worktreePath, mcpServers: [] });
-      session.acpSessionId = sessionId;
+      const newSessionResponse = await connection.newSession({ cwd: worktreePath, mcpServers: [] });
+      session.acpSessionId = newSessionResponse.sessionId;
+      session.configOptions = toChatConfigOptions(newSessionResponse.configOptions);
     })(),
     earlyExit,
   ]);
@@ -183,7 +195,7 @@ async function runTurn(session: ChatSession, prompt: string): Promise<void> {
   }
 }
 
-export function registerChatHandlers(configDb: ConfigDb, getWindow: () => BrowserWindow | null): void {
+export function registerChatHandlers(configDb: ConfigDb, getWindow: () => BrowserWindow | null, userDataPath: string): void {
   handle(IPC.CHAT_START, async (_e, args: { worktreePath: string; initialPrompt?: string }) => {
     const agent = getAgentConfig(configDb);
     if (!commandSupportsIntegratedMode(agent.command)) {
@@ -193,13 +205,13 @@ export function registerChatHandlers(configDb: ConfigDb, getWindow: () => Browse
       throw new Error('Integrated mode is not enabled for the configured agent. Switch to Integrated mode in Settings → AI Agent.');
     }
 
-    const session = await spawnAcpSession(agent, args.worktreePath);
+    const session = await spawnAcpSession(agent, args.worktreePath, userDataPath);
     sessions.set(session.id, session);
     const win = getWindow();
     if (win) sessionWindows.set(session.id, win);
 
     if (args.initialPrompt) void runTurn(session, args.initialPrompt);
-    return session.id;
+    return { sessionId: session.id, configOptions: session.configOptions };
   });
 
   handle(IPC.CHAT_SEND, (_e, args: { sessionId: string; prompt: string }) => {
@@ -207,6 +219,17 @@ export function registerChatHandlers(configDb: ConfigDb, getWindow: () => Browse
     if (!session) throw new Error(`No chat session found for id "${args.sessionId}".`);
     if (session.busy) throw new Error('The agent is still responding to the previous message.');
     void runTurn(session, args.prompt);
+  });
+
+  handle(IPC.CHAT_SET_CONFIG_OPTION, async (_e, args: { sessionId: string; configId: string; value: string | boolean }) => {
+    const session = sessions.get(args.sessionId);
+    if (!session) throw new Error(`No chat session found for id "${args.sessionId}".`);
+    const request = typeof args.value === 'boolean'
+      ? { sessionId: session.acpSessionId, configId: args.configId, value: args.value, type: 'boolean' as const }
+      : { sessionId: session.acpSessionId, configId: args.configId, value: args.value };
+    const response = await session.connection.setSessionConfigOption(request);
+    session.configOptions = toChatConfigOptions(response.configOptions);
+    return session.configOptions;
   });
 
   handle(IPC.CHAT_RESPOND_PERMISSION, (_e, args: { sessionId: string; requestId: string; optionId: string }) => {

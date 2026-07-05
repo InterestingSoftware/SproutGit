@@ -11,19 +11,23 @@
  * `session/prompt` call resolves.
  *
  * `user_message_chunk` (turn replay), `agent_thought_chunk` (extended
- * thinking), and plan/mode/config/session-info/usage updates carry no
+ * thinking), and plan/mode/session-info/usage updates carry no
  * renderer-visible content in the old Claude-only shape either, so they're
- * dropped here too — this is parity, not a regression.
+ * dropped here too — this is parity, not a regression. `config_option_update`
+ * is the one exception: it surfaces agent-exposed session settings (model
+ * choice being the main example) that the old shape had no equivalent for.
  */
 import type {
   ContentBlock,
   RequestPermissionRequest,
+  SessionConfigOption,
+  SessionConfigSelectOptions,
   SessionUpdate,
   ToolCall,
   ToolCallContent,
   ToolCallUpdate,
 } from '@agentclientprotocol/sdk';
-import type { ChatPermissionOption, ChatStreamEvent, ChatToolUse } from '@sproutgit/types';
+import type { ChatConfigOption, ChatConfigOptionValue, ChatPermissionOption, ChatStreamEvent, ChatToolUse } from '@sproutgit/types';
 
 /** Per-turn state threaded through translateSessionUpdate() calls for a single `session/prompt` turn. */
 export type TurnState = {
@@ -95,6 +99,8 @@ export function translateSessionUpdate(update: SessionUpdate, turn: TurnState): 
       });
       return events;
     }
+    case 'config_option_update':
+      return [{ type: 'config_options', options: toChatConfigOptions(update.configOptions) }];
     default:
       return [];
   }
@@ -104,4 +110,37 @@ export function translateSessionUpdate(update: SessionUpdate, turn: TurnState): 
 export function translatePermissionRequest(requestId: string, params: RequestPermissionRequest): ChatStreamEvent {
   const options: ChatPermissionOption[] = params.options.map(o => ({ id: o.optionId, name: o.name, kind: o.kind }));
   return { type: 'permission_request', requestId, toolUse: toChatToolUse(params.toolCall), options };
+}
+
+/** Flattens ACP's optionally-grouped select values into a single list — SproutGit doesn't render option groups separately (yet). */
+function flattenSelectOptions(options: SessionConfigSelectOptions): ChatConfigOptionValue[] {
+  if (options.length === 0) return [];
+  if ('group' in options[0]!) {
+    return (options as Extract<SessionConfigSelectOptions, { group: string }[]>).flatMap(g =>
+      g.options.map(o => ({ id: o.value, name: o.name, ...(o.description ? { description: o.description } : {}), group: g.name })),
+    );
+  }
+  return (options as Extract<SessionConfigSelectOptions, { value: string }[]>).map(o => ({
+    id: o.value,
+    name: o.name,
+    ...(o.description ? { description: o.description } : {}),
+  }));
+}
+
+function toChatConfigOption(option: SessionConfigOption): ChatConfigOption {
+  const base = {
+    id: option.id,
+    name: option.name,
+    ...(option.description ? { description: option.description } : {}),
+    ...(option.category ? { category: option.category } : {}),
+  };
+  if (option.type === 'boolean') {
+    return { ...base, kind: 'boolean', currentValue: option.currentValue };
+  }
+  return { ...base, kind: 'select', currentValue: option.currentValue, values: flattenSelectOptions(option.options) };
+}
+
+/** Translates the full config-option set ACP returns from `session/new`, `session/set_config_option`, and `config_option_update`. */
+export function toChatConfigOptions(options: SessionConfigOption[] | null | undefined): ChatConfigOption[] {
+  return (options ?? []).map(toChatConfigOption);
 }

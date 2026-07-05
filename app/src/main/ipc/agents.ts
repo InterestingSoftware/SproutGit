@@ -11,7 +11,7 @@
 import type { BrowserWindow } from 'electron';
 import { execFile } from 'node:child_process';
 import { IPC } from '@sproutgit/types';
-import type { AgentConfig, IssueTrackerPattern, ToolTestResult } from '@sproutgit/types';
+import type { AcpAdapterStatus, AgentConfig, IssueTrackerPattern, ToolTestResult } from '@sproutgit/types';
 import { openWorkspaceDb, eq, getAgentConfig, saveAgentConfig, type ConfigDb } from '@sproutgit/database';
 import { worktreeMetadata } from '@sproutgit/database/schema/workspace';
 import { readIssueTrackerFile } from '@sproutgit/git';
@@ -19,6 +19,7 @@ import { join, basename } from 'path';
 import { manager, sessionWindows } from './terminal.js';
 import { handle } from './handle.js';
 import { resolveCommandPath, splitCommand, truncate, okResult, errResult } from './tool-test-helpers.js';
+import { installAcpAdapter, resolveAcpAdapterBin } from './acp-adapters.js';
 
 function getWorkspaceDb(workspacePath: string) {
   const dbPath = join(workspacePath, '.sproutgit', 'state.db');
@@ -59,6 +60,8 @@ interface AcpPreset {
    * what to install.
    */
   npmPackage?: string;
+  /** Rough download size of npmPackage's platform binary, for install-confirmation copy. */
+  approxSizeMb?: number;
   /** Builds the argv to spawn in ACP mode from the user's configured command. */
   build(ctx: { configuredBin: string; configuredArgs: string[] }): AcpLaunchSpec;
 }
@@ -84,6 +87,9 @@ const ACP_PRESETS: readonly AcpPreset[] = [
     match: token => token === 'claude' || token === 'claude-code',
     label: 'Claude Code',
     npmPackage: '@agentclientprotocol/claude-agent-acp',
+    // The adapter's platform optionalDependency is a self-contained,
+    // compiled Claude Code binary (not a thin wrapper) — hence the size.
+    approxSizeMb: 220,
     build: () => ({ bin: 'claude-agent-acp', args: [] }),
   },
   {
@@ -95,6 +101,8 @@ const ACP_PRESETS: readonly AcpPreset[] = [
     match: token => token === 'codex',
     label: 'Codex CLI',
     npmPackage: '@agentclientprotocol/codex-acp',
+    // Same story as Claude's adapter: bundles a full compiled Codex binary.
+    approxSizeMb: 245,
     build: () => ({ bin: 'codex-acp', args: [] }),
   },
   {
@@ -137,12 +145,17 @@ export function commandSupportsIntegratedMode(command: string): boolean {
  * ignores the configured command entirely and returns that adapter's own
  * binary name (still subject to PATH resolution by the caller).
  */
-export function getAcpLaunchSpec(command: string, args: string[]): (AcpLaunchSpec & { label: string; npmPackage?: string }) | null {
+export type AcpPresetInfo = AcpLaunchSpec & { label: string; npmPackage?: string; approxSizeMb?: number };
+
+export function getAcpLaunchSpec(command: string, args: string[]): AcpPresetInfo | null {
   const preset = findAcpPreset(command);
   if (!preset) return null;
   const { bin: configuredBin, args: leadingArgs } = splitCommand(command);
   const launch = preset.build({ configuredBin, configuredArgs: [...leadingArgs, ...args] });
-  return preset.npmPackage ? { ...launch, label: preset.label, npmPackage: preset.npmPackage } : { ...launch, label: preset.label };
+  const info: AcpPresetInfo = { ...launch, label: preset.label };
+  if (preset.npmPackage) info.npmPackage = preset.npmPackage;
+  if (preset.approxSizeMb) info.approxSizeMb = preset.approxSizeMb;
+  return info;
 }
 
 async function buildAgentEnv(args: { workspacePath: string; worktreePath: string }): Promise<Record<string, string>> {
@@ -181,11 +194,27 @@ async function buildAgentEnv(args: { workspacePath: string; worktreePath: string
   };
 }
 
-export function registerAgentHandlers(configDb: ConfigDb, getWindow: () => BrowserWindow | null): void {
+export function registerAgentHandlers(configDb: ConfigDb, getWindow: () => BrowserWindow | null, userDataPath: string): void {
   handle(IPC.AGENT_GET, () => getAgentConfig(configDb));
 
   handle(IPC.AGENT_SAVE, (_e, config: AgentConfig) => {
     saveAgentConfig(configDb, config);
+  });
+
+  // ── ACP adapter install (Claude Code / Codex CLI) ───────────────────────
+  handle(IPC.AGENT_ACP_ADAPTER_STATUS, async (): Promise<AcpAdapterStatus | null> => {
+    const agent = getAgentConfig(configDb);
+    const spec = getAcpLaunchSpec(agent.command, agent.args);
+    if (!spec?.npmPackage) return null;
+    const resolved = await resolveAcpAdapterBin(userDataPath, spec);
+    return { npmPackage: spec.npmPackage, label: spec.label, bin: spec.bin, installed: resolved !== null, approxSizeMb: spec.approxSizeMb ?? 0 };
+  });
+
+  handle(IPC.AGENT_ACP_ADAPTER_INSTALL, async (_e, npmPackage: string) => {
+    const win = getWindow();
+    await installAcpAdapter(userDataPath, npmPackage, event => {
+      if (win && !win.isDestroyed()) win.webContents.send(IPC.EVENT_AGENT_ACP_ADAPTER_INSTALL, event);
+    });
   });
 
   handle(IPC.AGENT_LAUNCH, async (_e, args: {

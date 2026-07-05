@@ -4,11 +4,12 @@ import { render, screen, cleanup, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type { ChatSessionEvent, ChatSessionExitEvent } from '@sproutgit/types';
 
-const { chatStartMock, chatSendMock, chatStopMock, chatRespondPermissionMock, onChatStreamMock, onChatExitMock } = vi.hoisted(() => ({
+const { chatStartMock, chatSendMock, chatStopMock, chatRespondPermissionMock, chatSetConfigOptionMock, onChatStreamMock, onChatExitMock } = vi.hoisted(() => ({
   chatStartMock: vi.fn(),
   chatSendMock: vi.fn(),
   chatStopMock: vi.fn(),
   chatRespondPermissionMock: vi.fn(),
+  chatSetConfigOptionMock: vi.fn(),
   onChatStreamMock: vi.fn(),
   onChatExitMock: vi.fn(),
 }));
@@ -19,6 +20,7 @@ vi.mock('../../api.js', () => ({
     chatSend: (...args: unknown[]) => chatSendMock(...args),
     chatStop: (...args: unknown[]) => chatStopMock(...args),
     chatRespondPermission: (...args: unknown[]) => chatRespondPermissionMock(...args),
+    chatSetConfigOption: (...args: unknown[]) => chatSetConfigOptionMock(...args),
     onChatStream: (...args: unknown[]) => onChatStreamMock(...args),
     onChatExit: (...args: unknown[]) => onChatExitMock(...args),
   },
@@ -70,7 +72,7 @@ describe('ChatPanel', () => {
 
   it('sending a prompt calls chatStart with the worktreePath and prompt, and renders a user bubble', async () => {
     const user = userEvent.setup();
-    chatStartMock.mockResolvedValue('session-1');
+    chatStartMock.mockResolvedValue({ sessionId: 'session-1', configOptions: [] });
     render(<ChatPanel worktreePath="/ws/wt" />);
 
     await user.type(screen.getByTestId('input-chat-prompt'), 'Fix the bug');
@@ -84,7 +86,7 @@ describe('ChatPanel', () => {
 
   it('a second message on the same session calls chatSend (not chatStart again) with the existing session id', async () => {
     const user = userEvent.setup();
-    chatStartMock.mockResolvedValue('session-1');
+    chatStartMock.mockResolvedValue({ sessionId: 'session-1', configOptions: [] });
     render(<ChatPanel worktreePath="/ws/wt" />);
 
     await user.type(screen.getByTestId('input-chat-prompt'), 'first');
@@ -110,7 +112,7 @@ describe('ChatPanel', () => {
 
   it('renders streamed assistant_text_delta events appended into the same message bubble', async () => {
     const user = userEvent.setup();
-    chatStartMock.mockResolvedValue('session-1');
+    chatStartMock.mockResolvedValue({ sessionId: 'session-1', configOptions: [] });
     render(<ChatPanel worktreePath="/ws/wt" />);
 
     await user.type(screen.getByTestId('input-chat-prompt'), 'hi');
@@ -128,7 +130,7 @@ describe('ChatPanel', () => {
 
   it('ignores stream events for a stale/mismatched session id', async () => {
     const user = userEvent.setup();
-    chatStartMock.mockResolvedValue('session-1');
+    chatStartMock.mockResolvedValue({ sessionId: 'session-1', configOptions: [] });
     render(<ChatPanel worktreePath="/ws/wt" />);
 
     await user.type(screen.getByTestId('input-chat-prompt'), 'hi');
@@ -144,7 +146,7 @@ describe('ChatPanel', () => {
 
   it('renders a tool_use block and attaches its tool_result once it arrives', async () => {
     const user = userEvent.setup();
-    chatStartMock.mockResolvedValue('session-1');
+    chatStartMock.mockResolvedValue({ sessionId: 'session-1', configOptions: [] });
     render(<ChatPanel worktreePath="/ws/wt" />);
 
     await user.type(screen.getByTestId('input-chat-prompt'), 'read a file');
@@ -168,7 +170,7 @@ describe('ChatPanel', () => {
 
   it('renders a permission request and sends the chosen option back over IPC', async () => {
     const user = userEvent.setup();
-    chatStartMock.mockResolvedValue('session-1');
+    chatStartMock.mockResolvedValue({ sessionId: 'session-1', configOptions: [] });
     render(<ChatPanel worktreePath="/ws/wt" />);
 
     await user.type(screen.getByTestId('input-chat-prompt'), 'delete the temp files');
@@ -198,9 +200,54 @@ describe('ChatPanel', () => {
     await waitFor(() => expect(screen.queryByTestId('chat-permission-request')).toBeNull());
   });
 
+  it('renders a model config option from chatStart and updates it via chatSetConfigOption', async () => {
+    const user = userEvent.setup();
+    chatStartMock.mockResolvedValue({
+      sessionId: 'session-1',
+      configOptions: [
+        {
+          id: 'model',
+          name: 'Model',
+          category: 'model',
+          kind: 'select',
+          currentValue: 'claude-opus-4-8',
+          values: [
+            { id: 'claude-opus-4-8', name: 'Opus 4.8' },
+            { id: 'claude-sonnet-5', name: 'Sonnet 5' },
+          ],
+        },
+      ],
+    });
+    chatSetConfigOptionMock.mockResolvedValue([
+      {
+        id: 'model',
+        name: 'Model',
+        category: 'model',
+        kind: 'select',
+        currentValue: 'claude-sonnet-5',
+        values: [
+          { id: 'claude-opus-4-8', name: 'Opus 4.8' },
+          { id: 'claude-sonnet-5', name: 'Sonnet 5' },
+        ],
+      },
+    ]);
+    render(<ChatPanel worktreePath="/ws/wt" />);
+
+    await user.type(screen.getByTestId('input-chat-prompt'), 'hi');
+    await user.click(screen.getByTestId('btn-chat-send'));
+
+    await waitFor(() => expect(screen.getByTestId('chat-config-select-model')).toBeTruthy());
+    expect((screen.getByTestId('chat-config-select-model') as HTMLSelectElement).value).toBe('claude-opus-4-8');
+
+    await user.selectOptions(screen.getByTestId('chat-config-select-model'), 'claude-sonnet-5');
+
+    expect(chatSetConfigOptionMock).toHaveBeenCalledWith({ sessionId: 'session-1', configId: 'model', value: 'claude-sonnet-5' });
+    await waitFor(() => expect((screen.getByTestId('chat-config-select-model') as HTMLSelectElement).value).toBe('claude-sonnet-5'));
+  });
+
   it('shows the error banner when a result event reports failure', async () => {
     const user = userEvent.setup();
-    chatStartMock.mockResolvedValue('session-1');
+    chatStartMock.mockResolvedValue({ sessionId: 'session-1', configOptions: [] });
     render(<ChatPanel worktreePath="/ws/wt" />);
 
     await user.type(screen.getByTestId('input-chat-prompt'), 'hi');
@@ -228,7 +275,7 @@ describe('ChatPanel', () => {
 
   it('resets the transcript when worktreePath changes', async () => {
     const user = userEvent.setup();
-    chatStartMock.mockResolvedValue('session-1');
+    chatStartMock.mockResolvedValue({ sessionId: 'session-1', configOptions: [] });
     const { rerender } = render(<ChatPanel worktreePath="/ws/wt-a" />);
 
     await user.type(screen.getByTestId('input-chat-prompt'), 'hi from A');
@@ -242,7 +289,7 @@ describe('ChatPanel', () => {
 
   it('calls chatStop for the active session on unmount', async () => {
     const user = userEvent.setup();
-    chatStartMock.mockResolvedValue('session-1');
+    chatStartMock.mockResolvedValue({ sessionId: 'session-1', configOptions: [] });
     chatStopMock.mockResolvedValue(undefined);
     const { unmount } = render(<ChatPanel worktreePath="/ws/wt" />);
 

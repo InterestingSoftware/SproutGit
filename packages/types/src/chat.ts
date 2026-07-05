@@ -47,6 +47,24 @@ export type ChatPermissionRequest = {
   options: ChatPermissionOption[];
 };
 
+/** One selectable value of a `select`-kind session config option (ACP `SessionConfigSelectOption`). */
+export type ChatConfigOptionValue = {
+  id: string;
+  name: string;
+  description?: string;
+  /** Group label, if the agent grouped its options (ACP `SessionConfigSelectGroup`) — flattened here for simplicity. */
+  group?: string;
+};
+
+/**
+ * A session-scoped setting the agent exposes generically via ACP's
+ * `session/set_config_option` mechanism — model choice is the main example
+ * (category `"model"`), but agents can expose others (e.g. reasoning effort).
+ */
+export type ChatConfigOption =
+  | { id: string; name: string; description?: string; category?: string; kind: 'select'; currentValue: string; values: ChatConfigOptionValue[] }
+  | { id: string; name: string; description?: string; category?: string; kind: 'boolean'; currentValue: boolean };
+
 /** Normalized event emitted by the main process as it translates the agent's ACP session updates. */
 export type ChatStreamEvent =
   | { type: 'assistant_text_delta'; messageId: string; text: string }
@@ -55,6 +73,7 @@ export type ChatStreamEvent =
   | { type: 'tool_use'; messageId: string; toolUse: ChatToolUse }
   | { type: 'tool_result'; messageId: string; toolUseId: string; result: string; isError: boolean }
   | { type: 'permission_request'; requestId: string; toolUse: ChatToolUse; options: ChatPermissionOption[] }
+  | { type: 'config_options'; options: ChatConfigOption[] }
   | { type: 'result'; success: boolean; summary: string }
   | { type: 'error'; message: string };
 

@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import type { RequestPermissionRequest, SessionUpdate } from '@agentclientprotocol/sdk';
-import { translatePermissionRequest, translateSessionUpdate, type TurnState } from '../chat-acp-events.js';
+import type { RequestPermissionRequest, SessionConfigOption, SessionUpdate } from '@agentclientprotocol/sdk';
+import { translatePermissionRequest, translateSessionUpdate, toChatConfigOptions, type TurnState } from '../chat-acp-events.js';
 
 function turn(): TurnState {
   return { messageId: null, messageIdSeq: { current: 0 } };
@@ -137,5 +137,88 @@ describe('translatePermissionRequest', () => {
         { id: 'reject', name: 'Reject', kind: 'reject_once' },
       ],
     });
+  });
+});
+
+describe('toChatConfigOptions', () => {
+  it('returns an empty array for a missing or empty option list', () => {
+    expect(toChatConfigOptions(undefined)).toEqual([]);
+    expect(toChatConfigOptions(null)).toEqual([]);
+    expect(toChatConfigOptions([])).toEqual([]);
+  });
+
+  it('translates a flat select option (model choice)', () => {
+    const options: SessionConfigOption[] = [
+      {
+        type: 'select',
+        id: 'model',
+        name: 'Model',
+        category: 'model',
+        currentValue: 'claude-opus-4-8',
+        options: [
+          { value: 'claude-opus-4-8', name: 'Opus 4.8' },
+          { value: 'claude-sonnet-5', name: 'Sonnet 5' },
+        ],
+      },
+    ];
+    expect(toChatConfigOptions(options)).toEqual([
+      {
+        id: 'model',
+        name: 'Model',
+        category: 'model',
+        kind: 'select',
+        currentValue: 'claude-opus-4-8',
+        values: [
+          { id: 'claude-opus-4-8', name: 'Opus 4.8' },
+          { id: 'claude-sonnet-5', name: 'Sonnet 5' },
+        ],
+      },
+    ]);
+  });
+
+  it('flattens a grouped select option, attaching the group name to each value', () => {
+    const options: SessionConfigOption[] = [
+      {
+        type: 'select',
+        id: 'model',
+        name: 'Model',
+        currentValue: 'claude-sonnet-5',
+        options: [
+          { group: 'anthropic', name: 'Anthropic', options: [{ value: 'claude-sonnet-5', name: 'Sonnet 5' }] },
+          { group: 'openai', name: 'OpenAI', options: [{ value: 'gpt-5', name: 'GPT-5' }] },
+        ],
+      },
+    ];
+    expect(toChatConfigOptions(options)[0]).toMatchObject({
+      kind: 'select',
+      values: [
+        { id: 'claude-sonnet-5', name: 'Sonnet 5', group: 'Anthropic' },
+        { id: 'gpt-5', name: 'GPT-5', group: 'OpenAI' },
+      ],
+    });
+  });
+
+  it('translates a boolean option', () => {
+    const options: SessionConfigOption[] = [
+      { type: 'boolean', id: 'fast-mode', name: 'Fast mode', currentValue: true },
+    ];
+    expect(toChatConfigOptions(options)).toEqual([
+      { id: 'fast-mode', name: 'Fast mode', kind: 'boolean', currentValue: true },
+    ]);
+  });
+});
+
+describe('translateSessionUpdate — config_option_update', () => {
+  it('emits a config_options event with the full updated option set', () => {
+    const t = turn();
+    const update: SessionUpdate = {
+      sessionUpdate: 'config_option_update',
+      configOptions: [{ type: 'boolean', id: 'fast-mode', name: 'Fast mode', currentValue: false }],
+    };
+    expect(translateSessionUpdate(update, t)).toEqual([
+      { type: 'config_options', options: [{ id: 'fast-mode', name: 'Fast mode', kind: 'boolean', currentValue: false }] },
+    ]);
+    // config_option_update never opens an assistant message bubble.
+    expect(t.messageId).toBeNull();
   });
 });

@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
-import { Bot, User, Wrench, Send, Loader2, ShieldQuestion } from 'lucide-react';
+import { Bot, User, Wrench, Send, Loader2, ShieldQuestion, SlidersHorizontal } from 'lucide-react';
 import { api } from '../api.js';
-import type { ChatMessage, ChatPermissionRequest, ChatStreamEvent, ChatToolUse } from '@sproutgit/types';
+import type { ChatConfigOption, ChatMessage, ChatPermissionRequest, ChatStreamEvent, ChatToolUse } from '@sproutgit/types';
 
 type Props = {
   worktreePath: string;
@@ -21,6 +21,7 @@ export function ChatPanel({ worktreePath }: Props) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [pendingPermission, setPendingPermission] = useState<ChatPermissionRequest | null>(null);
+  const [configOptions, setConfigOptions] = useState<ChatConfigOption[]>([]);
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const sessionIdRef = useRef<string | null>(null);
 
@@ -30,6 +31,7 @@ export function ChatPanel({ worktreePath }: Props) {
     sessionIdRef.current = null;
     setError(null);
     setPendingPermission(null);
+    setConfigOptions([]);
   }, [worktreePath]);
 
   useEffect(() => {
@@ -73,6 +75,9 @@ export function ChatPanel({ worktreePath }: Props) {
       case 'permission_request':
         setPendingPermission({ requestId: event.requestId, toolUse: event.toolUse, options: event.options });
         break;
+      case 'config_options':
+        setConfigOptions(event.options);
+        break;
       case 'result':
         setBusy(false);
         if (!event.success) setError(event.summary || 'The agent reported an error.');
@@ -104,13 +109,24 @@ export function ChatPanel({ worktreePath }: Props) {
     setBusy(true);
     try {
       if (!sessionIdRef.current) {
-        const id = await api.chatStart({ worktreePath, initialPrompt: trimmed });
-        sessionIdRef.current = id;
+        const { sessionId, configOptions: initialConfigOptions } = await api.chatStart({ worktreePath, initialPrompt: trimmed });
+        sessionIdRef.current = sessionId;
+        setConfigOptions(initialConfigOptions);
       } else {
         await api.chatSend({ sessionId: sessionIdRef.current, prompt: trimmed });
       }
     } catch (err) {
       setBusy(false);
+      setError(err instanceof Error ? err.message : String(err));
+    }
+  }
+
+  async function setConfigOption(configId: string, value: string | boolean) {
+    if (!sessionIdRef.current) return;
+    try {
+      const updated = await api.chatSetConfigOption({ sessionId: sessionIdRef.current, configId, value });
+      setConfigOptions(updated);
+    } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     }
   }
@@ -149,6 +165,9 @@ export function ChatPanel({ worktreePath }: Props) {
       </div>
 
       <div className="shrink-0 border-t border-(--sg-border) bg-(--sg-surface) p-3">
+        {configOptions.length > 0 && (
+          <ConfigOptionsBar options={configOptions} onChange={(configId, value) => void setConfigOption(configId, value)} />
+        )}
         <div className="flex items-end gap-2">
           <textarea
             value={prompt}
@@ -251,6 +270,47 @@ function PermissionRequestCard({ request, onRespond }: { request: ChatPermission
           </button>
         ))}
       </div>
+    </div>
+  );
+}
+
+/**
+ * Agent-exposed session settings (ACP `session/set_config_option`) — model
+ * choice is the main example (category `"model"`), but this renders any
+ * select/boolean option generically since agents can expose others too.
+ */
+function ConfigOptionsBar({ options, onChange }: { options: ChatConfigOption[]; onChange: (configId: string, value: string | boolean) => void }) {
+  return (
+    <div className="mb-2 flex flex-wrap items-center gap-2" data-testid="chat-config-options">
+      <SlidersHorizontal size={11} className="text-(--sg-text-faint)" />
+      {options.map(option => (
+        option.kind === 'select' ? (
+          <label key={option.id} className="flex items-center gap-1 text-[11px] text-(--sg-text-dim)" title={option.description}>
+            {option.name}:
+            <select
+              value={option.currentValue}
+              onChange={e => onChange(option.id, e.target.value)}
+              className="rounded border border-(--sg-input-border) bg-(--sg-input-bg) px-1.5 py-0.5 text-[11px] text-(--sg-text)"
+              data-testid={`chat-config-select-${option.id}`}
+            >
+              {option.values.map(v => (
+                <option key={v.id} value={v.id}>{v.name}</option>
+              ))}
+            </select>
+          </label>
+        ) : (
+          <button
+            key={option.id}
+            type="button"
+            title={option.description}
+            className={`rounded border px-2 py-0.5 text-[11px] cursor-pointer ${option.currentValue ? 'border-(--sg-primary) text-(--sg-primary)' : 'border-(--sg-border) text-(--sg-text-dim)'}`}
+            onClick={() => onChange(option.id, !option.currentValue)}
+            data-testid={`chat-config-toggle-${option.id}`}
+          >
+            {option.name}
+          </button>
+        )
+      ))}
     </div>
   );
 }

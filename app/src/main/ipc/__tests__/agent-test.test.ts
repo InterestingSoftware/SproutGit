@@ -32,7 +32,7 @@ type Handler = (event: unknown) => Promise<ToolTestResult>;
 
 function getHandler(configDb: ConfigDb): Handler {
   handleMock.mockClear();
-  registerAgentHandlers(configDb, () => null);
+  registerAgentHandlers(configDb, () => null, '/tmp/sg-test-userdata');
   const call = handleMock.mock.calls.find(c => c[0] === IPC.AGENT_TEST);
   if (!call) throw new Error(`${IPC.AGENT_TEST} handler was not registered`);
   return call[1] as Handler;
@@ -79,6 +79,7 @@ describe('getAcpLaunchSpec', () => {
       args: [],
       label: 'Claude Code',
       npmPackage: '@agentclientprotocol/claude-agent-acp',
+      approxSizeMb: 220,
     });
   });
 
@@ -88,6 +89,7 @@ describe('getAcpLaunchSpec', () => {
       args: [],
       label: 'Codex CLI',
       npmPackage: '@agentclientprotocol/codex-acp',
+      approxSizeMb: 245,
     });
   });
 

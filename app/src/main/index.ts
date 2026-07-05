@@ -255,9 +255,9 @@ app.whenReady().then(() => {
   if (isE2EMode) log.info('[e2e] github handlers ok');
   registerHookHandlers(getMainWindow);
   if (isE2EMode) log.info('[e2e] hook handlers ok');
-  registerAgentHandlers(configDb, getMainWindow);
+  registerAgentHandlers(configDb, getMainWindow, userDataPath);
   if (isE2EMode) log.info('[e2e] agent handlers ok');
-  registerChatHandlers(configDb, getMainWindow);
+  registerChatHandlers(configDb, getMainWindow, userDataPath);
   if (isE2EMode) log.info('[e2e] chat handlers ok');
   registerCommitMessageGeneratorHandlers();
   if (isE2EMode) log.info('[e2e] commit message generator handlers ok');

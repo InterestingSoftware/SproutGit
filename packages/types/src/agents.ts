@@ -33,3 +33,26 @@ export type AgentPreset = {
   /** Whether this preset's command is recognized as supporting Integrated (structured streaming) mode. */
   supportsIntegrated: boolean;
 };
+
+/**
+ * Whether the configured agent's ACP mode needs a separate adapter package
+ * installed (e.g. Claude Code, Codex CLI) and, if so, whether it's already
+ * resolvable (on PATH or previously installed by SproutGit itself).
+ * `null` when the configured command doesn't use a separate adapter at all
+ * (native ACP support via a flag/subcommand, e.g. Gemini/Kiro/Cursor).
+ */
+export type AcpAdapterStatus = {
+  npmPackage: string;
+  label: string;
+  bin: string;
+  installed: boolean;
+  /** Rough download size, for the install button's confirmation copy. */
+  approxSizeMb: number;
+};
+
+/** Pushed to the renderer while an ACP adapter install is in progress. */
+export type AcpAdapterInstallEvent = {
+  npmPackage: string;
+  status: 'progress' | 'done' | 'error';
+  message: string;
+};
