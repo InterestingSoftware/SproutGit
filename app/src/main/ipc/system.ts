@@ -5,39 +5,15 @@ import { getGitConfig, setGitConfig } from "@sproutgit/git/config";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { homedir } from "node:os";
-import { resolveMacAppBundleCli, splitCommand } from "./tool-test-helpers.js";
+import { resolveCommandPath, splitCommand } from "./tool-test-helpers.js";
 
 const exec = promisify(execFile);
 
-// PATH that includes common install locations so Electron's restricted env finds tools.
-const SAFE_PATH = [
-  "/usr/local/bin",
-  "/opt/homebrew/bin",
-  "/opt/homebrew/sbin",
-  "/usr/bin",
-  "/bin",
-  "/usr/sbin",
-  "/sbin",
-  process.env.PATH ?? "",
-].join(":");
-
 // ── Shell detection ───────────────────────────────────────────────────────────
 
-/** Resolve the full path of a command, or return null if not found (or, on macOS, inside a known .app bundle — see resolveMacAppBundleCli). */
+/** Resolve the full path of a command, or return null if not found (or, on macOS, inside a known .app bundle — see resolveCommandPath). */
 async function resolveCommand(cmd: string): Promise<string | null> {
-  const whichCmd = process.platform === "win32" ? "where" : "which";
-  const envOpts =
-    process.platform !== "win32"
-      ? { env: { ...process.env, PATH: SAFE_PATH } }
-      : {};
-  try {
-    const { stdout } = await exec(whichCmd, [cmd], envOpts);
-    const resolved = stdout.trim().split("\n")[0]?.trim() || null;
-    if (resolved) return resolved;
-  } catch {
-    // fall through to the bundle-path fallback below
-  }
-  return resolveMacAppBundleCli(cmd);
+  return resolveCommandPath(cmd);
 }
 
 const SHELL_INFO: Array<{ name: string; cmd: string }> = [

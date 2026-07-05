@@ -16,12 +16,10 @@ type Props = {
 export function PublishDialog({ open, activeWorktree, pushStatus, onClose, onToast, onPublished }: Props) {
   const dialogRef = useRef<HTMLDialogElement>(null);
 
-  const initialRemotes = pushStatus?.remotes && pushStatus.remotes.length > 0 ? pushStatus.remotes : ['origin'];
-  const initialRemote = pushStatus?.suggestedRemote ?? initialRemotes[0] ?? 'origin';
-
-  const [remote, setRemote] = useState(initialRemote);
-  const [publishing, setPublishing] = useState(false);
   const remotes = pushStatus?.remotes && pushStatus.remotes.length > 0 ? pushStatus.remotes : ['origin'];
+
+  const [remote, setRemote] = useState(pushStatus?.suggestedRemote ?? remotes[0] ?? 'origin');
+  const [publishing, setPublishing] = useState(false);
 
   useEffect(() => {
     const dialog = dialogRef.current;

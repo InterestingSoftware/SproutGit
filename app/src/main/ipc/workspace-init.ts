@@ -16,6 +16,7 @@ import { cp, mkdir, rename, rm } from 'fs/promises';
 import { initBareRepo, cloneBareRepo, convertToBareWithWorktree } from '@sproutgit/git';
 import { openWorkspaceDb } from '@sproutgit/database';
 import { handle } from './handle.js';
+import { workspaceDbPath as stateDbPath } from './workspace.js';
 
 function sproutDir(workspacePath: string) {
   return join(workspacePath, '.sproutgit');
@@ -25,9 +26,6 @@ function rootPath(workspacePath: string) {
 }
 function worktreesPath(workspacePath: string) {
   return join(sproutDir(workspacePath), 'worktrees');
-}
-function stateDbPath(workspacePath: string) {
-  return join(sproutDir(workspacePath), 'state.db');
 }
 function metadataPath(workspacePath: string) {
   return join(sproutDir(workspacePath), 'metadata');

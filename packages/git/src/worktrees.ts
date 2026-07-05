@@ -5,7 +5,7 @@ import {
   validateBranchName,
 } from '@sproutgit/types';
 import { canonicalize, isPathWithin } from '@sproutgit/paths';
-import { normalize, resolve, sep } from 'node:path';
+import { normalize } from 'node:path';
 import { gitForPath } from './client.js';
 import { withWorktreeLock } from './worktree-lock.js';
 
@@ -92,9 +92,7 @@ export async function createManagedWorktree(
   // Defense in depth: validateBranchName already rejects '..' and path
   // separators that would escape managedWorktreesPath, but re-verify the
   // resolved path stays contained in case validation rules ever change.
-  const resolvedRoot = resolve(managedWorktreesPath) + sep;
-  const resolvedTarget = resolve(worktreePath);
-  if (!(resolvedTarget + sep).startsWith(resolvedRoot)) {
+  if (!isPathWithin(worktreePath, managedWorktreesPath)) {
     throw new Error('Worktree path must stay within the managed worktrees directory.');
   }
 
@@ -125,9 +123,7 @@ export async function addWorktreeForExistingBranch(
 
   const worktreePath = `${managedWorktreesPath}/${branch}`;
 
-  const resolvedRoot = resolve(managedWorktreesPath) + sep;
-  const resolvedTarget = resolve(worktreePath);
-  if (!(resolvedTarget + sep).startsWith(resolvedRoot)) {
+  if (!isPathWithin(worktreePath, managedWorktreesPath)) {
     throw new Error('Worktree path must stay within the managed worktrees directory.');
   }
 

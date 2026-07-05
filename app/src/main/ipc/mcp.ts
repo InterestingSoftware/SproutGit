@@ -8,6 +8,7 @@ import { workspaceState } from '@sproutgit/database/schema/workspace';
 import { handle } from './handle.js';
 import { startMcpServer, stopMcpServer, getMcpStatus, deriveDefaultPort } from '../mcp-bridge.js';
 import { writeClientConfig, buildManualSnippet } from '@sproutgit/mcp-client-config';
+import { workspaceDbPath } from './workspace.js';
 
 /** Per-workspace keys in the workspace_state table. */
 const ENABLED_KEY = 'mcp:enabled';
@@ -15,7 +16,7 @@ const PORT_KEY = 'mcp:port';
 const TOKEN_KEY = 'mcp:token';
 
 function getWorkspaceDb(workspacePath: string) {
-  return openWorkspaceDb(join(workspacePath, '.sproutgit', 'state.db'));
+  return openWorkspaceDb(workspaceDbPath(workspacePath));
 }
 
 // Each of these opens its own short-lived db connection rather than caching
