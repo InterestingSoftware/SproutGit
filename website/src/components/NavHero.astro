@@ -317,8 +317,11 @@ const RELEASES_PAGE = `${GITHUB}/releases/latest`;
       if (rawUserAgentData && typeof rawUserAgentData.getHighEntropyValues === 'function') {
         try {
           const { architecture } = await rawUserAgentData.getHighEntropyValues(['architecture']);
-          if (architecture === 'arm') return 'macos-arm64';
-          if (architecture === 'x86') return 'macos-x64';
+          // Chromium's documented values are 'arm'/'x86', but some
+          // platforms/versions report 'arm64'/'x86_64' — match by prefix
+          // rather than risk falling through to the arm64-default below.
+          if (typeof architecture === 'string' && architecture.startsWith('arm')) return 'macos-arm64';
+          if (typeof architecture === 'string' && architecture.startsWith('x86')) return 'macos-x64';
         } catch {
           // fall through to WebGL heuristic
         }
@@ -349,7 +352,9 @@ const RELEASES_PAGE = `${GITHUB}/releases/latest`;
       if (rawUserAgentData && typeof rawUserAgentData.getHighEntropyValues === 'function') {
         try {
           const { architecture } = await rawUserAgentData.getHighEntropyValues(['architecture']);
-          if (architecture === 'arm') return `${os}-arm64`;
+          // See detectMacArch: match by prefix since 'arm64' has been
+          // observed in addition to the documented 'arm' value.
+          if (typeof architecture === 'string' && architecture.startsWith('arm')) return `${os}-arm64`;
         } catch {
           // fall through to default
         }
