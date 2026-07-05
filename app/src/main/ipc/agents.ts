@@ -18,7 +18,7 @@ import { readIssueTrackerFile } from '@sproutgit/git';
 import { join, basename } from 'path';
 import { manager, sessionWindows } from './terminal.js';
 import { handle } from './handle.js';
-import { resolveCommandPath, splitCommand, truncate, okResult, errResult } from './tool-test-helpers.js';
+import { resolveCommandPath, truncate, okResult, errResult } from './tool-test-helpers.js';
 import { installAcpAdapter, resolveAcpAdapterBin } from './acp-adapters.js';
 
 function getWorkspaceDb(workspacePath: string) {
@@ -117,8 +117,16 @@ const ACP_PRESETS: readonly AcpPreset[] = [
   },
 ];
 
+/**
+ * `command` is always just the binary (args live separately in
+ * `AgentConfig.args`), so this takes the path's basename directly rather
+ * than running it through splitCommand()'s general tokenizer — which would
+ * incorrectly split an unquoted absolute path containing spaces (common on
+ * Windows) at the first space instead of treating it as one atomic value.
+ */
 function commandToken(command: string): string {
-  return splitCommand(command).bin.split(/[\\/]/).pop()?.toLowerCase() ?? '';
+  const trimmed = command.trim().replace(/^["']|["']$/g, '');
+  return trimmed.split(/[\\/]/).pop()?.toLowerCase() ?? '';
 }
 
 function findAcpPreset(command: string): AcpPreset | undefined {
@@ -155,8 +163,12 @@ export type AcpPresetInfo = AcpLaunchSpec & { label: string; npmPackage?: string
 export function getAcpLaunchSpec(command: string, args: string[]): AcpPresetInfo | null {
   const preset = findAcpPreset(command);
   if (!preset) return null;
-  const { bin: configuredBin, args: leadingArgs } = splitCommand(command);
-  const launch = preset.build({ configuredBin, configuredArgs: [...leadingArgs, ...args] });
+  // `command` is always just the binary (args live separately in `args`) —
+  // just strip a wrapping quote pair rather than running it through
+  // splitCommand()'s general tokenizer, which would incorrectly split an
+  // unquoted absolute path containing spaces (common on Windows).
+  const configuredBin = command.trim().replace(/^["']|["']$/g, '');
+  const launch = preset.build({ configuredBin, configuredArgs: args });
   const info: AcpPresetInfo = { ...launch, label: preset.label };
   if (preset.npmPackage) info.npmPackage = preset.npmPackage;
   if (preset.approxSizeMb) info.approxSizeMb = preset.approxSizeMb;
@@ -294,7 +306,11 @@ export function registerAgentHandlers(configDb: ConfigDb, getWindow: () => Brows
   // (see chat.ts), not this raw `-p` smoke test.
   handle(IPC.AGENT_TEST, async (): Promise<ToolTestResult> => {
     const agent = getAgentConfig(configDb);
-    const { bin, args: leadingArgs } = splitCommand(agent.command);
+    // agent.command is always just the binary (args live separately in
+    // agent.args) — strip a wrapping quote pair rather than running it
+    // through splitCommand()'s general tokenizer, which would incorrectly
+    // split an unquoted absolute path containing spaces (common on Windows).
+    const bin = agent.command.trim().replace(/^["']|["']$/g, '');
     if (!bin) return errResult('', 'No agent command configured.');
 
     const resolved = await resolveCommandPath(bin);
@@ -305,7 +321,7 @@ export function registerAgentHandlers(configDb: ConfigDb, getWindow: () => Brows
     }
 
     const prompt = 'Reply with only the word OK.';
-    const testArgs = [...leadingArgs, ...agent.args, '-p', prompt];
+    const testArgs = [...agent.args, '-p', prompt];
     const resolvedCommand = `${resolved} ${testArgs.join(' ')}`;
 
     return new Promise(resolve => {

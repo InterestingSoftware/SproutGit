@@ -123,7 +123,7 @@ describe('SettingsToolRow', () => {
     });
     expect(screen.getByText('Test passed')).toBeTruthy();
     expect(screen.getByText(/pid 123/)).toBeTruthy();
-    expect(onToast).toHaveBeenCalledWith('Editor: test passed', 'success');
+    expect(onToast).toHaveBeenCalledWith('Editor: test passed — Editor launched successfully (pid 123).', 'success');
   });
 
   it('clicking Test shows a failing result with the error message and fires an error toast', async () => {
