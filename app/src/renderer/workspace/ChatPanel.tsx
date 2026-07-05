@@ -26,6 +26,10 @@ export function ChatPanel({ worktreePath, autoPrompt }: Props) {
   const [configOptions, setConfigOptions] = useState<ChatConfigOption[]>([]);
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const sessionIdRef = useRef<string | null>(null);
+  // Tracks the worktreePath an autoPrompt has already been sent for, so it
+  // fires exactly once per worktree — not on every render where autoPrompt
+  // happens to be truthy, and not again if the user switches away and back.
+  const autoPromptSentForRef = useRef<string | null>(null);
 
   useEffect(() => {
     // A Chat panel is scoped to one worktree — reset transcript when it changes.
@@ -34,13 +38,24 @@ export function ChatPanel({ worktreePath, autoPrompt }: Props) {
     setError(null);
     setPendingPermission(null);
     setConfigOptions([]);
+    // A message could have been in flight when the user switched worktrees —
+    // without this, `busy` stays true and blocks every send (including an
+    // autoPrompt) in the worktree just switched to.
+    setBusy(false);
   }, [worktreePath]);
 
   useEffect(() => {
-    if (autoPrompt) void send(autoPrompt);
-    // Only meant to fire once, right after mount for a fresh worktree — not on every autoPrompt/send identity change.
+    // autoPrompt can arrive as a prop update after this panel has already
+    // mounted (e.g. the parent sets it in its own effect, which — since
+    // child effects run before parent effects — fires after this component's
+    // first render for a fresh worktree) — so this can't be a mount-only
+    // effect keyed just on worktreePath; it must react to autoPrompt itself.
+    if (!autoPrompt) return;
+    if (autoPromptSentForRef.current === worktreePath) return;
+    autoPromptSentForRef.current = worktreePath;
+    void send(autoPrompt);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [worktreePath]);
+  }, [autoPrompt, worktreePath]);
 
   useEffect(() => {
     const offStream = api.onChatStream(({ sessionId: sid, event }) => {

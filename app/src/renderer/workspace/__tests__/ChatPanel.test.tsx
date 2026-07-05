@@ -310,6 +310,57 @@ describe('ChatPanel', () => {
     expect(screen.getByText(/Chat with your configured AI agent/)).toBeTruthy();
   });
 
+  it('sends autoPrompt automatically when provided on initial mount', async () => {
+    chatStartMock.mockResolvedValue({ sessionId: 'session-1', configOptions: [] });
+    render(<ChatPanel worktreePath="/ws/wt" autoPrompt="scaffold this project" />);
+
+    await waitFor(() => expect(chatStartMock).toHaveBeenCalledWith({ worktreePath: '/ws/wt', initialPrompt: 'scaffold this project' }));
+    expect(screen.getByText('scaffold this project')).toBeTruthy();
+  });
+
+  it('sends autoPrompt when it arrives as a prop update after the panel already mounted with none', async () => {
+    // Reproduces the real ordering: the parent sets autoPrompt in its own
+    // effect, which — since child effects run before parent effects — fires
+    // after this component's first render for a fresh worktree, so autoPrompt
+    // arrives as a later prop update rather than being present on mount.
+    chatStartMock.mockResolvedValue({ sessionId: 'session-1', configOptions: [] });
+    const { rerender } = render(<ChatPanel worktreePath="/ws/wt" />);
+
+    expect(chatStartMock).not.toHaveBeenCalled();
+    rerender(<ChatPanel worktreePath="/ws/wt" autoPrompt="scaffold this project" />);
+
+    await waitFor(() => expect(chatStartMock).toHaveBeenCalledWith({ worktreePath: '/ws/wt', initialPrompt: 'scaffold this project' }));
+  });
+
+  it('does not resend the same autoPrompt if the worktree is left and revisited', async () => {
+    chatStartMock.mockResolvedValue({ sessionId: 'session-1', configOptions: [] });
+    const { rerender } = render(<ChatPanel worktreePath="/ws/wt-a" autoPrompt="scaffold A" />);
+    await waitFor(() => expect(chatStartMock).toHaveBeenCalledTimes(1));
+
+    rerender(<ChatPanel worktreePath="/ws/wt-b" />);
+    rerender(<ChatPanel worktreePath="/ws/wt-a" autoPrompt="scaffold A" />);
+
+    // Still just the one call from the original visit — not resent on return.
+    expect(chatStartMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('clears busy when switching worktrees, so the new worktree is not stuck unable to send', async () => {
+    const user = userEvent.setup();
+    chatStartMock.mockResolvedValue({ sessionId: 'session-1', configOptions: [] });
+    const { rerender } = render(<ChatPanel worktreePath="/ws/wt-a" />);
+
+    // Send a message and leave it "in flight" (chatStart's promise never
+    // resolves) so `busy` is stuck true when the worktree switch happens.
+    await user.type(screen.getByTestId('input-chat-prompt'), 'hi');
+    await user.click(screen.getByTestId('btn-chat-send'));
+    expect((screen.getByTestId('btn-chat-send') as HTMLButtonElement).disabled).toBe(true);
+
+    rerender(<ChatPanel worktreePath="/ws/wt-b" />);
+
+    await user.type(screen.getByTestId('input-chat-prompt'), 'hi again');
+    expect((screen.getByTestId('btn-chat-send') as HTMLButtonElement).disabled).toBe(false);
+  });
+
   it('calls chatStop for the active session on unmount', async () => {
     const user = userEvent.setup();
     chatStartMock.mockResolvedValue({ sessionId: 'session-1', configOptions: [] });
