@@ -1,6 +1,8 @@
 import { ipcMain, BrowserWindow } from 'electron';
 import { IPC } from '@sproutgit/types';
 import { TerminalManagerWithMeta } from '@sproutgit/terminal';
+import { handle } from './handle.js';
+import { log } from '../telemetry.js';
 
 // Forward PTY output/exit events to the renderer window that created the session.
 export const sessionWindows = new Map<string, BrowserWindow>();
@@ -56,6 +58,7 @@ export function registerTerminalHandlers(): void {
     } catch (error) {
       const e = error instanceof Error ? error : new Error(String(error));
       e.message = `[terminal:create] shell=${JSON.stringify(shell)} cwd=${JSON.stringify(args.cwd)} ${e.message}`;
+      log.error(`[ipc:${IPC.TERMINAL_CREATE}]`, e);
       throw e;
     }
 
@@ -63,11 +66,11 @@ export function registerTerminalHandlers(): void {
     return id;
   });
 
-  ipcMain.handle(IPC.TERMINAL_WRITE, (_e, args: { id: string; data: string }) => {
+  handle(IPC.TERMINAL_WRITE, (_e, args: { id: string; data: string }) => {
     manager.write(args.id, args.data);
   });
 
-  ipcMain.handle(IPC.TERMINAL_RESIZE, (_e, args: {
+  handle(IPC.TERMINAL_RESIZE, (_e, args: {
     id: string;
     cols: number;
     rows: number;
@@ -75,19 +78,19 @@ export function registerTerminalHandlers(): void {
     manager.resize(args.id, args.cols, args.rows);
   });
 
-  ipcMain.handle(IPC.TERMINAL_CLOSE, (_e, id: string) => {
+  handle(IPC.TERMINAL_CLOSE, (_e, id: string) => {
     manager.close(id);
   });
 
-  ipcMain.handle(IPC.TERMINAL_CLOSE_FOR_PATH, (_e, pathPrefix: string) => {
+  handle(IPC.TERMINAL_CLOSE_FOR_PATH, (_e, pathPrefix: string) => {
     manager.closeForPath(pathPrefix);
   });
 
-  ipcMain.handle(IPC.TERMINAL_CLOSE_ALL, () => {
+  handle(IPC.TERMINAL_CLOSE_ALL, () => {
     manager.closeAll();
   });
 
-  ipcMain.handle(IPC.TERMINAL_LIST, () => {
+  handle(IPC.TERMINAL_LIST, () => {
     return manager.listSessions().map(s => ({ ...s, label: s.label }));
   });
 }

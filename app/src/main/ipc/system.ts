@@ -1,4 +1,4 @@
-import { ipcMain, app, shell, dialog, BrowserWindow } from "electron";
+import { app, shell, dialog, BrowserWindow } from "electron";
 import { IPC } from "@sproutgit/types";
 import type { EditorInfo, GitToolInfo } from "@sproutgit/types";
 import { getGitConfig, setGitConfig } from "@sproutgit/git/config";
@@ -6,6 +6,7 @@ import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { homedir } from "node:os";
 import { resolveCommandPath, splitCommand } from "./tool-test-helpers.js";
+import { handle } from "./handle.js";
 
 const exec = promisify(execFile);
 
@@ -189,25 +190,25 @@ async function detectGitTools(): Promise<GitToolInfo[]> {
 // ── IPC registration ──────────────────────────────────────────────────────────
 
 export function registerSystemHandlers(): void {
-  ipcMain.handle(IPC.SYSTEM_APP_VERSION, () => app.getVersion());
+  handle(IPC.SYSTEM_APP_VERSION, () => app.getVersion());
 
-  ipcMain.handle(IPC.SYSTEM_GET_HOME_DIR, () => homedir());
+  handle(IPC.SYSTEM_GET_HOME_DIR, () => homedir());
 
-  ipcMain.handle(IPC.SYSTEM_LIST_SHELLS, () => detectShells());
+  handle(IPC.SYSTEM_LIST_SHELLS, () => detectShells());
 
-  ipcMain.handle(IPC.SYSTEM_DETECT_EDITORS, () => detectEditors());
+  handle(IPC.SYSTEM_DETECT_EDITORS, () => detectEditors());
 
-  ipcMain.handle(IPC.SYSTEM_DETECT_GIT_TOOLS, () => detectGitTools());
+  handle(IPC.SYSTEM_DETECT_GIT_TOOLS, () => detectGitTools());
 
-  ipcMain.handle(IPC.GIT_GET_CONFIG, (_e, key: string) => getGitConfig(key));
+  handle(IPC.GIT_GET_CONFIG, (_e, key: string) => getGitConfig(key));
 
-  ipcMain.handle(
+  handle(
     IPC.GIT_SET_CONFIG,
     (_e, args: { key: string; value: string | null }) =>
       setGitConfig(args.key, args.value),
   );
 
-  ipcMain.handle(
+  handle(
     IPC.SYSTEM_OPEN_IN_EDITOR,
     async (_e, worktreePath: string) => {
       // Use the configured editor from git config; fall back to VS Code.
@@ -225,11 +226,11 @@ export function registerSystemHandlers(): void {
     },
   );
 
-  ipcMain.handle(IPC.SYSTEM_REVEAL_IN_FINDER, (_e, filePath: string) =>
+  handle(IPC.SYSTEM_REVEAL_IN_FINDER, (_e, filePath: string) =>
     shell.showItemInFolder(filePath),
   );
 
-  ipcMain.handle(IPC.SYSTEM_OPEN_URL, (_e, url: string) => {
+  handle(IPC.SYSTEM_OPEN_URL, (_e, url: string) => {
     let parsed: URL;
     try {
       parsed = new URL(url);
@@ -244,7 +245,7 @@ export function registerSystemHandlers(): void {
 
   // ── Native dialogs ────────────────────────────────────────────────────────
 
-  ipcMain.handle(
+  handle(
     IPC.DIALOG_SHOW_OPEN,
     async (
       event,
@@ -272,11 +273,11 @@ export function registerSystemHandlers(): void {
 
   // ── Window controls ───────────────────────────────────────────────────────
 
-  ipcMain.handle(IPC.WINDOW_MINIMIZE, (event) => {
+  handle(IPC.WINDOW_MINIMIZE, (event) => {
     BrowserWindow.fromWebContents(event.sender)?.minimize();
   });
 
-  ipcMain.handle(IPC.WINDOW_MAXIMIZE, (event) => {
+  handle(IPC.WINDOW_MAXIMIZE, (event) => {
     const win = BrowserWindow.fromWebContents(event.sender);
     if (!win) return;
     if (win.isMaximized()) {
@@ -286,11 +287,11 @@ export function registerSystemHandlers(): void {
     }
   });
 
-  ipcMain.handle(IPC.WINDOW_CLOSE, (event) => {
+  handle(IPC.WINDOW_CLOSE, (event) => {
     BrowserWindow.fromWebContents(event.sender)?.close();
   });
 
-  ipcMain.handle(IPC.WINDOW_IS_MAXIMIZED, (event) => {
+  handle(IPC.WINDOW_IS_MAXIMIZED, (event) => {
     return BrowserWindow.fromWebContents(event.sender)?.isMaximized() ?? false;
   });
 }
