@@ -6,7 +6,12 @@ import { IPC } from '@sproutgit/types';
 import type { FileTreeNode, FileReadResult } from '@sproutgit/types';
 
 const { handleMock } = vi.hoisted(() => ({ handleMock: vi.fn() }));
-vi.mock('electron', () => ({ ipcMain: { handle: handleMock } }));
+// fromWebContents is mocked as the identity function — tests pass the "window"
+// they want a handler to resolve to directly as the event's `sender`.
+vi.mock('electron', () => ({
+  ipcMain: { handle: handleMock },
+  BrowserWindow: { fromWebContents: (sender: unknown) => sender ?? null },
+}));
 
 const { watchRecursiveMock, closeWatcherMock } = vi.hoisted(() => ({
   watchRecursiveMock: vi.fn(),
@@ -28,9 +33,9 @@ type AnyHandler = (event: unknown, ...args: unknown[]) => unknown;
  * registration fails loudly at the call site instead of surfacing later as a
  * confusing "not a function" error.
  */
-function registerAndGetHandlers(getWindow: () => unknown = () => null): (channel: string) => AnyHandler {
+function registerAndGetHandlers(): (channel: string) => AnyHandler {
   handleMock.mockClear();
-  registerFileHandlers(getWindow as never);
+  registerFileHandlers();
   return (channel: string) => {
     const call = handleMock.mock.calls.find(c => c[0] === channel);
     if (!call) throw new Error(`${channel} handler was not registered`);
@@ -288,42 +293,42 @@ describe('file:watchStart and file:watchStop', () => {
   });
 
   it('starts a watcher for a worktree path and does not start a second one for the same path', async () => {
-    const win = { webContents: { send: vi.fn() } };
-    const getHandler = registerAndGetHandlers(() => win);
+    const win = { webContents: { send: vi.fn() }, isDestroyed: () => false, once: vi.fn() };
+    const getHandler = registerAndGetHandlers();
     const watchStart = getHandler(IPC.FILE_WATCH_START);
 
-    await watchStart({}, '/some/worktree');
-    await watchStart({}, '/some/worktree');
+    await watchStart({ sender: win }, '/some/worktree');
+    await watchStart({ sender: win }, '/some/worktree');
 
     expect(watchRecursiveMock).toHaveBeenCalledTimes(1);
   });
 
   it('does nothing when no window is available', async () => {
-    const getHandler = registerAndGetHandlers(() => null);
+    const getHandler = registerAndGetHandlers();
     const watchStart = getHandler(IPC.FILE_WATCH_START);
 
-    await watchStart({}, '/some/worktree');
+    await watchStart({ sender: null }, '/some/worktree');
 
     expect(watchRecursiveMock).not.toHaveBeenCalled();
   });
 
   it('stops a watcher and closes it via closeWatcher', async () => {
-    const win = { webContents: { send: vi.fn() } };
-    const getHandler = registerAndGetHandlers(() => win);
+    const win = { webContents: { send: vi.fn() }, isDestroyed: () => false, once: vi.fn() };
+    const getHandler = registerAndGetHandlers();
     const watchStart = getHandler(IPC.FILE_WATCH_START);
     const watchStop = getHandler(IPC.FILE_WATCH_STOP);
 
-    await watchStart({}, '/another/worktree');
-    await watchStop({}, '/another/worktree');
+    await watchStart({ sender: win }, '/another/worktree');
+    await watchStop({ sender: win }, '/another/worktree');
 
     expect(closeWatcherMock).toHaveBeenCalledTimes(1);
   });
 
   it('stopping a path with no active watcher is a harmless no-op', async () => {
-    const getHandler = registerAndGetHandlers(() => null);
+    const getHandler = registerAndGetHandlers();
     const watchStop = getHandler(IPC.FILE_WATCH_STOP);
 
-    await watchStop({}, '/never/watched');
+    await watchStop({ sender: null }, '/never/watched');
 
     expect(closeWatcherMock).not.toHaveBeenCalled();
   });
@@ -335,10 +340,10 @@ describe('file:watchStart and file:watchStop', () => {
       return { close: vi.fn() };
     });
 
-    const win = { webContents: { send: vi.fn() } };
-    const getHandler = registerAndGetHandlers(() => win);
+    const win = { webContents: { send: vi.fn() }, isDestroyed: () => false, once: vi.fn() };
+    const getHandler = registerAndGetHandlers();
     const watchStart = getHandler(IPC.FILE_WATCH_START);
-    await watchStart({}, '/watched/root');
+    await watchStart({ sender: win }, '/watched/root');
 
     expect(capturedCallback).toBeDefined();
     capturedCallback!('change', join('/watched/root', 'a.txt'));
@@ -357,10 +362,10 @@ describe('file:watchStart and file:watchStop', () => {
   });
 
   it('the ignored predicate passed to watchRecursive filters out .git and node_modules paths', async () => {
-    const win = { webContents: { send: vi.fn() } };
-    const getHandler = registerAndGetHandlers(() => win);
+    const win = { webContents: { send: vi.fn() }, isDestroyed: () => false, once: vi.fn() };
+    const getHandler = registerAndGetHandlers();
     const watchStart = getHandler(IPC.FILE_WATCH_START);
-    await watchStart({}, '/watched/root2');
+    await watchStart({ sender: win }, '/watched/root2');
 
     const ignoredPredicate = watchRecursiveMock.mock.calls[0]![2] as (path: string) => boolean;
     expect(ignoredPredicate(join('/watched/root2', '.git', 'HEAD'))).toBe(true);
