@@ -15,7 +15,7 @@
  * requests are translated by chat-acp-events.ts into the normalized
  * `ChatStreamEvent`s pushed to the renderer as EVENT_CHAT_STREAM.
  */
-import type { BrowserWindow } from 'electron';
+import { BrowserWindow } from 'electron';
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { Readable, Writable } from 'node:stream';
@@ -195,7 +195,7 @@ async function runTurn(session: ChatSession, prompt: string): Promise<void> {
   }
 }
 
-export function registerChatHandlers(configDb: ConfigDb, getWindow: () => BrowserWindow | null, userDataPath: string): void {
+export function registerChatHandlers(configDb: ConfigDb, userDataPath: string): void {
   handle(IPC.CHAT_START, async (_e, args: { worktreePath: string; initialPrompt?: string }) => {
     const agent = getAgentConfig(configDb);
     if (!commandSupportsIntegratedMode(agent.command)) {
@@ -207,7 +207,7 @@ export function registerChatHandlers(configDb: ConfigDb, getWindow: () => Browse
 
     const session = await spawnAcpSession(agent, args.worktreePath, userDataPath);
     sessions.set(session.id, session);
-    const win = getWindow();
+    const win = BrowserWindow.fromWebContents(_e.sender);
     if (win) sessionWindows.set(session.id, win);
 
     if (args.initialPrompt) void runTurn(session, args.initialPrompt);

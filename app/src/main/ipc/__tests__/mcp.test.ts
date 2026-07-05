@@ -6,7 +6,10 @@ import { IPC } from '@sproutgit/types';
 import type { McpServerStatus } from '@sproutgit/types';
 
 const { handleMock } = vi.hoisted(() => ({ handleMock: vi.fn() }));
-vi.mock('electron', () => ({ ipcMain: { handle: handleMock } }));
+vi.mock('electron', () => ({
+  ipcMain: { handle: handleMock },
+  BrowserWindow: { fromWebContents: (sender: unknown) => sender ?? null },
+}));
 
 import { registerMcpHandlers } from '../mcp.js';
 import { stopAllMcpServers, deriveDefaultPort } from '../../mcp-bridge.js';
@@ -15,7 +18,7 @@ type AnyHandler = (event: unknown, ...args: unknown[]) => unknown;
 
 function registerAndGetHandlers(): (channel: string) => AnyHandler {
   handleMock.mockClear();
-  registerMcpHandlers(() => null);
+  registerMcpHandlers();
   return (channel: string) => {
     const call = handleMock.mock.calls.find(c => c[0] === channel);
     if (!call) throw new Error(`${channel} handler was not registered`);
