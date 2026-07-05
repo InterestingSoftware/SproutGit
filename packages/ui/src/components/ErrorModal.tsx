@@ -25,10 +25,13 @@ export function ErrorModal({ error, onDismiss }: Props) {
     const details = [error.title ?? 'Unexpected error', error.message, error.stack]
       .filter(Boolean)
       .join('\n\n');
-    void navigator.clipboard.writeText(details).then(() => {
+    // Clipboard access can be denied/unavailable — that's non-fatal here, so
+    // swallow it rather than let it become an unhandled rejection (which
+    // would otherwise trip the app's own global error handler).
+    navigator.clipboard.writeText(details).then(() => {
       setCopied(true);
       setTimeout(() => setCopied(false), 1500);
-    });
+    }).catch(() => undefined);
   }
 
   const secondaryBtn = 'inline-flex items-center gap-[5px] px-3 py-[5px] rounded-[6px] cursor-pointer text-xs font-medium transition-colors whitespace-nowrap bg-transparent border border-(--sg-border) text-(--sg-text-dim) hover:bg-(--sg-surface-raised)';
