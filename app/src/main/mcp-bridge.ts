@@ -14,6 +14,7 @@
  */
 import { createServer as createHttpServer, type Server } from 'node:http';
 import { createHash } from 'node:crypto';
+import type { AddressInfo } from 'node:net';
 import { createHttpApp, type McpServerContext } from '@sproutgit/mcp-server';
 import { log } from './telemetry.js';
 
@@ -76,12 +77,17 @@ export async function startMcpServer(params: McpServerParams): Promise<number> {
   const app = createHttpApp(context, params.token);
   const server = createHttpServer(app);
 
+  let boundPort: number;
   try {
-    await new Promise<void>((resolve, reject) => {
+    boundPort = await new Promise<number>((resolve, reject) => {
       server.once('error', reject);
       server.listen(params.port, '127.0.0.1', () => {
         server.removeListener('error', reject);
-        resolve();
+        // Reads back the OS-assigned port rather than trusting params.port
+        // verbatim — identical in the normal case (a specific port was
+        // requested and bound), but also correct if ever called with port 0.
+        const address = server.address() as AddressInfo;
+        resolve(address.port);
       });
     });
   } catch (error) {
@@ -93,9 +99,9 @@ export async function startMcpServer(params: McpServerParams): Promise<number> {
 
   server.on('error', (error: Error) => log.error(`[mcp-bridge] http server error for ${params.workspacePath}`, error));
 
-  runningServers.set(params.workspacePath, { server, port: params.port });
-  log.info(`[mcp-bridge] started for ${params.workspacePath} on 127.0.0.1:${params.port}`);
-  return params.port;
+  runningServers.set(params.workspacePath, { server, port: boundPort });
+  log.info(`[mcp-bridge] started for ${params.workspacePath} on 127.0.0.1:${boundPort}`);
+  return boundPort;
 }
 
 /** Stops the MCP server for a workspace, if one is running. Idempotent. */
