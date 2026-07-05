@@ -3,7 +3,17 @@ import type { WorktreeInfo } from '@sproutgit/types';
 
 export type Tab = 'graph' | 'staging' | 'terminal' | 'chat' | 'files';
 export type TerminalLayout = 'tabs' | 'split' | 'grid';
-export type TerminalSession = { id: string; label: string; pendingData: string; cwd: string; agentId: string | null };
+export type TerminalSession = {
+  id: string;
+  label: string;
+  pendingData: string;
+  /** Characters permanently dropped from the front of `pendingData` because
+   *  the live buffer exceeded its cap — lets consumers reading `pendingData`
+   *  as an ever-growing stream compute correct deltas despite the trim. */
+  droppedLen: number;
+  cwd: string;
+  agentId: string | null;
+};
 
 interface WorkspaceUiState {
   workspacePath: string;
