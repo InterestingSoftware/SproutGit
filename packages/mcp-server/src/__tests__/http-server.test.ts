@@ -115,6 +115,26 @@ describe('createHttpApp', () => {
     expect(res.status).toBe(401);
   });
 
+  it.each([
+    ['a token that is a prefix of the real one', `Bearer ${TOKEN.slice(0, -1)}`],
+    ['a token longer than the real one', `Bearer ${TOKEN}-extra`],
+    ['a token differing only in the last character', `Bearer ${TOKEN.slice(0, -1)}X`],
+    ['an empty token', 'Bearer '],
+    ['a missing "Bearer " prefix', TOKEN],
+    ['the wrong auth scheme', `Basic ${TOKEN}`],
+  ])('rejects %s', async (_description, authorization) => {
+    const res = await fetch(`${baseUrl}/mcp`, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        accept: 'application/json, text/event-stream',
+        authorization,
+      },
+      body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/list', params: {} }),
+    });
+    expect(res.status).toBe(401);
+  });
+
   it('rejects a mismatched Host header (DNS-rebinding protection)', async () => {
     const body = JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/list', params: {} });
     const res = await requestWithHostHeader(`${baseUrl}/mcp`, 'evil.example.com', body);
