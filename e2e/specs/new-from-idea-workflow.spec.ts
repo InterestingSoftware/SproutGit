@@ -140,38 +140,40 @@ async function closeWorkspace(workspacePath: string): Promise<void> {
 }
 
 /**
- * Deletes the workspace's on-disk folder, re-closing the workspace before
- * every attempt.
+ * Navigates home, waits for the workspace route to actually unmount, then
+ * closes the workspace and deletes its folder.
  *
- * The single close-then-delete pattern used everywhere else in this suite is
- * insufficient here specifically. WORKSPACE_CLOSE closes the cached state.db
- * connection once, but the renderer keeps polling for a short window after
- * navigating home (worktree-metadata / hook-list / prune queries are not
- * cancelled the instant their component unmounts). A poll that lands after
- * the close re-opens *and re-caches* state.db via the main process's
- * getWorkspaceDb cache — with nothing left to close it again — so on Windows
- * (where an open handle blocks unlink, and WAL mode makes the lock stickier)
- * the file stays locked for the rest of the process and no amount of plain
- * retrying frees it. This test hits that window because its scaffold-kickoff
- * flow keeps async activity alive right across the close; the simpler specs
- * go quiescent first and never do.
+ * The subtle part is *waiting for the unmount*. The renderer keeps polling a
+ * workspace's queries (worktree list/status, metadata, prune) until its route
+ * component actually unmounts and TanStack Query drops the observers. Several
+ * of those queries re-open state.db through the main process's getWorkspaceDb
+ * cache, so as long as the workspace is still mounted it keeps re-establishing
+ * a state.db handle faster than cleanup can delete it — and on Windows an open
+ * handle blocks unlink (WAL mode makes the lock stickier still), so the delete
+ * never succeeds. goHome()'s fixed 200 ms pause isn't enough for React to
+ * unmount the route on a loaded CI runner; the earlier failures showed
+ * git:listWorktrees polls still firing *after* cleanup had started deleting,
+ * proving the route was still live. Every other spec avoids this only because
+ * its flow has gone quiescent by teardown; this one's scaffold-kickoff keeps
+ * async work alive right across the navigation.
  *
- * Re-closing before each delete attempt evicts whatever the last stray poll
- * re-opened, so once the renderer finally goes quiet the close sticks and the
- * unlink succeeds. See the "known follow-up" note in the PR: the underlying
- * app behaviour (a late read re-establishing a workspace-DB handle after
- * WORKSPACE_CLOSE) is a real, if minor, Windows product wart worth fixing
- * properly at the source.
+ * Waiting for a home-screen element to render is the deterministic signal that
+ * the workspace route has unmounted and its polling has stopped — no more
+ * state.db re-opens after that point. A short re-close-and-retry loop then
+ * mops up the at-most-one query that may have been in flight across the
+ * unmount. (See the PR's follow-up note: the app itself should make
+ * WORKSPACE_CLOSE authoritative so a late read can't re-establish a handle —
+ * fixing that at the source would let this collapse back to a single close +
+ * delete like every other spec.)
  */
 async function closeAndDeleteWorkspace(workspacePath: string, projectsFolder: string): Promise<void> {
   await goHome();
-  // A flat delay, not escalating backoff: re-closing makes each attempt
-  // genuinely productive (it evicts the last stray re-open) rather than just
-  // hoping an external lock clears, so this converges within a few iterations
-  // once the renderer's polling stops — no need for a large escalating budget
-  // that could brush the 120s Windows mocha hook timeout. 30 × 300ms of delay
-  // (~9s) plus the per-attempt closeWorkspace overhead stays well clear of it.
-  const maxAttempts = 30;
+  // Deterministic proof the workspace route unmounted (btn-clone is always on
+  // the home screen) — not a fixed-time guess. This is the actual fix; the
+  // retry loop below is just belt-and-suspenders for an in-flight straggler.
+  await $('[data-testid="btn-clone"]').waitForDisplayed({ timeout: E2E_TIMEOUT_MS });
+
+  const maxAttempts = 20;
   for (let attempt = 0; ; attempt++) {
     await closeWorkspace(workspacePath).catch(() => undefined);
     try {
