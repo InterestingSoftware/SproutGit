@@ -1,11 +1,13 @@
-import { app, type BrowserWindow } from 'electron';
+import { app, BrowserWindow } from 'electron';
 import { IPC, type GlobalErrorEvent } from '@sproutgit/types';
 import { log } from './telemetry.js';
 
-function send(getWindow: () => BrowserWindow | null, payload: GlobalErrorEvent): void {
-  const win = getWindow();
-  if (win && !win.isDestroyed()) {
-    win.webContents.send(IPC.EVENT_GLOBAL_ERROR, payload);
+// These are process-level failures, not tied to any one workspace/window —
+// broadcast to every open window rather than a single "main" one so an error
+// in one window's renderer doesn't get silently missed by the others.
+function send(payload: GlobalErrorEvent): void {
+  for (const win of BrowserWindow.getAllWindows()) {
+    if (!win.isDestroyed()) win.webContents.send(IPC.EVENT_GLOBAL_ERROR, payload);
   }
 }
 
@@ -16,21 +18,21 @@ function send(getWindow: () => BrowserWindow | null, payload: GlobalErrorEvent):
  * forwarded to the renderer's ErrorModal — this does not attempt recovery,
  * only visibility.
  */
-export function registerGlobalErrorHandlers(getWindow: () => BrowserWindow | null): void {
+export function registerGlobalErrorHandlers(): void {
   process.on('uncaughtException', (err: Error) => {
     log.error('[main] uncaughtException', err);
-    send(getWindow, { source: 'uncaughtException', message: err.message, ...(err.stack ? { stack: err.stack } : {}) });
+    send({ source: 'uncaughtException', message: err.message, ...(err.stack ? { stack: err.stack } : {}) });
   });
 
   process.on('unhandledRejection', (reason: unknown) => {
     const err = reason instanceof Error ? reason : new Error(String(reason));
     log.error('[main] unhandledRejection', err);
-    send(getWindow, { source: 'unhandledRejection', message: err.message, ...(err.stack ? { stack: err.stack } : {}) });
+    send({ source: 'unhandledRejection', message: err.message, ...(err.stack ? { stack: err.stack } : {}) });
   });
 
   app.on('render-process-gone', (_event, _webContents, details) => {
     log.error('[main] render-process-gone', details);
-    send(getWindow, {
+    send({
       source: 'renderProcessGone',
       message: `Renderer process gone (${details.reason}, exit code ${details.exitCode})`,
     });
@@ -38,7 +40,7 @@ export function registerGlobalErrorHandlers(getWindow: () => BrowserWindow | nul
 
   app.on('child-process-gone', (_event, details) => {
     log.error('[main] child-process-gone', details);
-    send(getWindow, {
+    send({
       source: 'childProcessGone',
       message: `${details.type} process gone (${details.reason}, exit code ${details.exitCode})`,
     });
