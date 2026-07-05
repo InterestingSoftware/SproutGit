@@ -10,6 +10,7 @@ export function validateBranchName(name: string): string | null {
   const t = name.trim();
   if (!t) return 'Branch name is required.';
   if (t.startsWith('-')) return 'Cannot start with a hyphen.';
+  if (t.startsWith('/')) return 'Cannot start with a slash.';
   if (t.startsWith('.') || t.includes('/.')) return "Cannot start with a dot or contain '/.'.";
   if (t.endsWith('.')) return 'Cannot end with a dot.';
   if (t.endsWith('/')) return 'Cannot end with a slash.';
