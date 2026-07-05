@@ -31,6 +31,8 @@
       "buildResources": "build",
       "output": "dist-electron"
     },
+    "electronLanguages": ["en"],
+    "compression": "maximum",
     "files": [
       "out/**/*",
       "!out/**/*.map",
