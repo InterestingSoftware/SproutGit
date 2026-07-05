@@ -14,11 +14,12 @@
  * handle on the watched path, and starting a watch on a not-yet-converted
  * repo's `.git` would block the rename that converts it (EPERM).
  */
-import { ipcMain, BrowserWindow } from 'electron';
+import { BrowserWindow } from 'electron';
 import { IPC } from '@sproutgit/types';
 import { watch } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { watchRecursive, closeWatcher } from '@sproutgit/fs-watch';
+import { handle } from './handle.js';
 
 type Closable = { close: () => void | Promise<void> };
 
@@ -125,7 +126,7 @@ export function stopWatchingPath(repoPath: string): void {
 }
 
 export function registerWatchHandlers(): void {
-  ipcMain.handle(IPC.WATCH_START, (_e, repoPath: string) => {
+  handle(IPC.WATCH_START, (_e, repoPath: string) => {
     const win = BrowserWindow.fromWebContents(_e.sender);
     if (!win) return;
 
@@ -147,7 +148,7 @@ export function registerWatchHandlers(): void {
     }
   });
 
-  ipcMain.handle(IPC.WATCH_STOP, (_e, repoPath: string) => {
+  handle(IPC.WATCH_STOP, (_e, repoPath: string) => {
     const normalised = resolve(repoPath);
     const entry = activeWatchers.get(normalised);
     if (!entry) return;

@@ -7,13 +7,14 @@
  * root and rejects anything that escapes it (symlink traversal, `..`, or an
  * absolute path outside the root) before touching the filesystem.
  */
-import { ipcMain, BrowserWindow } from 'electron';
+import { BrowserWindow } from 'electron';
 import { IPC } from '@sproutgit/types';
 import type { FileTreeNode, FileReadResult, FileChangedEvent } from '@sproutgit/types';
 import { promises as fs } from 'node:fs';
 import { join, relative, resolve, sep } from 'node:path';
 import { canonicalize, isPathWithin } from '@sproutgit/paths';
 import { watchRecursive, closeWatcher, type RecursiveWatchEvent } from '@sproutgit/fs-watch';
+import { handle } from './handle.js';
 
 type Closable = { close: () => void | Promise<void> };
 
@@ -266,9 +267,9 @@ function stopFileWatch(worktreePath: string, win?: BrowserWindow): void {
 // ── IPC registration ──────────────────────────────────────────────────────────
 
 export function registerFileHandlers(): void {
-  ipcMain.handle(IPC.FILE_LIST_TREE, (_e, worktreePath: string) => buildTree(worktreePath));
+  handle(IPC.FILE_LIST_TREE, (_e, worktreePath: string) => buildTree(worktreePath));
 
-  ipcMain.handle(IPC.FILE_READ, async (_e, args: { worktreePath: string; relativePath: string }): Promise<FileReadResult> => {
+  handle(IPC.FILE_READ, async (_e, args: { worktreePath: string; relativePath: string }): Promise<FileReadResult> => {
     const abs = resolveSafePath(args.worktreePath, args.relativePath);
     const [content, stat] = await Promise.all([
       fs.readFile(abs, 'utf8'),
@@ -277,20 +278,20 @@ export function registerFileHandlers(): void {
     return { relativePath: args.relativePath, content, mtimeMs: stat.mtimeMs };
   });
 
-  ipcMain.handle(IPC.FILE_WRITE, async (_e, args: { worktreePath: string; relativePath: string; content: string }) => {
+  handle(IPC.FILE_WRITE, async (_e, args: { worktreePath: string; relativePath: string; content: string }) => {
     const abs = resolveSafePath(args.worktreePath, args.relativePath);
     await fs.writeFile(abs, args.content, 'utf8');
     const stat = await fs.stat(abs);
     return { mtimeMs: stat.mtimeMs };
   });
 
-  ipcMain.handle(IPC.FILE_WATCH_START, (_e, worktreePath: string) => {
+  handle(IPC.FILE_WATCH_START, (_e, worktreePath: string) => {
     const win = BrowserWindow.fromWebContents(_e.sender);
     if (!win) return;
     startFileWatch(worktreePath, win);
   });
 
-  ipcMain.handle(IPC.FILE_WATCH_STOP, (_e, worktreePath: string) => {
+  handle(IPC.FILE_WATCH_STOP, (_e, worktreePath: string) => {
     stopFileWatch(worktreePath, BrowserWindow.fromWebContents(_e.sender) ?? undefined);
   });
 }
