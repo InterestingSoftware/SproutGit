@@ -1,5 +1,5 @@
-import { useEffect } from 'react';
-import { X, CheckCircle2, AlertCircle, Info } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { X, CheckCircle2, AlertCircle, Info, Copy, Check } from 'lucide-react';
 
 export type ToastVariant = 'success' | 'error' | 'info';
 
@@ -42,6 +42,8 @@ const VARIANT_STYLES: Record<ToastVariant, { wrap: string; icon: string; bar: st
 
 /** Single toast notification. Auto-dismisses after 5 s. */
 export function Toast({ toast, onDismiss }: ToastProps) {
+  const [copied, setCopied] = useState(false);
+
   useEffect(() => {
     const id = toast.id;
     const t = setTimeout(() => onDismiss(id), AUTO_DISMISS_MS);
@@ -49,6 +51,12 @@ export function Toast({ toast, onDismiss }: ToastProps) {
   }, [onDismiss, toast.id]);
 
   const styles = VARIANT_STYLES[toast.variant];
+
+  const handleCopy = () => {
+    navigator.clipboard.writeText(toast.message);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 1500);
+  };
 
   return (
     <div
@@ -67,13 +75,23 @@ export function Toast({ toast, onDismiss }: ToastProps) {
       >
         {toast.message}
       </span>
-      <button
-        className="inline-flex items-center justify-center p-1 bg-transparent border-none cursor-pointer text-(--sg-text-faint) rounded-[5px] hover:bg-(--sg-surface-raised) hover:text-(--sg-text) shrink-0 transition-colors"
-        onClick={() => onDismiss(toast.id)}
-        aria-label="Dismiss"
-      >
-        <X size={13} />
-      </button>
+      <div className="flex items-center gap-0.5 shrink-0">
+        <button
+          className="inline-flex items-center justify-center p-1 bg-transparent border-none cursor-pointer text-(--sg-text-faint) rounded-[5px] hover:bg-(--sg-surface-raised) hover:text-(--sg-text) transition-colors"
+          onClick={handleCopy}
+          aria-label={copied ? 'Copied' : 'Copy message'}
+          data-testid="toast-copy"
+        >
+          {copied ? <Check size={13} /> : <Copy size={13} />}
+        </button>
+        <button
+          className="inline-flex items-center justify-center p-1 bg-transparent border-none cursor-pointer text-(--sg-text-faint) rounded-[5px] hover:bg-(--sg-surface-raised) hover:text-(--sg-text) transition-colors"
+          onClick={() => onDismiss(toast.id)}
+          aria-label="Dismiss"
+        >
+          <X size={13} />
+        </button>
+      </div>
     </div>
   );
 }
