@@ -14,11 +14,12 @@ function methodNotAllowed(_req: Request, res: Response): void {
 }
 
 /**
- * Constant-time string comparison. `timingSafeEqual` requires equal-length
- * buffers, so both sides are hashed to a fixed-length digest first — that
- * avoids branching on `a.length !== b.length` (which would itself leak the
- * expected token's length through timing) while still comparing the actual
- * secret in constant time.
+ * Constant-time *digest* comparison — hashing itself still takes time
+ * proportional to the input lengths, but `timingSafeEqual` requires
+ * equal-length buffers, so both sides are hashed to a fixed-length digest
+ * first. That avoids branching on `a.length !== b.length` (which would
+ * itself leak the expected token's length through timing) while still
+ * comparing the actual secret bytes in constant time.
  */
 function safeEqual(a: string, b: string): boolean {
   const aHash = createHash('sha256').update(a).digest();
