@@ -15,7 +15,13 @@ function parseDiffLines(raw: string): { kind: 'add' | 'del' | 'ctx' | 'meta'; te
       return { kind: 'add' as const, text: line };
     if (line.startsWith('-') && !line.startsWith('---'))
       return { kind: 'del' as const, text: line };
-    if (line.startsWith('@@') || line.startsWith('diff ') || line.startsWith('index '))
+    if (
+      line.startsWith('@@') ||
+      line.startsWith('diff ') ||
+      line.startsWith('index ') ||
+      line.startsWith('---') ||
+      line.startsWith('+++')
+    )
       return { kind: 'meta' as const, text: line };
     return { kind: 'ctx' as const, text: line };
   });
