@@ -5,7 +5,7 @@ import { getGitConfig, setGitConfig } from "@sproutgit/git/config";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { homedir } from "node:os";
-import { resolveMacAppBundleCli } from "./tool-test-helpers.js";
+import { resolveMacAppBundleCli, splitCommand } from "./tool-test-helpers.js";
 
 const exec = promisify(execFile);
 
@@ -235,14 +235,15 @@ export function registerSystemHandlers(): void {
     IPC.SYSTEM_OPEN_IN_EDITOR,
     async (_e, worktreePath: string) => {
       // Use the configured editor from git config; fall back to VS Code.
-      // core.editor may contain flags (e.g. "code --wait") — split off the binary.
+      // core.editor may be a quoted path with flags (e.g. `"/Applications/Visual
+      // Studio Code.app/.../code" --wait`) — splitCommand() (not a naive
+      // whitespace split) is needed so a quoted absolute path containing
+      // spaces isn't torn apart.
       const configuredEditor = await getGitConfig("core.editor").catch(
         () => "",
       );
-      const [editorBin = "code", ...editorArgs] = (
-        configuredEditor.trim() || "code"
-      ).split(/\s+/);
-      await exec(editorBin, [...editorArgs, worktreePath]).catch(() => {
+      const { bin, args } = splitCommand(configuredEditor.trim() || "code");
+      await exec(bin || "code", [...args, worktreePath]).catch(() => {
         void shell.openPath(worktreePath);
       });
     },

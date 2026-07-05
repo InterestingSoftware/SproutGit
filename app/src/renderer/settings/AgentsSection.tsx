@@ -52,11 +52,16 @@ const AGENT_PRESETS: {
 /** The set of command basenames recognized as ACP-capable, shared with the main process's ACP_PRESETS table via @sproutgit/types so the two can't drift apart. */
 const ACP_CAPABLE_TOKEN_SET = new Set(ACP_CAPABLE_TOKENS);
 
-/** Mirrors the main process's commandSupportsIntegratedMode(). */
+/**
+ * Mirrors the main process's commandSupportsIntegratedMode(). `command` is
+ * always just the binary (args live separately in `config.args`), so this
+ * takes the path's basename directly rather than splitting on whitespace
+ * first — a whitespace split would break an absolute path containing spaces
+ * (common on Windows, e.g. `C:\Program Files\...\claude.exe`).
+ */
 function commandSupportsIntegratedMode(command: string): boolean {
   const trimmed = command.trim().replace(/^["']|["']$/g, "");
-  const token =
-    trimmed.split(/\s+/)[0]?.split(/[\\/]/).pop()?.toLowerCase() ?? "";
+  const token = trimmed.split(/[\\/]/).pop()?.toLowerCase() ?? "";
   return ACP_CAPABLE_TOKEN_SET.has(token);
 }
 
