@@ -1,9 +1,9 @@
 import { describe, it, expect } from 'vitest';
 import { execSync } from 'node:child_process';
-import { mkdtempSync, mkdirSync, writeFileSync, realpathSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, realpathSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { createManagedWorktree, addWorktreeForExistingBranch } from '../worktrees.js';
+import { createManagedWorktree, addWorktreeForExistingBranch, deleteManagedWorktree } from '../worktrees.js';
 
 function createNonBareRepo(dir: string): void {
   mkdirSync(dir, { recursive: true });
@@ -55,5 +55,22 @@ describe('worktree creation and core.bare inheritance', { timeout: 20_000 }, () 
 
     expect(execSync('git status --porcelain', { cwd: worktreePath }).toString().trim()).toBe('');
     expect(execSync('git config --get core.bare', { cwd: worktreePath }).toString().trim()).toBe('false');
+  });
+});
+
+describe('deleteManagedWorktree path containment', { timeout: 20_000 }, () => {
+  it('rejects a worktreePath outside managedWorktreesPath when the caller supplies it, without touching git', async () => {
+    const rootDir = tempDir('sg-worktree-delete-root-');
+    createNonBareRepo(rootDir);
+    const worktreesDir = join(rootDir, '..', 'worktrees');
+    mkdirSync(worktreesDir, { recursive: true });
+    const outsidePath = tempDir('sg-worktree-delete-outside-');
+
+    await expect(
+      deleteManagedWorktree(rootDir, outsidePath, false, null, worktreesDir)
+    ).rejects.toThrow('Worktree path must stay within the managed worktrees directory.');
+
+    // Rejected before git ever ran — the unrelated directory must survive untouched.
+    expect(existsSync(outsidePath)).toBe(true);
   });
 });
