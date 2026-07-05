@@ -13,7 +13,7 @@ import type { FileTreeNode, FileReadResult, FileChangedEvent } from '@sproutgit/
 import { promises as fs } from 'node:fs';
 import { join, relative, resolve, sep } from 'node:path';
 import { canonicalize, isPathWithin } from '@sproutgit/paths';
-import { watchRecursive, closeWatcher, type RecursiveWatchEvent } from '../lib/recursive-watch.js';
+import { watchRecursive, closeWatcher, type RecursiveWatchEvent } from '@sproutgit/fs-watch';
 
 type Closable = { close: () => void | Promise<void> };
 

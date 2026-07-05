@@ -2,7 +2,7 @@ import { describe, it, expect, afterEach } from 'vitest';
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { watchRecursive, closeWatcher, type RecursiveWatchEvent } from '../recursive-watch.js';
+import { watchRecursive, closeWatcher, type RecursiveWatchEvent } from '../index.js';
 
 function tempDir(prefix: string): string {
   return mkdtempSync(join(tmpdir(), prefix));
