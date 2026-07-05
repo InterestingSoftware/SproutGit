@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { mkdtempSync, rmSync, writeFileSync, readFileSync, existsSync } from 'node:fs';
+import { mkdtempSync, rmSync, writeFileSync, readFileSync, existsSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import {
@@ -126,6 +126,40 @@ describe('readHooksFile', () => {
     const result = readHooksFile(repoHooksFilePath(dir));
     expect(result.hooks).toEqual([]);
     expect(result.error).toMatch(/unknown hook/);
+  });
+
+  it('rejects an invalid scope instead of silently coercing it to "worktree"', () => {
+    writeFileSync(repoHooksFilePath(dir), JSON.stringify({
+      version: 1,
+      hooks: [baseHookInput({ scope: 'gobal' })], // typo for "global"/"workspace"
+    }));
+    const result = readHooksFile(repoHooksFilePath(dir));
+    expect(result.hooks).toEqual([]);
+    expect(result.error).toMatch(/scope/);
+  });
+
+  it('accepts an omitted scope, defaulting to "worktree"', () => {
+    writeFileSync(repoHooksFilePath(dir), JSON.stringify({ version: 1, hooks: [baseHookInput()] }));
+    const result = readHooksFile(repoHooksFilePath(dir));
+    expect(result.error).toBeNull();
+    expect(result.hooks[0]?.scope).toBe('worktree');
+  });
+
+  it('rejects an unsupported file version', () => {
+    writeFileSync(repoHooksFilePath(dir), JSON.stringify({ version: 2, hooks: [baseHookInput()] }));
+    const result = readHooksFile(repoHooksFilePath(dir));
+    expect(result.hooks).toEqual([]);
+    expect(result.error).toMatch(/version/);
+  });
+
+  it('surfaces a real I/O error (not ENOENT) instead of treating it as an absent file', () => {
+    // A directory where a file is expected triggers EISDIR on readFileSync,
+    // distinguishing "really unreadable" from "just doesn't exist yet".
+    const dirAsFile = repoHooksFilePath(dir);
+    mkdirSync(dirAsFile);
+    const result = readHooksFile(dirAsFile);
+    expect(result.hooks).toEqual([]);
+    expect(result.error).toBeTruthy();
   });
 });
 

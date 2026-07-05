@@ -308,6 +308,10 @@ export function WorkspaceHooksModal({ open, workspacePath, worktreePath, api, on
       setSaveError(null);
       try {
         await saveDraftIfNeeded();
+        // saveDraftIfNeeded() may have just created/updated a local hook —
+        // refresh so the list and any trust badges reflect that immediately,
+        // matching the local-hook branch below.
+        await refreshHooks();
         setCreating(null);
         setEditing(null);
         setViewingRepoHook(hook);

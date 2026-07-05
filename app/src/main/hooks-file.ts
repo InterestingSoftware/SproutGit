@@ -20,6 +20,7 @@ import type {
   HooksFile,
   HookSource,
   WorkspaceHook,
+  WorkspaceHookScope,
   WorkspaceHookShell,
   WorkspaceHookTrigger,
 } from '@sproutgit/types';
@@ -64,6 +65,8 @@ const VALID_EXECUTION_TARGETS: HookExecutionTarget[] = ['workspace', 'trigger_wo
 
 const VALID_SHELLS: WorkspaceHookShell[] = ['bash', 'zsh', 'pwsh', 'powershell'];
 
+const VALID_SCOPES: WorkspaceHookScope[] = ['worktree', 'workspace'];
+
 function validateHook(raw: unknown, index: number): HookFileDefinition {
   if (typeof raw !== 'object' || raw === null) {
     throw new Error(`hooks[${index}] must be an object`);
@@ -71,6 +74,9 @@ function validateHook(raw: unknown, index: number): HookFileDefinition {
   const h = raw as Record<string, unknown>;
   if (typeof h.name !== 'string' || h.name.trim() === '') {
     throw new Error(`hooks[${index}].name must be a non-empty string`);
+  }
+  if (h.scope !== undefined && !VALID_SCOPES.includes(h.scope as WorkspaceHookScope)) {
+    throw new Error(`hooks[${index}] ("${h.name}").scope must be one of ${VALID_SCOPES.join(', ')}`);
   }
   if (typeof h.trigger !== 'string' || !VALID_TRIGGERS.includes(h.trigger as WorkspaceHookTrigger)) {
     throw new Error(`hooks[${index}] ("${h.name}").trigger must be one of ${VALID_TRIGGERS.join(', ')}`);
@@ -90,7 +96,7 @@ function validateHook(raw: unknown, index: number): HookFileDefinition {
 
   return {
     name: h.name,
-    scope: h.scope === 'workspace' ? 'workspace' : 'worktree',
+    scope: (h.scope as WorkspaceHookScope | undefined) ?? 'worktree',
     trigger: h.trigger as WorkspaceHookTrigger,
     executionTarget: h.executionTarget as HookExecutionTarget,
     shell: h.shell as WorkspaceHookShell,
@@ -117,6 +123,9 @@ function parseHooksFile(raw: string): HookFileDefinition[] {
     throw new Error('expected an object with a "hooks" array');
   }
   const file = parsed as HooksFile;
+  if (file.version !== 1) {
+    throw new Error(`unsupported version ${JSON.stringify(file.version)} — expected 1`);
+  }
   const hooks = file.hooks.map((h, i) => validateHook(h, i));
 
   const names = new Set<string>();
@@ -196,8 +205,14 @@ export function readHooksFile(path: string): ReadHooksFileResult {
   let raw: string;
   try {
     raw = readFileSync(path, 'utf8');
-  } catch {
-    return { hooks: [], error: null };
+  } catch (err) {
+    // A missing file is the normal "no hooks defined" case. Anything else
+    // (permissions, a directory in its place, transient I/O) is a real
+    // problem — surface it as `error` instead of silently treating it as absent.
+    if (err instanceof Error && 'code' in err && err.code === 'ENOENT') {
+      return { hooks: [], error: null };
+    }
+    return { hooks: [], error: err instanceof Error ? err.message : String(err) };
   }
 
   try {
