@@ -12,6 +12,7 @@ vi.mock('electron', () => ({
   ipcMain: { handle: handleMock },
   BrowserWindow: { fromWebContents: (sender: unknown) => sender ?? null },
 }));
+vi.mock('../../telemetry.js', () => ({ log: { error: vi.fn(), info: vi.fn(), warn: vi.fn() } }));
 
 const { watchRecursiveMock, closeWatcherMock } = vi.hoisted(() => ({
   watchRecursiveMock: vi.fn(),

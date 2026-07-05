@@ -1,8 +1,5 @@
 import type { IssueTrackerPattern, IssueMatch } from '@sproutgit/types';
-
-function escapeHtml(s: string): string {
-  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-}
+import { escapeHtml } from './html-escape.js';
 
 function escapeAttr(s: string): string {
   return escapeHtml(s).replace(/"/g, '&quot;');

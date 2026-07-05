@@ -13,7 +13,7 @@
  *    arrives via `git checkout`.
  */
 import { existsSync } from 'node:fs';
-import { ipcMain, BrowserWindow } from 'electron';
+import { BrowserWindow } from 'electron';
 import { IPC } from '@sproutgit/types';
 import type {
   WorkspaceHookTrigger,
@@ -33,6 +33,7 @@ import { join, basename, normalize } from 'path';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { manager, sessionWindows, registerHookExitHandler } from './terminal.js';
+import { workspaceDbPath } from './workspace.js';
 import {
   readHooksFile,
   writeLocalHooksFile,
@@ -44,6 +45,7 @@ import {
 } from '../hooks-file.js';
 import { isHookTrusted, trustHook } from '../hooks-trust.js';
 import { log } from '../telemetry.js';
+import { handle } from './handle.js';
 
 /** Tracks hook IDs that have already fired once this session (for switchOncePerSession). */
 const firedOnceHookIds = new Set<string>();
@@ -73,8 +75,7 @@ async function resolveShellToPath(shell: WorkspaceHookShell): Promise<string> {
 }
 
 function getWorkspaceDb(workspacePath: string) {
-  const dbPath = join(workspacePath, '.sproutgit', 'state.db');
-  return openWorkspaceDb(dbPath);
+  return openWorkspaceDb(workspaceDbPath(workspacePath));
 }
 
 // ── Local hook storage ───────────────────────────────────────────────────
@@ -422,17 +423,17 @@ export async function runTriggerHooks(args: RunTriggerHooksArgs, win: BrowserWin
 }
 
 export function registerHookHandlers(configDb: ConfigDb): void {
-  ipcMain.handle(IPC.HOOK_RUN, async (_e, args: RunHookArgs) => {
+  handle(IPC.HOOK_RUN, async (_e, args: RunHookArgs) => {
     const win = BrowserWindow.fromWebContents(_e.sender);
     if (!win) return;
     await runHook(args, win, configDb);
   });
 
-  ipcMain.handle(IPC.HOOK_LIST, (_e, args: { workspacePath: string; worktreePath: string | null }): HookListResult => {
+  handle(IPC.HOOK_LIST, (_e, args: { workspacePath: string; worktreePath: string | null }): HookListResult => {
     return getEffectiveHooks(args.workspacePath, args.worktreePath, configDb);
   });
 
-  ipcMain.handle(IPC.HOOK_CREATE, (_e, args: { workspacePath: string } & HookUpsertInput) => {
+  handle(IPC.HOOK_CREATE, (_e, args: { workspacePath: string } & HookUpsertInput) => {
     const localDefs = readLocalHookDefs(args.workspacePath);
     if (localDefs.some(h => h.name === args.name)) {
       throw new Error(`A local hook named "${args.name}" already exists.`);
@@ -459,7 +460,7 @@ export function registerHookHandlers(configDb: ConfigDb): void {
     writeLocalHooksFile(args.workspacePath, localDefs);
   });
 
-  ipcMain.handle(IPC.HOOK_UPDATE, (_e, args: { workspacePath: string; id: string } & Partial<HookUpsertInput>) => {
+  handle(IPC.HOOK_UPDATE, (_e, args: { workspacePath: string; id: string } & Partial<HookUpsertInput>) => {
     const parsed = parseHookId(args.id);
     if (!parsed || parsed.source !== 'local') return; // repo hooks: edit sproutgit.hooks.json + commit instead
     const localDefs = readLocalHookDefs(args.workspacePath);
@@ -505,7 +506,7 @@ export function registerHookHandlers(configDb: ConfigDb): void {
     writeLocalHooksFile(args.workspacePath, localDefs);
   });
 
-  ipcMain.handle(IPC.HOOK_DELETE, (_e, args: { workspacePath: string; id: string }) => {
+  handle(IPC.HOOK_DELETE, (_e, args: { workspacePath: string; id: string }) => {
     const parsed = parseHookId(args.id);
     if (!parsed || parsed.source !== 'local') return;
     const remaining = readLocalHookDefs(args.workspacePath).filter(h => h.name !== parsed.name);
@@ -517,7 +518,7 @@ export function registerHookHandlers(configDb: ConfigDb): void {
     writeLocalHooksFile(args.workspacePath, remaining);
   });
 
-  ipcMain.handle(IPC.HOOK_TOGGLE, (_e, args: {
+  handle(IPC.HOOK_TOGGLE, (_e, args: {
     workspacePath: string;
     id: string;
     enabled: boolean;
@@ -534,7 +535,7 @@ export function registerHookHandlers(configDb: ConfigDb): void {
     writeLocalHooksFile(args.workspacePath, localDefs);
   });
 
-  ipcMain.handle(IPC.HOOK_TRUST, (_e, args: { worktreePath: string; hookId: string }) => {
+  handle(IPC.HOOK_TRUST, (_e, args: { worktreePath: string; hookId: string }) => {
     const parsed = parseHookId(args.hookId);
     if (!parsed || parsed.source !== 'repo') return;
     const { hooks: repoDefs } = readHooksFile(repoHooksFilePath(args.worktreePath));
@@ -543,7 +544,7 @@ export function registerHookHandlers(configDb: ConfigDb): void {
     trustHook(configDb, args.worktreePath, hashHookDefinition(def));
   });
 
-  ipcMain.handle(IPC.HOOK_RUN_SWITCH, async (_e, args: {
+  handle(IPC.HOOK_RUN_SWITCH, async (_e, args: {
     workspacePath: string;
     targetWorktreePath: string;
     initiatingWorktreePath?: string | null;
@@ -579,7 +580,7 @@ export function registerHookHandlers(configDb: ConfigDb): void {
     }
   });
 
-  ipcMain.handle(IPC.HOOK_RUN_CREATE, async (_e, args: {
+  handle(IPC.HOOK_RUN_CREATE, async (_e, args: {
     workspacePath: string;
     newWorktreePath: string;
     initiatingWorktreePath?: string | null;
@@ -599,7 +600,7 @@ export function registerHookHandlers(configDb: ConfigDb): void {
     }
   });
 
-  ipcMain.handle(IPC.HOOK_RUN_TRIGGER, async (_e, args: RunTriggerHooksArgs) => {
+  handle(IPC.HOOK_RUN_TRIGGER, async (_e, args: RunTriggerHooksArgs) => {
     const win = BrowserWindow.fromWebContents(_e.sender);
     if (!win) return;
     await runTriggerHooks(args, win, configDb);

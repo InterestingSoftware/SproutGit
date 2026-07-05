@@ -67,6 +67,12 @@ import {
 
 type WorkspaceSearch = { path: string };
 
+/** Max characters of PTY output retained per terminal (~1MB of UTF-16). Older
+ *  output is dropped from the front rather than kept forever — a terminal
+ *  running a chatty long-lived process must not accumulate output for its
+ *  entire lifetime. */
+const TERMINAL_BUFFER_CAP = 512 * 1024;
+
 // ── Shared helpers ────────────────────────────────────────────────────────────
 
 /** Last path segment, tolerating both '/' (macOS/Linux) and '\' (Windows) separators. */
@@ -249,6 +255,8 @@ function WorkspaceInner() {
           setPendingNewWorktreePath(null);
           useWorkspaceStore.setState(s => ({
             activeWorktree: newWt,
+            creatingWorktree: false,
+            pendingCreationBranch: null,
             worktreeActiveTerminalId: {
               ...s.worktreeActiveTerminalId,
               ...(prevPath ? { [prevPath]: s.activeTerminalId } : {}),
@@ -309,8 +317,28 @@ function WorkspaceInner() {
   // Temporary shim — StagingPanel still uses this until it is refactored to useQuery
   const [stagingRefresh, setStagingRefresh] = useState(0);
 
-  // Non-reactive terminal data buffer
+  // Non-reactive terminal data buffer. Capped per terminal so a long-running
+  // or repeatedly-opened terminal doesn't accumulate unbounded output for
+  // the lifetime of the session — see TERMINAL_BUFFER_CAP below.
   const terminalDataRef = useRef<Map<string, string>>(new Map());
+  // Cumulative characters trimmed from the front of each terminal's buffer,
+  // so TerminalPane (which reads pendingData as an ever-growing stream) can
+  // still compute correct write deltas after a trim.
+  const terminalDroppedLenRef = useRef<Map<string, number>>(new Map());
+  const terminalBuffersHydratedRef = useRef(false);
+  // The store's terminalSessions survive WorkspaceInner unmounting/remounting
+  // (e.g. navigating to Projects and back) so background PTYs keep their
+  // pendingData/droppedLen, but these refs do not — they'd otherwise reset to
+  // empty and the next onTerminalData event would clobber the preserved
+  // buffer with just the newest chunk. Reseed once per mount, synchronously
+  // during render so it happens before the onTerminalData listener attaches.
+  if (!terminalBuffersHydratedRef.current) {
+    terminalBuffersHydratedRef.current = true;
+    for (const sess of useWorkspaceStore.getState().terminalSessions) {
+      terminalDataRef.current.set(sess.id, sess.pendingData);
+      terminalDroppedLenRef.current.set(sess.id, sess.droppedLen);
+    }
+  }
   const renameInputRef = useRef<HTMLInputElement | null>(null);
   const lastWorktreeWorkspaceRef = useRef('');
 
@@ -560,16 +588,40 @@ function WorkspaceInner() {
 
   useEffect(() => {
     const offData = api.onTerminalData((id: string, data: string) => {
-      const prev = terminalDataRef.current.get(id) ?? '';
-      terminalDataRef.current.set(id, prev + data);
+      const prevBuffer = terminalDataRef.current.get(id) ?? '';
+      const prevDropped = terminalDroppedLenRef.current.get(id) ?? 0;
+      let buffer: string;
+      let droppedLen: number;
+      if (data.length >= TERMINAL_BUFFER_CAP) {
+        // A single chunk alone meets/exceeds the cap — skip concatenating it
+        // with the old buffer so we never allocate a temporary string larger
+        // than the cap (the old buffer is entirely superseded anyway).
+        const overflow = data.length - TERMINAL_BUFFER_CAP;
+        buffer = data.slice(overflow);
+        droppedLen = prevDropped + prevBuffer.length + overflow;
+      } else {
+        const combined = prevBuffer + data;
+        if (combined.length > TERMINAL_BUFFER_CAP) {
+          const overflow = combined.length - TERMINAL_BUFFER_CAP;
+          buffer = combined.slice(overflow);
+          droppedLen = prevDropped + overflow;
+        } else {
+          buffer = combined;
+          droppedLen = prevDropped;
+        }
+      }
+      terminalDataRef.current.set(id, buffer);
+      terminalDroppedLenRef.current.set(id, droppedLen);
       useWorkspaceStore.setState(s => ({
         terminalSessions: s.terminalSessions.map(sess =>
-          sess.id === id ? { ...sess, pendingData: terminalDataRef.current.get(id) ?? '' } : sess
+          sess.id === id ? { ...sess, pendingData: buffer, droppedLen } : sess
         ),
       }));
     });
 
     const offExit = api.onTerminalExit((id: string) => {
+      terminalDataRef.current.delete(id);
+      terminalDroppedLenRef.current.delete(id);
       useWorkspaceStore.setState(s => {
         const remaining = s.terminalSessions.filter(sess => sess.id !== id);
         const currentPath = s.activeWorktree?.path;
@@ -599,6 +651,7 @@ function WorkspaceInner() {
             cwd,
             label: makeTerminalLabel(s.terminalSessions.filter(sess => sess.cwd === cwd), label),
             pendingData: '',
+            droppedLen: 0,
             agentId: null,
           }],
           activeTerminalId: event.terminalId,
@@ -626,6 +679,7 @@ function WorkspaceInner() {
             cwd,
             label: makeTerminalLabel(s.terminalSessions.filter(sess => sess.cwd === cwd), 'AI Agent'),
             pendingData: '',
+            droppedLen: 0,
             agentId: 'agent',
           }],
           activeTerminalId: event.terminalId,
@@ -918,6 +972,7 @@ function WorkspaceInner() {
           cwd,
           label: makeTerminalLabel(s.terminalSessions.filter(sess => sess.cwd === cwd), label ?? shellLabel),
           pendingData: '',
+          droppedLen: 0,
           agentId: null,
         }],
         activeTerminalId: id,
@@ -973,6 +1028,8 @@ function WorkspaceInner() {
 
   async function closeTerminal(id: string) {
     await api.closeTerminal(id).catch(() => undefined);
+    terminalDataRef.current.delete(id);
+    terminalDroppedLenRef.current.delete(id);
     useWorkspaceStore.setState(s => {
       const remaining = s.terminalSessions.filter(sess => sess.id !== id);
       const currentPath = s.activeWorktree?.path;
@@ -993,6 +1050,10 @@ function WorkspaceInner() {
   async function closeTerminals(ids: string[]) {
     if (ids.length === 0) return;
     await Promise.all(ids.map(id => api.closeTerminal(id).catch(() => undefined)));
+    for (const id of ids) {
+      terminalDataRef.current.delete(id);
+      terminalDroppedLenRef.current.delete(id);
+    }
     useWorkspaceStore.setState(s => {
       const idSet = new Set(ids);
       const remaining = s.terminalSessions.filter(sess => !idSet.has(sess.id));
@@ -1534,6 +1595,7 @@ function WorkspaceInner() {
                             <TerminalPane
                               sessionId={s.id}
                               incomingData={s.pendingData}
+                              droppedLen={s.droppedLen}
                               className="h-full w-full"
                               // High-frequency (every keystroke/resize) — a toast per
                               // failure would be spam, so this is intentionally silent

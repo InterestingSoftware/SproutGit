@@ -422,9 +422,6 @@ const slides = await Promise.all(SLIDE_DEFS.map(async (def) => {
       slides[current].dataset.active = 'false';
       slides[current].setAttribute('aria-hidden', 'true');
       bars[current].setAttribute('aria-selected', 'false');
-      bars[current].style.setProperty('--bar-progress', '100%');
-      bars[current].dataset.past = next_idx > current ? '' : null;
-      if (next_idx <= current) delete bars[current].dataset.past;
       dots[current].setAttribute('aria-current', 'false');
 
       current = next_idx;

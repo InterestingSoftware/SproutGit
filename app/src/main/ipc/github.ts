@@ -1,9 +1,10 @@
-import { ipcMain, safeStorage } from 'electron';
+import { safeStorage } from 'electron';
 import { join } from 'path';
 import { readFileSync, writeFileSync, unlinkSync, existsSync } from 'fs';
 import { IPC } from '@sproutgit/types';
 import type { DeviceCodeResponse, GitHubPollResult, GitHubAuthStatus, GitHubEmailSuggestion } from '@sproutgit/types';
 import { deviceFlowStart, deviceFlowPoll, listEmails, listRepos } from '@sproutgit/provider-github';
+import { handle } from './handle.js';
 
 // ── Token storage via electron.safeStorage ────────────────────────────────────
 // Kept here because safeStorage is Electron-specific and cannot live in a
@@ -45,17 +46,17 @@ function deleteToken(userDataPath: string): void {
 // ── IPC registration ──────────────────────────────────────────────────────────
 
 export function registerGithubHandlers(userDataPath: string): void {
-  ipcMain.handle(IPC.GITHUB_AUTH_STATUS, (): GitHubAuthStatus => {
+  handle(IPC.GITHUB_AUTH_STATUS, (): GitHubAuthStatus => {
     const cred = getStoredGithubToken(userDataPath);
     if (!cred) return { authenticated: false, username: null, provider: 'github' };
     return { authenticated: true, username: cred.username, provider: 'github' };
   });
 
-  ipcMain.handle(IPC.GITHUB_DEVICE_FLOW_START, (): Promise<DeviceCodeResponse> =>
+  handle(IPC.GITHUB_DEVICE_FLOW_START, (): Promise<DeviceCodeResponse> =>
     deviceFlowStart(),
   );
 
-  ipcMain.handle(IPC.GITHUB_DEVICE_FLOW_POLL, async (_e, deviceCode: string): Promise<GitHubPollResult> => {
+  handle(IPC.GITHUB_DEVICE_FLOW_POLL, async (_e, deviceCode: string): Promise<GitHubPollResult> => {
     const result = await deviceFlowPoll(deviceCode);
     if (result.status === 'complete' && result.accessToken) {
       saveToken(userDataPath, result.accessToken, result.username);
@@ -63,17 +64,17 @@ export function registerGithubHandlers(userDataPath: string): void {
     return { status: result.status, username: result.username, error: result.error };
   });
 
-  ipcMain.handle(IPC.GITHUB_LOGOUT, () => {
+  handle(IPC.GITHUB_LOGOUT, () => {
     deleteToken(userDataPath);
   });
 
-  ipcMain.handle(IPC.GITHUB_LIST_EMAILS, async (): Promise<GitHubEmailSuggestion[]> => {
+  handle(IPC.GITHUB_LIST_EMAILS, async (): Promise<GitHubEmailSuggestion[]> => {
     const cred = getStoredGithubToken(userDataPath);
     if (!cred) return [];
     return listEmails(cred.token);
   });
 
-  ipcMain.handle(IPC.GITHUB_LIST_REPOS, async () => {
+  handle(IPC.GITHUB_LIST_REPOS, async () => {
     const cred = getStoredGithubToken(userDataPath);
     if (!cred) return [];
     return listRepos(cred.token);

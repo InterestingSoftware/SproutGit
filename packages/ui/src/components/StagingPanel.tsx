@@ -17,6 +17,7 @@ import goLang from 'highlight.js/lib/languages/go';
 import { type StatusFileEntry, type WorktreeStatusResult, type CommitMessageGenerateResult } from '@sproutgit/types';
 import { Spinner } from './Spinner.js';
 import { ConfirmDialog } from './ConfirmDialog.js';
+import { escapeHtml } from '../html-escape.js';
 
 hljs.registerLanguage('typescript', typescriptLang);
 hljs.registerLanguage('javascript', javascriptLang);
@@ -506,13 +507,6 @@ export function StagingPanel({
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
-
-function escapeHtml(s: string): string {
-  return s
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;');
-}
 
 const extToLang: Record<string, string> = {
   ts: 'typescript',

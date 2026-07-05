@@ -1,17 +1,17 @@
-import { ipcMain } from 'electron';
 import { IPC } from '@sproutgit/types';
 import { openConfigDb, eq } from '@sproutgit/database';
 import { settings } from '@sproutgit/database/schema/config';
+import { handle } from './handle.js';
 
 type ConfigDb = ReturnType<typeof openConfigDb>;
 
 export function registerSettingsHandlers(configDb: ConfigDb): void {
-  ipcMain.handle(IPC.SETTINGS_GET, (_e, key: string) => {
+  handle(IPC.SETTINGS_GET, (_e, key: string) => {
     const row = configDb.select().from(settings).where(eq(settings.key, key)).get();
     return row?.value ?? null;
   });
 
-  ipcMain.handle(IPC.SETTINGS_SET, (_e, args: { key: string; value: string }) => {
+  handle(IPC.SETTINGS_SET, (_e, args: { key: string; value: string }) => {
     configDb
       .insert(settings)
       .values({ key: args.key, value: args.value })
@@ -19,11 +19,11 @@ export function registerSettingsHandlers(configDb: ConfigDb): void {
       .run();
   });
 
-  ipcMain.handle(IPC.SETTINGS_DELETE, (_e, key: string) => {
+  handle(IPC.SETTINGS_DELETE, (_e, key: string) => {
     configDb.delete(settings).where(eq(settings.key, key)).run();
   });
 
-  ipcMain.handle(IPC.SETTINGS_GET_ALL, () => {
+  handle(IPC.SETTINGS_GET_ALL, () => {
     return configDb.select().from(settings).all();
   });
 }

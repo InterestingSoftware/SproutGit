@@ -2,6 +2,7 @@ import { api } from '../../api.js';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Spinner, Autocomplete, matchIssueRef } from '@sproutgit/ui';
 import { validateBranchName, type RefInfo, type IssueTrackerPattern, type ProviderIssue } from '@sproutgit/types';
+import { useWorkspaceStore } from '../../stores/workspace-store.js';
 import { primaryBtn, secondaryBtn, fieldLabel, fieldInput } from './dialog-classes.js';
 
 type Props = {
@@ -77,11 +78,16 @@ export function NewWorktreeDialog({ open, workspacePath, gitRepoPath, managedWor
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    const nameErr = validateBranchName(branchName.trim());
+    const trimmedBranch = branchName.trim();
+    const nameErr = validateBranchName(trimmedBranch);
     if (nameErr) { setBranchNameError(nameErr); return; }
     if (!branchFrom.trim()) { setBranchNameError('Source ref is required'); return; }
     setBranchNameError(null);
     setCreating(true);
+    // Drives the "creating…" placeholder row in WorktreeSidebar — cleared once
+    // the real worktree shows up in the worktrees query (see workspace.tsx),
+    // or immediately below on failure.
+    useWorkspaceStore.setState({ creatingWorktree: true, pendingCreationBranch: trimmedBranch });
     onClose(); // Optimistically close; pending branch shown in sidebar
     try {
       const result = await api.createWorktree({
@@ -89,7 +95,7 @@ export function NewWorktreeDialog({ open, workspacePath, gitRepoPath, managedWor
         rootRepoPath: gitRepoPath,
         managedWorktreesPath,
         fromRef: branchFrom || 'HEAD',
-        newBranch: branchName.trim(),
+        newBranch: trimmedBranch,
         initiatingWorktreePath,
         issueRef: effectiveIssueRef,
         issueTitle: issuePreview?.title ?? null,
@@ -103,6 +109,7 @@ export function NewWorktreeDialog({ open, workspacePath, gitRepoPath, managedWor
       onCreated(result.worktreePath);
     } catch (err) {
       onToast(`Failed: ${String(err)}`, 'error');
+      useWorkspaceStore.setState({ creatingWorktree: false, pendingCreationBranch: null });
     } finally {
       setCreating(false);
     }
