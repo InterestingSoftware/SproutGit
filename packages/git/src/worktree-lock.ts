@@ -27,6 +27,20 @@ export function withWorktreeLock<T>(repoPath: string, fn: () => Promise<T>): Pro
   const key = canonicalize(repoPath);
   const prior = chains.get(key) ?? Promise.resolve();
   const result = prior.then(fn, fn);
-  chains.set(key, result.then(() => undefined, () => undefined));
+  const cleanup = result.then(() => undefined, () => undefined);
+  chains.set(key, cleanup);
+  // Only remove the entry if it's still exactly the one we just settled — if a
+  // newer call queued behind us in the meantime, it will have replaced this
+  // value in the map, and deleting here would drop its chain instead.
+  cleanup.then(() => {
+    if (chains.get(key) === cleanup) {
+      chains.delete(key);
+    }
+  });
   return result;
+}
+
+/** @internal exposed for tests only, to assert the map doesn't leak entries. */
+export function _getWorktreeLockMapSizeForTests(): number {
+  return chains.size;
 }
