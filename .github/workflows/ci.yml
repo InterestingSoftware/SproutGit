@@ -191,6 +191,10 @@ jobs:
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: false
         working-directory: app
+        # Explicit bash: windows-latest/windows-11-arm default to pwsh, which
+        # can't parse the `if` below (Git Bash ships on all GitHub-hosted
+        # Windows runners, so this works cross-platform).
+        shell: bash
         # Run vite build then electron-builder separately so we can pass
         # --publish never. This prevents electron-builder from trying to
         # upload to GitHub Releases (the release job does that), and ensures

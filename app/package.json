@@ -106,29 +106,17 @@
     "win": {
       "target": [
         {
-          "target": "nsis",
-          "arch": [
-            "x64",
-            "arm64"
-          ]
+          "target": "nsis"
         }
       ]
     },
     "linux": {
       "target": [
         {
-          "target": "AppImage",
-          "arch": [
-            "x64",
-            "arm64"
-          ]
+          "target": "AppImage"
         },
         {
-          "target": "deb",
-          "arch": [
-            "x64",
-            "arm64"
-          ]
+          "target": "deb"
         }
       ],
       "artifactName": "${productName}-${version}-${arch}.${ext}",
