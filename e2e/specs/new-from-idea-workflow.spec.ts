@@ -1,4 +1,4 @@
-import { goHome, closeAndCleanup, rmWithRetry, monitorErrors, waitForToast, E2E_TIMEOUT_MS } from '../helpers.js';
+import { goHome, rmWithRetry, monitorErrors, waitForToast, E2E_TIMEOUT_MS } from '../helpers.js';
 import { mkdtempSync } from 'fs';
 import { join } from 'path';
 import { tmpdir } from 'os';
@@ -72,6 +72,27 @@ async function closeAllTerminals(): Promise<void> {
   });
 }
 
+/**
+ * Navigates home and closes the workspace's SQLite connection via IPC —
+ * the first two steps of helpers.ts's closeAndCleanup(), without its own
+ * built-in file deletion. This test needs a single, more generously-budgeted
+ * delete pass over the whole projectsFolder afterward (see afterEach below)
+ * rather than closeAndCleanup's default retry budget for workspacePath
+ * followed by a second one for projectsFolder — retrying the same still-
+ * locked file twice back to back wastes the whole first budget for nothing.
+ */
+async function closeWorkspace(workspacePath: string): Promise<void> {
+  await goHome();
+  await browser.executeAsync(
+    (p: string, done: (err?: string) => void) => {
+      (window as unknown as { api: { closeWorkspace: (path: string) => Promise<void> } })
+        .api.closeWorkspace(p)
+        .then(() => done(), (e: unknown) => done(String(e)));
+    },
+    workspacePath
+  );
+}
+
 describe('new from idea workflow', () => {
   let projectsFolder: string;
   let workspacePath: string;
@@ -94,12 +115,19 @@ describe('new from idea workflow', () => {
     // no app-exposed signal to poll for "is it actually gone yet" — so this
     // has to be a short, honest wait rather than something pollable.
     await browser.pause(1000);
-    // closeAndCleanup() navigates home and closes the workspace's SQLite
-    // connection via IPC *before* deleting — skipping that (as a plain
-    // rmSync of the parent folder does) leaves state.db locked on Windows,
-    // where you can't unlink a file still open by another handle.
-    await closeAndCleanup(workspacePath).catch(() => undefined);
-    await rmWithRetry(projectsFolder);
+    // Closes the workspace's SQLite connection via IPC *before* deleting —
+    // skipping that leaves state.db locked on Windows. One retry pass over
+    // the whole projectsFolder afterward, budgeted generously since this
+    // test's workspace is freshly created (fresh state.db, freshly run
+    // migrations) rather than a repo that's existed since beforeEach, giving
+    // Windows Defender's real-time scanner — the documented, external cause
+    // of transient EBUSY/EPERM on just-written files, see cleanupRepo's doc
+    // comment — the freshest possible target right as cleanup runs.
+    await closeWorkspace(workspacePath).catch(() => undefined);
+    // maxRetries=25/retryDelayMs=250 sums to ~81s worst case (250 * 25*26/2)
+    // — comfortably under the 120s Windows mocha hook timeout (wdio.conf.ts)
+    // with headroom for the rest of this hook's own overhead.
+    await rmWithRetry(projectsFolder, { maxRetries: 25, retryDelayMs: 250 });
   });
 
   it('pitches an idea, generates a name/stack, creates the project, and kicks off the agent', async () => {
