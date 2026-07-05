@@ -55,9 +55,6 @@ importers:
       '@sproutgit/git':
         specifier: workspace:*
         version: link:../packages/git
-      '@sproutgit/mcp-server':
-        specifier: workspace:*
-        version: link:../packages/mcp-server
       '@sproutgit/paths':
         specifier: workspace:*
         version: link:../packages/paths
@@ -110,6 +107,9 @@ importers:
       '@electron/rebuild':
         specifier: ^4.1.0
         version: 4.1.0
+      '@sproutgit/mcp-server':
+        specifier: workspace:*
+        version: link:../packages/mcp-server
       '@sproutgit/ts-config':
         specifier: workspace:*
         version: link:../packages/ts-config

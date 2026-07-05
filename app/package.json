@@ -171,7 +171,6 @@
     "chokidar": "^4.0.3",
     "@sproutgit/database": "workspace:*",
     "@sproutgit/git": "workspace:*",
-    "@sproutgit/mcp-server": "workspace:*",
     "@sproutgit/paths": "workspace:*",
     "@sproutgit/provider-github": "workspace:*",
     "@sproutgit/terminal": "workspace:*",
@@ -191,6 +190,7 @@
   },
   "devDependencies": {
     "@electron/rebuild": "^4.1.0",
+    "@sproutgit/mcp-server": "workspace:*",
     "@sproutgit/ts-config": "workspace:*",
     "@tailwindcss/vite": "^4.3.2",
     "@testing-library/react": "^16.3.2",
