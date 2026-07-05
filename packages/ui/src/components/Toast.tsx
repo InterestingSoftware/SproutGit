@@ -105,7 +105,7 @@ type ContainerProps = {
   onDismiss: (id: string) => void;
 };
 
-/** Renders all active toasts in the bottom-right corner. */
+/** Renders all active toasts in the bottom-left corner. */
 export function ToastContainer({ toasts, onDismiss }: ContainerProps) {
   if (toasts.length === 0) return null;
   return (

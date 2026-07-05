@@ -1,4 +1,5 @@
 import { Spinner } from './Spinner.js';
+import { escapeHtml } from '../html-escape.js';
 
 type Props = {
   /** Raw unified diff text */
@@ -54,11 +55,7 @@ export function DiffViewer({ content, loading = false, filePath }: Props) {
           <span className="font-(family-name:--sg-font-code) text-[11px] text-(--sg-text-dim)">{filePath}</span>
         </div>
       )}
-      <pre className="sg-diff" dangerouslySetInnerHTML={{ __html: lines.map(l => `<div class="${kindCls[l.kind]}">${escDiff(l.text)}</div>`).join('') }} />
+      <pre className="sg-diff" dangerouslySetInnerHTML={{ __html: lines.map(l => `<div class="${kindCls[l.kind]}">${escapeHtml(l.text)}</div>`).join('') }} />
     </div>
   );
-}
-
-function escDiff(s: string): string {
-  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }

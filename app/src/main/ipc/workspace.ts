@@ -19,14 +19,18 @@ import {
 
 type ConfigDb = ReturnType<typeof openConfigDb>;
 
+/** Path to a workspace's per-workspace sqlite state file. Shared by every IPC module that opens this DB (workspace.ts, hooks.ts, agents.ts, mcp.ts) so the on-disk layout is defined in exactly one place. */
+export function workspaceDbPath(workspacePath: string): string {
+  return join(workspacePath, '.sproutgit', 'state.db');
+}
+
 // Per-workspace DB instances are cached by path.
 const workspaceDbCache = new Map<string, ReturnType<typeof openWorkspaceDb>>();
 
 function getWorkspaceDb(workspacePath: string) {
   const cached = workspaceDbCache.get(workspacePath);
   if (cached) return cached;
-  const dbPath = join(workspacePath, '.sproutgit', 'state.db');
-  const db = openWorkspaceDb(dbPath);
+  const db = openWorkspaceDb(workspaceDbPath(workspacePath));
   workspaceDbCache.set(workspacePath, db);
   return db;
 }

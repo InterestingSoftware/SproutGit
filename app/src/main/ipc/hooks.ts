@@ -15,6 +15,7 @@ import { join, basename, normalize } from 'path';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { manager, sessionWindows, registerHookExitHandler } from './terminal.js';
+import { workspaceDbPath } from './workspace.js';
 
 /** Tracks hook IDs that have already fired once this session (for switchOncePerSession). */
 const firedOnceHookIds = new Set<string>();
@@ -44,8 +45,7 @@ async function resolveShellToPath(shell: WorkspaceHookShell): Promise<string> {
 }
 
 function getWorkspaceDb(workspacePath: string) {
-  const dbPath = join(workspacePath, '.sproutgit', 'state.db');
-  return openWorkspaceDb(dbPath);
+  return openWorkspaceDb(workspaceDbPath(workspacePath));
 }
 
 interface RunHookArgs {

@@ -20,10 +20,10 @@ import { manager, sessionWindows } from './terminal.js';
 import { handle } from './handle.js';
 import { resolveCommandPath, splitCommand, truncate, okResult, errResult } from './tool-test-helpers.js';
 import { installAcpAdapter, resolveAcpAdapterBin } from './acp-adapters.js';
+import { workspaceDbPath } from './workspace.js';
 
 function getWorkspaceDb(workspacePath: string) {
-  const dbPath = join(workspacePath, '.sproutgit', 'state.db');
-  return openWorkspaceDb(dbPath);
+  return openWorkspaceDb(workspaceDbPath(workspacePath));
 }
 
 /**

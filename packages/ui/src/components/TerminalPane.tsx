@@ -57,9 +57,12 @@ const DARK_THEME = {
 };
 
 function resolveTheme() {
-  // Read the computed --sg-bg value to determine which palette to use.
-  const bg = getComputedStyle(document.documentElement).getPropertyValue('--sg-bg').trim();
-  return bg === '#f5f5f5' ? LIGHT_THEME : DARK_THEME;
+  // SproutGit only follows the OS-level color scheme (no in-app light/dark
+  // toggle) — mirrors MonacoEditor's resolveTheme() rather than comparing
+  // against a hardcoded --sg-bg hex value, which would silently break if
+  // that token's value ever changed.
+  const isDark = typeof window !== 'undefined' && window.matchMedia('(prefers-color-scheme: dark)').matches;
+  return isDark ? DARK_THEME : LIGHT_THEME;
 }
 
 type Props = {
