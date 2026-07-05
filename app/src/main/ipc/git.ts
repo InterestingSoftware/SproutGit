@@ -53,6 +53,7 @@ export function registerGitHandlers(getWindow: () => BrowserWindow | null): void
     initiatingWorktreePath?: string | null;
     issueRef?: string | null;
     issueTitle?: string | null;
+    orphan?: boolean;
   }) => {
     return createWorktreeWithHooks(args, getWindow);
   });

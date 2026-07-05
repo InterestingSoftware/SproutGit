@@ -18,7 +18,7 @@
  */
 import type { BrowserWindow } from 'electron';
 import { canonicalize } from '@sproutgit/paths';
-import { createManagedWorktree, deleteManagedWorktree, listWorktrees } from '@sproutgit/git';
+import { createManagedWorktree, createFirstManagedWorktree, deleteManagedWorktree, listWorktrees } from '@sproutgit/git';
 import type { CreateWorktreeResult } from '@sproutgit/types';
 import { runTriggerHooks } from './ipc/hooks.js';
 import { setWorktreeMeta } from './ipc/workspace.js';
@@ -34,6 +34,8 @@ export type CreateWorktreeWithHooksParams = {
   initiatingWorktreePath?: string | null;
   issueRef?: string | null;
   issueTitle?: string | null;
+  /** True for the very first worktree of a brand-new, zero-commit repo — uses `--orphan` instead of `fromRef`, which is meaningless before any commit exists. */
+  orphan?: boolean;
 };
 
 export async function createWorktreeWithHooks(
@@ -56,7 +58,9 @@ export async function createWorktreeWithHooks(
     }, win);
   }
 
-  const result = await createManagedWorktree(params.rootRepoPath, params.managedWorktreesPath, params.fromRef, params.newBranch);
+  const result = params.orphan
+    ? await createFirstManagedWorktree(params.rootRepoPath, params.managedWorktreesPath, params.newBranch)
+    : await createManagedWorktree(params.rootRepoPath, params.managedWorktreesPath, params.fromRef, params.newBranch);
 
   if (params.issueRef) {
     setWorktreeMeta({

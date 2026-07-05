@@ -5,6 +5,8 @@ import type { ChatConfigOption, ChatMessage, ChatPermissionRequest, ChatStreamEv
 
 type Props = {
   worktreePath: string;
+  /** Sent automatically once, as if the user had typed and submitted it, the first time this panel mounts for `worktreePath` — used to kick off boilerplate scaffolding right after a new project is created. */
+  autoPrompt?: string;
 };
 
 /**
@@ -15,7 +17,7 @@ type Props = {
  * terminal text, and inline permission-request prompts when the agent asks
  * for authorization before running a tool.
  */
-export function ChatPanel({ worktreePath }: Props) {
+export function ChatPanel({ worktreePath, autoPrompt }: Props) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [prompt, setPrompt] = useState('');
   const [busy, setBusy] = useState(false);
@@ -32,6 +34,12 @@ export function ChatPanel({ worktreePath }: Props) {
     setError(null);
     setPendingPermission(null);
     setConfigOptions([]);
+  }, [worktreePath]);
+
+  useEffect(() => {
+    if (autoPrompt) void send(autoPrompt);
+    // Only meant to fire once, right after mount for a fresh worktree — not on every autoPrompt/send identity change.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [worktreePath]);
 
   useEffect(() => {
@@ -102,11 +110,11 @@ export function ChatPanel({ worktreePath }: Props) {
     }
   }
 
-  async function send() {
-    const trimmed = prompt.trim();
+  async function send(overrideText?: string) {
+    const trimmed = (overrideText ?? prompt).trim();
     if (!trimmed || busy) return;
     setError(null);
-    setPrompt('');
+    if (overrideText === undefined) setPrompt('');
     setMessages(prev => [...prev, { id: `user-${prev.length}`, role: 'user', text: trimmed, toolUses: [], streaming: false }]);
     setBusy(true);
     try {

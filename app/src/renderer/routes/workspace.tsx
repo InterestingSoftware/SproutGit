@@ -44,6 +44,7 @@ import { DeleteWorktreeDialog } from '../workspace/dialogs/DeleteWorktreeDialog.
 import { PublishDialog } from '../workspace/dialogs/PublishDialog.js';
 import { RunHookDialog } from '../workspace/dialogs/RunHookDialog.js';
 import { loadCommitMessageGeneratorSettings } from '../commit-message-generator-settings.js';
+import { consumePendingScaffold } from '../pending-scaffold.js';
 import {
   qk,
   useWorkspaceStatus,
@@ -150,6 +151,37 @@ function WorkspaceInner() {
     void api.getAgentConfig().then(setAgentConfig).catch((err: unknown) => reportError('Failed to load agent configuration', err));
   }, []);
   const agentConfigured = !!agentConfig?.command.trim();
+
+  // ── Scaffold kickoff for a project just created from the homescreen's
+  // "New from idea" flow — see pending-scaffold.ts. Keyed by workspacePath
+  // (not the worktree path — git reports that back through its own realpath
+  // resolution, e.g. macOS's /var → /private/var, which would never match
+  // the locally-constructed path the dialog stored it under). Consumed at
+  // most once per workspace: harmless to re-run this effect (e.g. on a
+  // worktrees refetch), since consumePendingScaffold() returns undefined
+  // thereafter.
+  const [chatAutoPrompt, setChatAutoPrompt] = useState<string | undefined>(undefined);
+
+  useEffect(() => {
+    if (!activeWorktree || !agentConfig) return;
+    const prompt = consumePendingScaffold(workspacePath);
+    if (!prompt) return;
+    if (agentConfig.mode === 'integrated') {
+      setChatAutoPrompt(prompt);
+      useWorkspaceStore.setState({ activeTab: 'chat' });
+      return;
+    }
+    void (async () => {
+      try {
+        const terminalId = await api.launchAgent({ workspacePath, worktreePath: activeWorktree.path });
+        // Give the CLI a moment to boot before "typing" the kickoff prompt.
+        setTimeout(() => { void api.writeTerminal(terminalId, `${prompt}\n`).catch(() => undefined); }, 1500);
+      } catch (err) {
+        toast(`Failed to launch agent for scaffolding: ${String(err)}`, 'error');
+      }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeWorktree, agentConfig, workspacePath]);
 
   // Worktree paths that currently have a live agent-launched terminal session.
   const worktreesWithLiveAgent = new Set(
@@ -1464,7 +1496,7 @@ function WorkspaceInner() {
 
                   {/* Chat tab (Integrated AI agent mode) */}
                   {activeTab === 'chat' && activeWorktree && agentConfig?.mode === 'integrated' && (
-                    <ChatPanel worktreePath={activeWorktree.path} />
+                    <ChatPanel worktreePath={activeWorktree.path} {...(chatAutoPrompt ? { autoPrompt: chatAutoPrompt } : {})} />
                   )}
 
                   {/* Files tab */}

@@ -15,6 +15,7 @@ import { registerHookHandlers } from './ipc/hooks.js';
 import { registerAgentHandlers } from './ipc/agents.js';
 import { registerChatHandlers } from './ipc/chat.js';
 import { registerCommitMessageGeneratorHandlers } from './ipc/commit-message-generator.js';
+import { registerProjectIdeaGeneratorHandlers } from './ipc/project-idea-generator.js';
 import { registerToolTestHandlers } from './ipc/tool-test.js';
 import { registerWatchHandlers } from './ipc/watcher.js';
 import { registerFileHandlers } from './ipc/files.js';
@@ -268,6 +269,8 @@ app.whenReady().then(() => {
   if (isE2EMode) log.info('[e2e] chat handlers ok');
   registerCommitMessageGeneratorHandlers();
   if (isE2EMode) log.info('[e2e] commit message generator handlers ok');
+  registerProjectIdeaGeneratorHandlers(configDb);
+  if (isE2EMode) log.info('[e2e] project idea generator handlers ok');
   registerToolTestHandlers();
   if (isE2EMode) log.info('[e2e] tool test handlers ok');
   registerWatchHandlers(getMainWindow);
