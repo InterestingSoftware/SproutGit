@@ -1,10 +1,12 @@
 /**
  * Types for the Integrated (structured chat) AI agent mode — the "Chat" tab.
  *
- * Today only Claude Code's CLI is recognized as supporting structured
- * streaming output, via `claude -p "<prompt>" --output-format stream-json
- * --verbose`. Each line of stdout is one JSON object; we parse a small subset
- * of the message shapes into a normalized `ChatStreamEvent` for the renderer.
+ * The main process talks to the configured agent over the Agent Client
+ * Protocol (ACP, see https://agentclientprotocol.com) instead of a
+ * vendor-specific stdout format. Whichever ACP-mode command is configured
+ * (Claude, Gemini, Codex, ...), its `session/update` notifications and
+ * `session/request_permission` requests are normalized into the
+ * `ChatStreamEvent`s below for the renderer.
  */
 
 /** One turn in the chat transcript, as rendered in the Chat tab. */
@@ -28,13 +30,50 @@ export type ChatToolUse = {
   isError?: boolean;
 };
 
-/** Normalized event emitted by the main process as it parses the agent's stream-json stdout. */
+/** Hint about the nature of a permission option (ACP `PermissionOptionKind`). */
+export type ChatPermissionOptionKind = 'allow_once' | 'allow_always' | 'reject_once' | 'reject_always';
+
+/** One choice offered to the user for a pending tool-call permission request. */
+export type ChatPermissionOption = {
+  id: string;
+  name: string;
+  kind: ChatPermissionOptionKind;
+};
+
+/** A tool call awaiting user authorization before the agent will execute it. */
+export type ChatPermissionRequest = {
+  requestId: string;
+  toolUse: ChatToolUse;
+  options: ChatPermissionOption[];
+};
+
+/** One selectable value of a `select`-kind session config option (ACP `SessionConfigSelectOption`). */
+export type ChatConfigOptionValue = {
+  id: string;
+  name: string;
+  description?: string;
+  /** Group label, if the agent grouped its options (ACP `SessionConfigSelectGroup`) — flattened here for simplicity. */
+  group?: string;
+};
+
+/**
+ * A session-scoped setting the agent exposes generically via ACP's
+ * `session/set_config_option` mechanism — model choice is the main example
+ * (category `"model"`), but agents can expose others (e.g. reasoning effort).
+ */
+export type ChatConfigOption =
+  | { id: string; name: string; description?: string; category?: string; kind: 'select'; currentValue: string; values: ChatConfigOptionValue[] }
+  | { id: string; name: string; description?: string; category?: string; kind: 'boolean'; currentValue: boolean };
+
+/** Normalized event emitted by the main process as it translates the agent's ACP session updates. */
 export type ChatStreamEvent =
   | { type: 'assistant_text_delta'; messageId: string; text: string }
   | { type: 'assistant_message_start'; messageId: string }
   | { type: 'assistant_message_end'; messageId: string }
   | { type: 'tool_use'; messageId: string; toolUse: ChatToolUse }
   | { type: 'tool_result'; messageId: string; toolUseId: string; result: string; isError: boolean }
+  | { type: 'permission_request'; requestId: string; toolUse: ChatToolUse; options: ChatPermissionOption[] }
+  | { type: 'config_options'; options: ChatConfigOption[] }
   | { type: 'result'; success: boolean; summary: string }
   | { type: 'error'; message: string };
 

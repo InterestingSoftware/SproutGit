@@ -58,11 +58,16 @@ export const IPC = {
   AGENT_SAVE: 'agent:save',
   AGENT_LAUNCH: 'agent:launch',
   AGENT_TEST: 'agent:test',
+  AGENT_ACP_ADAPTER_STATUS: 'agent:acpAdapterStatus',
+  AGENT_ACP_ADAPTER_INSTALL: 'agent:acpAdapterInstall',
   EVENT_AGENT_TERMINAL_LAUNCH: 'event:agentTerminalLaunch',
+  EVENT_AGENT_ACP_ADAPTER_INSTALL: 'event:agentAcpAdapterInstall',
   // ── Chat (Integrated agent mode) ────────────────────────────────────────
   CHAT_START: 'chat:start',
   CHAT_SEND: 'chat:send',
   CHAT_STOP: 'chat:stop',
+  CHAT_RESPOND_PERMISSION: 'chat:respondPermission',
+  CHAT_SET_CONFIG_OPTION: 'chat:setConfigOption',
   EVENT_CHAT_STREAM: 'event:chatStream',
   EVENT_CHAT_EXIT: 'event:chatExit',
   // ── Settings tool tests (editor / diff / merge / shell / commit-msg-gen) ──
@@ -193,7 +198,8 @@ import type {
 import type { EditorInfo, GitToolInfo, ToolTestResult } from './tools.js';
 import type { GitHubAuthStatus, DeviceCodeResponse, GitHubPollResult, GitHubEmailSuggestion, GitHubRepo } from './github.js';
 import type { TerminalInfo } from './terminal.js';
-import type { AgentConfig } from './agents.js';
+import type { AgentConfig, AcpAdapterStatus } from './agents.js';
+import type { ChatConfigOption } from './chat.js';
 import type { CommitMessageGeneratorSettings, CommitMessageGenerateResult } from './commit-message-generator.js';
 import type { IssueTrackerPattern } from './issuetracker.js';
 import type { ProviderIssue } from './providers.js';
@@ -308,10 +314,14 @@ export type IpcMap = {
   'agent:save':   { args: [config: AgentConfig];                                       result: void };
   'agent:launch': { args: [args: { workspacePath: string; worktreePath: string }];     result: string };
   'agent:test':   { args: [];                                                          result: ToolTestResult };
+  'agent:acpAdapterStatus':  { args: [];                                               result: AcpAdapterStatus | null };
+  'agent:acpAdapterInstall': { args: [npmPackage: string];                             result: void };
   // ── Chat (Integrated agent mode) ─────────────────────────────────────────
-  'chat:start': { args: [args: { worktreePath: string; prompt: string }]; result: string };
-  'chat:send':  { args: [args: { sessionId: string; prompt: string }];    result: void };
-  'chat:stop':  { args: [sessionId: string];                              result: void };
+  'chat:start':             { args: [args: { worktreePath: string; initialPrompt?: string }];       result: { sessionId: string; configOptions: ChatConfigOption[] } };
+  'chat:send':              { args: [args: { sessionId: string; prompt: string }];                  result: void };
+  'chat:stop':              { args: [sessionId: string];                                            result: void };
+  'chat:respondPermission': { args: [args: { sessionId: string; requestId: string; optionId: string }]; result: void };
+  'chat:setConfigOption':   { args: [args: { sessionId: string; configId: string; value: string | boolean }]; result: ChatConfigOption[] };
   // ── Settings tool tests ──────────────────────────────────────────────────
   'tooltest:editor':    { args: [command: string];                                    result: ToolTestResult };
   'tooltest:diffTool':  { args: [command: string];                                    result: ToolTestResult };

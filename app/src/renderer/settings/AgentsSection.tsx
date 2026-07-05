@@ -1,7 +1,8 @@
-import { Bot } from 'lucide-react';
+import { Bot, CheckCircle2, Download, Loader2, RefreshCw } from 'lucide-react';
 import { api } from '../api.js';
-import { useEffect, useState } from 'react';
-import type { AgentConfig, AgentInvocationMode } from '@sproutgit/types';
+import { useEffect, useRef, useState } from 'react';
+import { ACP_CAPABLE_TOKENS } from '@sproutgit/types';
+import type { AcpAdapterStatus, AgentConfig, AgentInvocationMode } from '@sproutgit/types';
 import type { ToastData } from '@sproutgit/ui';
 import { SettingsToolRow, type ToolPreset } from './SettingsToolRow.js';
 
@@ -12,17 +13,20 @@ interface Props {
 /** Known agent CLI presets — quick-pick buttons in the row's Edit panel. */
 const AGENT_PRESETS: { id: string; name: string; command: string; supportsIntegrated: boolean }[] = [
   { id: 'claude-code', name: 'Claude Code', command: 'claude', supportsIntegrated: true },
-  { id: 'kiro', name: 'Kiro', command: 'kiro', supportsIntegrated: false },
-  { id: 'cursor', name: 'Cursor', command: 'cursor-agent', supportsIntegrated: false },
-  { id: 'codex', name: 'Codex CLI', command: 'codex', supportsIntegrated: false },
-  { id: 'gemini', name: 'Gemini CLI', command: 'gemini', supportsIntegrated: false },
+  { id: 'kiro', name: 'Kiro', command: 'kiro', supportsIntegrated: true },
+  { id: 'cursor', name: 'Cursor', command: 'cursor-agent', supportsIntegrated: true },
+  { id: 'codex', name: 'Codex CLI', command: 'codex', supportsIntegrated: true },
+  { id: 'gemini', name: 'Gemini CLI', command: 'gemini', supportsIntegrated: true },
 ];
 
-/** Mirrors the main process's commandSupportsIntegratedMode() — only Claude Code, for now. */
+/** The set of command basenames recognized as ACP-capable, shared with the main process's ACP_PRESETS table via @sproutgit/types so the two can't drift apart. */
+const ACP_CAPABLE_TOKEN_SET = new Set(ACP_CAPABLE_TOKENS);
+
+/** Mirrors the main process's commandSupportsIntegratedMode(). */
 function commandSupportsIntegratedMode(command: string): boolean {
   const trimmed = command.trim().replace(/^["']|["']$/g, '');
   const token = trimmed.split(/\s+/)[0]?.split(/[\\/]/).pop()?.toLowerCase() ?? '';
-  return token === 'claude' || token === 'claude-code';
+  return ACP_CAPABLE_TOKEN_SET.has(token);
 }
 
 /**
@@ -62,12 +66,41 @@ export function AgentsSection({ onToast }: Props) {
   const [config, setConfig] = useState<AgentConfig>({ command: '', args: [], mode: 'terminal' });
   const [customCommand, setCustomCommand] = useState('');
   const [loading, setLoading] = useState(true);
+  const [adapterStatus, setAdapterStatus] = useState<AcpAdapterStatus | null>(null);
+  const [installing, setInstalling] = useState(false);
+  const [installMessage, setInstallMessage] = useState('');
+  const installingPackageRef = useRef<string | null>(null);
+  const installingLabelRef = useRef<string>('Adapter');
+
+  function refreshAdapterStatus() {
+    void api.getAcpAdapterStatus().then(setAdapterStatus).catch(() => setAdapterStatus(null));
+  }
 
   useEffect(() => {
     void api.getAgentConfig().then(c => {
       setConfig(c);
       setCustomCommand([quoteIfNeeded(c.command), ...c.args].filter(Boolean).join(' '));
     }).catch(() => undefined).finally(() => setLoading(false));
+    refreshAdapterStatus();
+  }, []);
+
+  useEffect(() => {
+    const off = api.onAcpAdapterInstallProgress(event => {
+      if (event.npmPackage !== installingPackageRef.current) return;
+      setInstallMessage(event.message);
+      if (event.status === 'done') {
+        setInstalling(false);
+        installingPackageRef.current = null;
+        onToast(`${installingLabelRef.current} installed`, 'success');
+        refreshAdapterStatus();
+      } else if (event.status === 'error') {
+        setInstalling(false);
+        installingPackageRef.current = null;
+        onToast(`Install failed: ${event.message}`, 'error');
+      }
+    });
+    return () => { off(); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const integratedSupported = commandSupportsIntegratedMode(config.command);
@@ -82,9 +115,23 @@ export function AgentsSection({ onToast }: Props) {
     try {
       await api.saveAgentConfig(toSave);
       onToast('AI agent saved', 'success');
+      refreshAdapterStatus();
     } catch (err) {
       onToast(String(err), 'error');
     }
+  }
+
+  function installAdapter() {
+    if (!adapterStatus || installing) return;
+    setInstalling(true);
+    setInstallMessage('Starting install…');
+    installingPackageRef.current = adapterStatus.npmPackage;
+    installingLabelRef.current = adapterStatus.label;
+    void api.installAcpAdapter(adapterStatus.npmPackage).catch(err => {
+      setInstalling(false);
+      installingPackageRef.current = null;
+      onToast(`Install failed: ${String(err)}`, 'error');
+    });
   }
 
   function selectPreset(id: string) {
@@ -137,33 +184,80 @@ export function AgentsSection({ onToast }: Props) {
           onTest={() => api.testAgent()}
           onToast={onToast}
           belowSummary={
-            <div className="mt-2 flex items-center gap-2" data-testid="agent-mode-toggle">
-              <span className="text-[11px] font-medium text-(--sg-text-faint)">Mode:</span>
-              <div className="inline-flex rounded-md border border-(--sg-border) p-0.5">
-                <button
-                  type="button"
-                  className={`rounded px-2 py-0.5 text-[11px] cursor-pointer ${config.mode === 'integrated' ? 'bg-(--sg-primary) text-white' : 'text-(--sg-text-dim)'} ${!integratedSupported ? 'opacity-40 cursor-not-allowed' : ''}`}
-                  onClick={() => integratedSupported && setMode('integrated')}
-                  disabled={!integratedSupported}
-                  data-testid="btn-agent-mode-integrated"
-                  title={integratedSupported ? 'Structured chat in the Chat tab' : 'Only available for Claude Code'}
-                >
-                  Integrated
-                </button>
-                <button
-                  type="button"
-                  className={`rounded px-2 py-0.5 text-[11px] cursor-pointer ${config.mode === 'terminal' ? 'bg-(--sg-primary) text-white' : 'text-(--sg-text-dim)'}`}
-                  onClick={() => setMode('terminal')}
-                  data-testid="btn-agent-mode-terminal"
-                  title="Raw terminal session"
-                >
-                  Terminal
-                </button>
+            <>
+              <div className="mt-2 flex items-center gap-2" data-testid="agent-mode-toggle">
+                <span className="text-[11px] font-medium text-(--sg-text-faint)">Mode:</span>
+                <div className="inline-flex rounded-md border border-(--sg-border) p-0.5">
+                  <button
+                    type="button"
+                    className={`rounded px-2 py-0.5 text-[11px] cursor-pointer ${config.mode === 'integrated' ? 'bg-(--sg-primary) text-white' : 'text-(--sg-text-dim)'} ${!integratedSupported ? 'opacity-40 cursor-not-allowed' : ''}`}
+                    onClick={() => integratedSupported && setMode('integrated')}
+                    disabled={!integratedSupported}
+                    data-testid="btn-agent-mode-integrated"
+                    title={integratedSupported ? 'Structured chat in the Chat tab' : 'This command is not recognized as ACP-capable'}
+                  >
+                    Integrated
+                  </button>
+                  <button
+                    type="button"
+                    className={`rounded px-2 py-0.5 text-[11px] cursor-pointer ${config.mode === 'terminal' ? 'bg-(--sg-primary) text-white' : 'text-(--sg-text-dim)'}`}
+                    onClick={() => setMode('terminal')}
+                    data-testid="btn-agent-mode-terminal"
+                    title="Raw terminal session"
+                  >
+                    Terminal
+                  </button>
+                </div>
+                {!integratedSupported && (
+                  <span className="text-[10px] text-(--sg-text-faint)">Integrated mode requires an ACP-capable agent (Claude Code, Gemini CLI, Codex CLI, Kiro, or Cursor).</span>
+                )}
               </div>
-              {!integratedSupported && (
-                <span className="text-[10px] text-(--sg-text-faint)">Integrated mode currently requires Claude Code.</span>
+              {adapterStatus && (
+                <div className="mt-2 space-y-1" data-testid="agent-acp-adapter-row">
+                  <div className="flex items-center gap-2 text-[11px]">
+                    {adapterStatus.installed ? (
+                      <span className="flex items-center gap-1 text-(--sg-primary)">
+                        <CheckCircle2 size={12} /> {adapterStatus.label} ACP adapter installed
+                      </span>
+                    ) : (
+                      <>
+                        <span className="text-(--sg-text-faint)">
+                          {adapterStatus.label} ACP mode needs a separate adapter (~{adapterStatus.approxSizeMb}MB) — not installed.
+                        </span>
+                        {adapterStatus.npmAvailable ? (
+                          <button
+                            type="button"
+                            className="inline-flex items-center gap-1 rounded border border-(--sg-border) px-2 py-0.5 text-[11px] text-(--sg-text-dim) disabled:opacity-50 cursor-pointer bg-transparent"
+                            onClick={installAdapter}
+                            disabled={installing}
+                            data-testid="btn-install-acp-adapter"
+                          >
+                            {installing ? <Loader2 size={11} className="animate-spin" /> : <Download size={11} />}
+                            {installing ? (installMessage || 'Installing…') : 'Install'}
+                          </button>
+                        ) : (
+                          <span className="text-(--sg-danger)">npm not found on PATH — can't install automatically.</span>
+                        )}
+                        <button
+                          type="button"
+                          className="inline-flex items-center gap-1 rounded border border-(--sg-border) px-1.5 py-0.5 text-[11px] text-(--sg-text-dim) cursor-pointer bg-transparent"
+                          onClick={refreshAdapterStatus}
+                          title="Re-check (e.g. after installing manually)"
+                          data-testid="btn-recheck-acp-adapter"
+                        >
+                          <RefreshCw size={11} />
+                        </button>
+                      </>
+                    )}
+                  </div>
+                  {!adapterStatus.installed && (
+                    <p className="text-[10px] text-(--sg-text-faint)">
+                      Or install it yourself, globally: <code className="font-mono text-(--sg-text-dim)">npm install -g {adapterStatus.npmPackage}</code>
+                    </p>
+                  )}
+                </div>
               )}
-            </div>
+            </>
           }
         />
       )}

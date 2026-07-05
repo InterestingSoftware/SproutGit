@@ -129,7 +129,7 @@ describe('agent settings', () => {
     await expect($('[data-testid="agents-section"]')).toBeDisplayed();
     await expect($('[data-testid="agent-row"]')).toBeDisplayed();
 
-    // Terminal mode is the only option for a non-Claude-Code command.
+    // Terminal mode is the only option for a command not recognized as ACP-capable.
     await expect($('[data-testid="btn-agent-mode-integrated"]')).toBeDisabled();
 
     await assertNoErrors();
@@ -156,13 +156,23 @@ describe('agent settings', () => {
     await assertNoErrors();
   });
 
-  it('enables Integrated mode only when the command is recognized as Claude Code', async () => {
+  it('enables Integrated mode when the command is recognized as ACP-capable', async () => {
     const assertNoErrors = monitorErrors();
     await gotoHash(`/settings?workspace=${encodeURIComponent(testRepo)}`);
 
     await $('[data-testid="agent-row-btn-edit"]').click();
     const input = $('[data-testid="agent-row-input-custom"]');
     await input.setValue('claude');
+    await $('[data-testid="agent-row-btn-save"]').click();
+    await waitForToast('success');
+
+    await expect($('[data-testid="btn-agent-mode-integrated"]')).not.toBeDisabled();
+
+    // Gemini CLI is a different ACP preset (native --acp flag rather than a
+    // separate adapter binary like Claude's) — proves this isn't gated to
+    // Claude Code specifically. The edit panel stays open after Save, so no
+    // need to click "Edit" again here.
+    await input.setValue('gemini');
     await $('[data-testid="agent-row-btn-save"]').click();
     await waitForToast('success');
 

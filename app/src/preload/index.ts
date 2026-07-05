@@ -38,6 +38,8 @@ import type {
   WorktreeSwitchHookSource,
   AgentConfig,
   AgentTerminalLaunchEvent,
+  AcpAdapterStatus,
+  AcpAdapterInstallEvent,
   CommitMessageGeneratorSettings,
   CommitMessageGenerateResult,
   IssueTrackerPattern,
@@ -45,6 +47,7 @@ import type {
   ToolTestResult,
   ChatSessionEvent,
   ChatSessionExitEvent,
+  ChatConfigOption,
   FileTreeNode,
   FileReadResult,
   FileChangedEvent,
@@ -405,6 +408,18 @@ const api = {
   testAgent: (): Promise<ToolTestResult> =>
     invoke(IPC.AGENT_TEST),
 
+  getAcpAdapterStatus: (): Promise<AcpAdapterStatus | null> =>
+    invoke(IPC.AGENT_ACP_ADAPTER_STATUS),
+
+  installAcpAdapter: (npmPackage: string): Promise<void> =>
+    invoke(IPC.AGENT_ACP_ADAPTER_INSTALL, npmPackage),
+
+  onAcpAdapterInstallProgress: (callback: (event: AcpAdapterInstallEvent) => void) => {
+    const handler = (_e: Electron.IpcRendererEvent, payload: AcpAdapterInstallEvent) => callback(payload);
+    ipcRenderer.on(IPC.EVENT_AGENT_ACP_ADAPTER_INSTALL, handler);
+    return () => ipcRenderer.off(IPC.EVENT_AGENT_ACP_ADAPTER_INSTALL, handler);
+  },
+
   onAgentTerminalLaunch: (callback: (event: AgentTerminalLaunchEvent) => void) => {
     const handler = (_e: Electron.IpcRendererEvent, payload: AgentTerminalLaunchEvent) => callback(payload);
     ipcRenderer.on(IPC.EVENT_AGENT_TERMINAL_LAUNCH, handler);
@@ -412,7 +427,7 @@ const api = {
   },
 
   // ── Chat (Integrated agent mode) ─────────────────────────────────────────
-  chatStart: (args: { worktreePath: string; prompt: string }): Promise<string> =>
+  chatStart: (args: { worktreePath: string; initialPrompt?: string }): Promise<{ sessionId: string; configOptions: ChatConfigOption[] }> =>
     invoke(IPC.CHAT_START, args),
 
   chatSend: (args: { sessionId: string; prompt: string }): Promise<void> =>
@@ -420,6 +435,12 @@ const api = {
 
   chatStop: (sessionId: string): Promise<void> =>
     invoke(IPC.CHAT_STOP, sessionId),
+
+  chatRespondPermission: (args: { sessionId: string; requestId: string; optionId: string }): Promise<void> =>
+    invoke(IPC.CHAT_RESPOND_PERMISSION, args),
+
+  chatSetConfigOption: (args: { sessionId: string; configId: string; value: string | boolean }): Promise<ChatConfigOption[]> =>
+    invoke(IPC.CHAT_SET_CONFIG_OPTION, args),
 
   onChatStream: (callback: (event: ChatSessionEvent) => void) => {
     const handler = (_e: Electron.IpcRendererEvent, payload: ChatSessionEvent) => callback(payload);
