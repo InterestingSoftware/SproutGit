@@ -303,7 +303,7 @@ export function WorktreeSidebar({
               <div
                 key={row.wt.path}
                 className={`sg-worktree-btn group flex items-center gap-2 px-3 py-2 transition-colors ${isPending ? 'cursor-not-allowed opacity-60' : 'cursor-pointer hover:bg-(--sg-surface-raised)'} ${idx > 0 ? 'border-t border-(--sg-border-subtle)' : ''}`}
-                data-testid={row.wt.isExternal ? 'worktree-item-external' : 'worktree-item'}
+                data-testid={isPending ? 'worktree-item-pending' : row.wt.isExternal ? 'worktree-item-external' : 'worktree-item'}
                 data-branch={row.wt.branch ?? ''}
                 data-path={row.wt.path}
                 data-active={isActive ? 'true' : 'false'}
