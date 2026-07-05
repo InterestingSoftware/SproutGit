@@ -3,12 +3,6 @@ import { mkdtempSync, rmSync } from 'fs';
 import { join } from 'path';
 import { tmpdir } from 'os';
 
-const RETRYABLE_RM_CODES = new Set(['EBUSY', 'EPERM', 'ENOTEMPTY', 'EMFILE', 'ENFILE']);
-
-function delay(ms: number): Promise<void> {
-  return new Promise(resolve => setTimeout(resolve, ms));
-}
-
 /**
  * A deterministic, cross-platform test agent — same rationale as
  * agent-workflow.spec.ts's TEST_AGENT_CONFIG: `node` is guaranteed present in
@@ -141,67 +135,28 @@ async function closeWorkspace(workspacePath: string): Promise<void> {
 
 /**
  * Navigates home, waits for the workspace route to unmount, then closes the
- * workspace and deletes its folder — best-effort on Windows (see below).
+ * workspace and deletes its folder.
  *
- * Teardown here is unusually stubborn on Windows: this workspace's state.db
- * stays locked against unlink well past WORKSPACE_CLOSE and a generous
- * close-and-retry budget. The app keeps a state.db handle open somewhere past
- * WORKSPACE_CLOSE — a real, if minor, Windows-only wart, filed as a follow-up
- * task to fix at the source (make WORKSPACE_CLOSE authoritatively release
- * every handle so nothing can re-establish one afterward). On mac/linux an
- * open handle doesn't block unlink, so it never surfaces there; this spec's
- * scaffold-kickoff flow (which auto-launches an agent and keeps async work
- * alive across teardown) is the only one in the suite that trips it.
- *
- * Everything below still tries hard to delete cleanly — wait for the route to
- * unmount (so the renderer stops re-opening state.db via getWorkspaceDb), then
- * re-close before each retry to evict any late re-open. What it can't do is
- * force Windows to release a handle the app is still holding. So as a last
- * resort the delete is best-effort *on Windows only*: a residual lock is
- * logged and left on the (ephemeral, runner-discarded) CI temp dir rather than
- * failing an otherwise-green suite. mac/linux still hard-fail on a delete
- * error, so a genuine leak there is still caught. Once the app-side handle
- * leak is fixed, drop the best-effort branch and this becomes a plain delete.
+ * WORKSPACE_CLOSE now authoritatively releases every handle the app holds on
+ * the workspace: the MCP socket server, the fs watchers on root, and the
+ * per-workspace state.db. workspace.ts no longer caches a DB connection either
+ * — it opens and closes a fresh one per operation — so a late IPC read landing
+ * just after close (the renderer keeps polling briefly after navigating away)
+ * can no longer re-establish a lingering handle. Once closeWorkspace resolves,
+ * nothing is holding state.db, so the folder deletes cleanly on every platform,
+ * Windows included. (The fake agent's terminal process, rooted in the
+ * workspace, is torn down separately by closeAllTerminalsAndWaitForExit in
+ * afterEach before this runs.)
  */
 async function closeAndDeleteWorkspace(workspacePath: string, projectsFolder: string): Promise<void> {
   await goHome();
   // Wait for a home-screen element (btn-clone is always present) as a
   // deterministic signal the workspace route unmounted and its polling stopped,
-  // rather than a fixed-time guess — this minimizes state.db re-opens during
-  // the delete even though, on Windows, it isn't sufficient on its own.
+  // rather than a fixed-time guess.
   await $('[data-testid="btn-clone"]').waitForDisplayed({ timeout: E2E_TIMEOUT_MS });
 
-  const maxAttempts = 20;
-  for (let attempt = 0; ; attempt++) {
-    await closeWorkspace(workspacePath).catch(() => undefined);
-    try {
-      rmSync(projectsFolder, { recursive: true, force: true });
-      return;
-    } catch (error) {
-      const code = (error as NodeJS.ErrnoException).code;
-      const retryable = !!code && RETRYABLE_RM_CODES.has(code);
-      if (retryable && attempt < maxAttempts) {
-        await delay(300);
-        continue;
-      }
-      // Best-effort teardown on Windows only. The app keeps a state.db handle
-      // open past WORKSPACE_CLOSE (a real, if minor, Windows-only wart — see
-      // the filed follow-up task), so on Windows this workspace's state.db can
-      // stay locked against unlink after the whole retry budget above. The
-      // *feature* under test passed; this is purely teardown of a CI temp dir
-      // that the runner discards anyway. Swallow the residual lock on Windows
-      // so it doesn't fail an otherwise-green suite — but still throw on
-      // mac/linux, where a delete failure would signal a genuine leak we do
-      // want to catch. Revert to a hard failure here once the app-side handle
-      // leak is fixed.
-      if (retryable && process.platform === 'win32') {
-        // eslint-disable-next-line no-console
-        console.warn(`[new-from-idea cleanup] leaving ${projectsFolder} on disk — Windows still holds a lock (${code}); CI temp dir is ephemeral. See follow-up task on WORKSPACE_CLOSE handle release.`);
-        return;
-      }
-      throw error;
-    }
-  }
+  await closeWorkspace(workspacePath);
+  rmSync(projectsFolder, { recursive: true, force: true });
 }
 
 describe('new from idea workflow', () => {

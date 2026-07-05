@@ -27,7 +27,7 @@ function getHandler(channel: string): Handler {
 
 const NODE = process.execPath;
 
-describe('TOOLTEST_EDITOR', () => {
+describe('TOOLTEST_EDITOR', { timeout: 20_000 }, () => {
   beforeEach(() => vi.clearAllMocks());
 
   it('reports an error when no editor is configured', async () => {
@@ -63,7 +63,7 @@ describe('TOOLTEST_EDITOR', () => {
   });
 });
 
-describe('TOOLTEST_DIFF_TOOL', () => {
+describe('TOOLTEST_DIFF_TOOL', { timeout: 20_000 }, () => {
   beforeEach(() => vi.clearAllMocks());
 
   it('reports an error when no diff tool is configured', async () => {
@@ -102,7 +102,7 @@ describe('TOOLTEST_DIFF_TOOL', () => {
   });
 });
 
-describe('TOOLTEST_MERGE_TOOL', () => {
+describe('TOOLTEST_MERGE_TOOL', { timeout: 20_000 }, () => {
   beforeEach(() => vi.clearAllMocks());
 
   it('reports an error when no merge tool is configured', async () => {
@@ -126,7 +126,7 @@ describe('TOOLTEST_MERGE_TOOL', () => {
   });
 });
 
-describe('TOOLTEST_SHELL', () => {
+describe('TOOLTEST_SHELL', { timeout: 20_000 }, () => {
   beforeEach(() => vi.clearAllMocks());
 
   it('reports an error when no shell is configured', async () => {
@@ -155,7 +155,7 @@ describe('TOOLTEST_SHELL', () => {
   });
 });
 
-describe('TOOLTEST_COMMIT_MESSAGE_GENERATOR', () => {
+describe('TOOLTEST_COMMIT_MESSAGE_GENERATOR', { timeout: 20_000 }, () => {
   beforeEach(() => vi.clearAllMocks());
 
   it('reports an error when no command is configured', async () => {

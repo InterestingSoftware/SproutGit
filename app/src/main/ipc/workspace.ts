@@ -22,31 +22,41 @@ export function workspaceDbPath(workspacePath: string): string {
   return join(workspacePath, '.sproutgit', 'state.db');
 }
 
-// Per-workspace DB instances are cached by path.
-const workspaceDbCache = new Map<string, ReturnType<typeof openWorkspaceDb>>();
-
-function getWorkspaceDb(workspacePath: string) {
-  const cached = workspaceDbCache.get(workspacePath);
-  if (cached) return cached;
-  const db = openWorkspaceDb(workspaceDbPath(workspacePath));
-  workspaceDbCache.set(workspacePath, db);
-  return db;
-}
-
 /**
- * Closes and evicts the cached workspace-DB connection for `workspacePath`,
- * if one is open. Exported so callers that need the underlying sqlite file
- * to actually be removable/renamable right after this call — the
- * WORKSPACE_CLOSE handler below, and worktree-lifecycle.ts's tests, which
- * hit this same cache indirectly via setWorktreeMeta() — can force it
- * closed instead of leaving it cached for the rest of the process
- * lifetime (an open handle blocks deleting the directory on Windows).
+ * Runs `fn` against a freshly-opened workspace-DB connection and always
+ * closes it before returning — the same short-lived open/use/close pattern
+ * mcp.ts, agents.ts and hooks.ts already use for this same DB, rather than
+ * caching a per-workspace connection.
+ *
+ * These handlers (worktree metadata get/set, prune, provenance, per-workspace
+ * UI state) are all low-frequency, one-off reads/writes — not hot paths — so
+ * re-opening per call is cheap: all migrations are already applied on a normal
+ * open, so drizzle's migrate() step is a sub-millisecond no-op.
+ *
+ * Not holding a cached connection is also what keeps a workspace folder
+ * deletable/movable immediately after WORKSPACE_CLOSE. The renderer keeps
+ * polling for a short window after the user navigates away (worktree-metadata
+ * reads, provenance/nested-repo lists, …), and those late IPC reads aren't
+ * cancelled the instant their component unmounts. If this module cached a
+ * connection, such a late read landing just after close would re-open and
+ * re-cache a handle that nothing would ever close again — and an open sqlite
+ * handle in WAL mode blocks unlinking state.db on Windows, locking the folder
+ * for the rest of the process lifetime. Opening and closing within each
+ * synchronous call means a late read can't leave a lingering lock behind.
  */
-export function closeWorkspaceDbCache(workspacePath: string): void {
-  const db = workspaceDbCache.get(workspacePath);
-  if (db) {
+function withWorkspaceDb<T>(
+  workspacePath: string,
+  // `T extends Promise<unknown> ? never : T` rejects async/Promise-returning
+  // callbacks at the call site — db.close() below runs synchronously right
+  // after fn(db) returns, so an async fn would have its connection closed
+  // out from under it before any awaited work inside it actually finishes.
+  fn: (db: ReturnType<typeof openWorkspaceDb>) => T extends Promise<unknown> ? never : T,
+): T {
+  const db = openWorkspaceDb(workspaceDbPath(workspacePath));
+  try {
+    return fn(db) as T;
+  } finally {
     db.close();
-    workspaceDbCache.delete(workspacePath);
   }
 }
 
@@ -67,31 +77,31 @@ export interface SetWorktreeMetaArgs {
  * client-side IPC round-trip.
  */
 export function setWorktreeMeta(args: SetWorktreeMetaArgs): void {
-  const db = getWorkspaceDb(args.workspacePath);
   const now = new Date();
-  db.insert(worktreeMetadata)
-    .values({
-      worktreePath: args.worktreePath,
-      branch: args.branch ?? '',
-      sourceRef: args.sourceRef ?? '',
-      rootRepoPath: args.rootRepoPath ?? '',
-      issueRef: args.issueRef ?? null,
-      issueTitle: args.issueTitle ?? null,
-      createdAt: now,
-      updatedAt: now,
-    })
-    .onConflictDoUpdate({
-      target: worktreeMetadata.worktreePath,
-      set: {
+  withWorkspaceDb(args.workspacePath, db =>
+    db.insert(worktreeMetadata)
+      .values({
+        worktreePath: args.worktreePath,
         branch: args.branch ?? '',
         sourceRef: args.sourceRef ?? '',
         rootRepoPath: args.rootRepoPath ?? '',
         issueRef: args.issueRef ?? null,
         issueTitle: args.issueTitle ?? null,
+        createdAt: now,
         updatedAt: now,
-      },
-    })
-    .run();
+      })
+      .onConflictDoUpdate({
+        target: worktreeMetadata.worktreePath,
+        set: {
+          branch: args.branch ?? '',
+          sourceRef: args.sourceRef ?? '',
+          rootRepoPath: args.rootRepoPath ?? '',
+          issueRef: args.issueRef ?? null,
+          issueTitle: args.issueTitle ?? null,
+          updatedAt: now,
+        },
+      })
+      .run());
 }
 
 export function registerWorkspaceHandlers(configDb: ConfigDb): void {
@@ -130,18 +140,16 @@ export function registerWorkspaceHandlers(configDb: ConfigDb): void {
 
   // ── Per-workspace UI state ──────────────────────────────────────────────────
 
-  handle(IPC.WORKSPACE_GET_STATE, (_e, args: { workspacePath: string; key: string }) => {
-    const db = getWorkspaceDb(args.workspacePath);
-    const row = db.select().from(workspaceState).where(eq(workspaceState.key, args.key)).get();
-    return row?.value ?? null;
-  });
+  handle(IPC.WORKSPACE_GET_STATE, (_e, args: { workspacePath: string; key: string }) =>
+    withWorkspaceDb(args.workspacePath, db =>
+      db.select().from(workspaceState).where(eq(workspaceState.key, args.key)).get()?.value ?? null));
 
   handle(IPC.WORKSPACE_SET_STATE, (_e, args: { workspacePath: string; key: string; value: string }) => {
-    const db = getWorkspaceDb(args.workspacePath);
-    db.insert(workspaceState)
-      .values({ key: args.key, value: args.value })
-      .onConflictDoUpdate({ target: workspaceState.key, set: { value: args.value } })
-      .run();
+    withWorkspaceDb(args.workspacePath, db =>
+      db.insert(workspaceState)
+        .values({ key: args.key, value: args.value })
+        .onConflictDoUpdate({ target: workspaceState.key, set: { value: args.value } })
+        .run());
   });
 
   handle(IPC.WORKSPACE_CLOSE, async (_e, workspacePath: string) => {
@@ -161,21 +169,23 @@ export function registerWorkspaceHandlers(configDb: ConfigDb): void {
     // operating against a workspace the UI no longer considers open.
     await stopMcpServer(workspacePath);
 
-    closeWorkspaceDbCache(workspacePath);
-    // Release the fs.watch handles on root too — same reason as the DB
-    // close above: on Windows an open watch handle blocks removing the
-    // directory it's watching, so anything about to delete this workspace
-    // needs both released first.
+    // There's no cached workspace-DB handle to release here: this module opens
+    // and closes a fresh connection per operation (withWorkspaceDb) rather than
+    // caching one, so nothing stays open across close for a late IPC read to
+    // re-establish. See withWorkspaceDb's note for why that matters on Windows.
+
+    // Release the fs.watch handles on root — on Windows an open watch handle
+    // blocks removing the directory it's watching, so anything about to delete
+    // this workspace needs it released first.
     stopWatchingPath(gitRepoPath);
   });
 
   // ── Worktree metadata ─────────────────────────────────────────────────────
-  handle(IPC.WORKTREE_GET_META, (_e, args: { workspacePath: string; worktreePath: string }) => {
-    const db = getWorkspaceDb(args.workspacePath);
-    return db.select().from(worktreeMetadata)
-      .where(eq(worktreeMetadata.worktreePath, args.worktreePath))
-      .get() ?? null;
-  });
+  handle(IPC.WORKTREE_GET_META, (_e, args: { workspacePath: string; worktreePath: string }) =>
+    withWorkspaceDb(args.workspacePath, db =>
+      db.select().from(worktreeMetadata)
+        .where(eq(worktreeMetadata.worktreePath, args.worktreePath))
+        .get() ?? null));
 
   handle(IPC.WORKTREE_SET_META, (_e, args: SetWorktreeMetaArgs) => {
     setWorktreeMeta(args);
@@ -187,10 +197,10 @@ export function registerWorkspaceHandlers(configDb: ConfigDb): void {
   // it never touches the actual git worktree registration.
   handle(IPC.WORKTREE_PRUNE_METADATA, (_e, args: { workspacePath: string; activeWorktreePaths: string[] }) => {
     if (args.activeWorktreePaths.length === 0) return; // avoid wiping everything on a transient empty list
-    const db = getWorkspaceDb(args.workspacePath);
-    db.delete(worktreeMetadata)
-      .where(notInArray(worktreeMetadata.worktreePath, args.activeWorktreePaths))
-      .run();
+    withWorkspaceDb(args.workspacePath, db =>
+      db.delete(worktreeMetadata)
+        .where(notInArray(worktreeMetadata.worktreePath, args.activeWorktreePaths))
+        .run());
   });
 
   // Hook CRUD/listing (HOOK_LIST/CREATE/UPDATE/DELETE/TOGGLE) live in
@@ -209,66 +219,61 @@ export function registerWorkspaceHandlers(configDb: ConfigDb): void {
     stderrSnippet?: string;
     errorMessage?: string;
   }) => {
-    const db = getWorkspaceDb(args.workspacePath);
-    db.insert(hookRuns).values({
-      id: args.id,
-      hookId: args.hookId,
-      hookName: args.hookName,
-      trigger: args.trigger,
-      worktreePath: args.worktreePath,
-      status: args.status,
-      stdoutSnippet: args.stdoutSnippet ?? null,
-      stderrSnippet: args.stderrSnippet ?? null,
-      errorMessage: args.errorMessage ?? null,
-      ranAt: new Date(),
-    }).run();
+    withWorkspaceDb(args.workspacePath, db =>
+      db.insert(hookRuns).values({
+        id: args.id,
+        hookId: args.hookId,
+        hookName: args.hookName,
+        trigger: args.trigger,
+        worktreePath: args.worktreePath,
+        status: args.status,
+        stdoutSnippet: args.stdoutSnippet ?? null,
+        stderrSnippet: args.stderrSnippet ?? null,
+        errorMessage: args.errorMessage ?? null,
+        ranAt: new Date(),
+      }).run());
   });
 
   // ── Worktree provenance ────────────────────────────────────────────────────
-  handle(IPC.WORKTREE_LIST_PROVENANCE, (_e, workspacePath: string) => {
-    const db = getWorkspaceDb(workspacePath);
-    return db.select().from(worktreeMetadata).all();
-  });
+  handle(IPC.WORKTREE_LIST_PROVENANCE, (_e, workspacePath: string) =>
+    withWorkspaceDb(workspacePath, db => db.select().from(worktreeMetadata).all()));
 
   handle(IPC.WORKTREE_GET_PROVENANCE, (_e, args: {
     workspacePath: string;
     worktreePath: string;
-  }) => {
-    const db = getWorkspaceDb(args.workspacePath);
-    return db.select().from(worktreeMetadata)
-      .where(eq(worktreeMetadata.worktreePath, args.worktreePath))
-      .get() ?? null;
-  });
+  }) =>
+    withWorkspaceDb(args.workspacePath, db =>
+      db.select().from(worktreeMetadata)
+        .where(eq(worktreeMetadata.worktreePath, args.worktreePath))
+        .get() ?? null));
 
   // ── Nested repo sync rules ─────────────────────────────────────────────────
-  handle(IPC.NESTED_REPO_LIST, (_e, workspacePath: string) => {
-    const db = getWorkspaceDb(workspacePath);
-    return db.select().from(nestedRepoSyncRules).all();
-  });
+  handle(IPC.NESTED_REPO_LIST, (_e, workspacePath: string) =>
+    withWorkspaceDb(workspacePath, db => db.select().from(nestedRepoSyncRules).all()));
 
   handle(IPC.NESTED_REPO_UPSERT, (_e, args: {
     workspacePath: string;
     repoRelativePath: string;
     enabled: boolean;
   }) => {
-    const db = getWorkspaceDb(args.workspacePath);
     const now = new Date();
-    db.insert(nestedRepoSyncRules)
-      .values({ repoRelativePath: args.repoRelativePath, enabled: args.enabled, createdAt: now, updatedAt: now })
-      .onConflictDoUpdate({
-        target: nestedRepoSyncRules.repoRelativePath,
-        set: { enabled: args.enabled, updatedAt: now },
-      })
-      .run();
+    withWorkspaceDb(args.workspacePath, db =>
+      db.insert(nestedRepoSyncRules)
+        .values({ repoRelativePath: args.repoRelativePath, enabled: args.enabled, createdAt: now, updatedAt: now })
+        .onConflictDoUpdate({
+          target: nestedRepoSyncRules.repoRelativePath,
+          set: { enabled: args.enabled, updatedAt: now },
+        })
+        .run());
   });
 
   handle(IPC.NESTED_REPO_DELETE, (_e, args: {
     workspacePath: string;
     repoRelativePath: string;
   }) => {
-    const db = getWorkspaceDb(args.workspacePath);
-    db.delete(nestedRepoSyncRules)
-      .where(eq(nestedRepoSyncRules.repoRelativePath, args.repoRelativePath))
-      .run();
+    withWorkspaceDb(args.workspacePath, db =>
+      db.delete(nestedRepoSyncRules)
+        .where(eq(nestedRepoSyncRules.repoRelativePath, args.repoRelativePath))
+        .run());
   });
 }
