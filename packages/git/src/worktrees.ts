@@ -151,6 +151,14 @@ export async function addWorktreeForExistingBranch(
  *   classified as external (registered with git but outside the managed
  *   directory) — removing those is intentionally supported, only deleting
  *   their branch is defended against elsewhere.
+ *
+ *   Unlike the create-path checks (which compare two locally-constructed
+ *   strings), `worktreePath` here typically comes from git's own
+ *   realpath-based `worktree list` output while `managedWorktreesPath` is
+ *   built locally — so this must canonicalize both sides (see
+ *   `isWithinCanonical`) or it spuriously rejects legitimate deletions on
+ *   platforms where the two disagree on symlinks (e.g. macOS's /var vs
+ *   /private/var).
  */
 export async function deleteManagedWorktree(
   rootRepoPath: string,
@@ -159,12 +167,8 @@ export async function deleteManagedWorktree(
   branchName?: string | null,
   managedWorktreesPath?: string
 ): Promise<void> {
-  if (managedWorktreesPath) {
-    const resolvedRoot = resolve(managedWorktreesPath) + sep;
-    const resolvedTarget = resolve(worktreePath);
-    if (!(resolvedTarget + sep).startsWith(resolvedRoot)) {
-      throw new Error('Worktree path must stay within the managed worktrees directory.');
-    }
+  if (managedWorktreesPath && !isWithinCanonical(worktreePath, managedWorktreesPath)) {
+    throw new Error('Worktree path must stay within the managed worktrees directory.');
   }
 
   await withWorktreeLock(rootRepoPath, async () => {
