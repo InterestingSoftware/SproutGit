@@ -1,5 +1,5 @@
-import { describe, it, expect, afterEach, beforeAll } from 'vitest';
-import { render, screen, cleanup } from '@testing-library/react';
+import { describe, it, expect, afterEach, beforeAll, vi } from 'vitest';
+import { render, screen, cleanup, fireEvent, act } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { Spinner } from '../components/Spinner.js';
 import { Toast, type ToastData } from '../components/Toast.js';
@@ -7,7 +7,7 @@ import { Autocomplete } from '../components/Autocomplete.js';
 import { ResizableSidebar } from '../components/ResizableSidebar.js';
 
 // Ensure DOM is cleaned between tests even without globals mode.
-afterEach(() => { cleanup(); });
+afterEach(() => { cleanup(); vi.useRealTimers(); });
 
 // jsdom doesn't implement scrollIntoView — stub it.
 beforeAll(() => {
@@ -44,6 +44,35 @@ describe('Toast', () => {
     render(<Toast toast={toast} onDismiss={() => { dismissed = true; }} />);
     await user.click(screen.getByRole('button', { name: /dismiss/i }));
     expect(dismissed).toBe(true);
+  });
+
+  it('copies the message to the clipboard and briefly shows a checkmark', async () => {
+    vi.useFakeTimers();
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true });
+    const toast: ToastData = { id: '3', message: 'Copy me', variant: 'success' };
+    render(<Toast toast={toast} onDismiss={() => undefined} />);
+
+    await act(async () => {
+      fireEvent.click(screen.getByTestId('toast-copy'));
+      await vi.advanceTimersByTimeAsync(0); // flush the resolved clipboard promise
+    });
+    expect(writeText).toHaveBeenCalledWith('Copy me');
+    expect(screen.getByTestId('toast-copy').getAttribute('aria-label')).toBe('Copied');
+
+    await act(async () => { await vi.advanceTimersByTimeAsync(1500); });
+    expect(screen.getByTestId('toast-copy').getAttribute('aria-label')).toBe('Copy message');
+  });
+
+  it('does not show a checkmark when the clipboard write fails', async () => {
+    const writeText = vi.fn().mockRejectedValue(new Error('denied'));
+    Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true });
+    const toast: ToastData = { id: '4', message: 'Copy me', variant: 'error' };
+    render(<Toast toast={toast} onDismiss={() => undefined} />);
+
+    fireEvent.click(screen.getByTestId('toast-copy'));
+    await vi.waitFor(() => expect(writeText).toHaveBeenCalled());
+    expect(screen.getByTestId('toast-copy').getAttribute('aria-label')).toBe('Copy message');
   });
 });
 

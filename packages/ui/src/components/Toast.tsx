@@ -53,9 +53,13 @@ export function Toast({ toast, onDismiss }: ToastProps) {
   const styles = VARIANT_STYLES[toast.variant];
 
   const handleCopy = () => {
-    navigator.clipboard.writeText(toast.message);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 1500);
+    if (!navigator.clipboard?.writeText) return;
+    navigator.clipboard.writeText(toast.message)
+      .then(() => {
+        setCopied(true);
+        setTimeout(() => setCopied(false), 1500);
+      })
+      .catch(() => undefined);
   };
 
   return (
