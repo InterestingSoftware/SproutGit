@@ -1,5 +1,5 @@
-import { goHome, cleanupRepo, monitorErrors, waitForToast } from '../helpers.js';
-import { mkdtempSync, rmSync } from 'fs';
+import { goHome, closeAndCleanup, rmWithRetry, monitorErrors, waitForToast, E2E_TIMEOUT_MS } from '../helpers.js';
+import { mkdtempSync } from 'fs';
 import { join } from 'path';
 import { tmpdir } from 'os';
 
@@ -80,9 +80,12 @@ describe('new from idea workflow', () => {
 
   afterEach(async () => {
     await closeAllTerminals();
-    await goHome();
-    await cleanupRepo(workspacePath).catch(() => undefined);
-    rmSync(projectsFolder, { recursive: true, force: true });
+    // closeAndCleanup() navigates home and closes the workspace's SQLite
+    // connection via IPC *before* deleting — skipping that (as a plain
+    // rmSync of the parent folder does) leaves state.db locked on Windows,
+    // where you can't unlink a file still open by another handle.
+    await closeAndCleanup(workspacePath).catch(() => undefined);
+    await rmWithRetry(projectsFolder);
   });
 
   it('pitches an idea, generates a name/stack, creates the project, and kicks off the agent', async () => {
@@ -126,23 +129,29 @@ describe('new from idea workflow', () => {
       $('[data-testid="terminal-session-tab"][data-session-label="AI Agent"]')
     ).toBeDisplayed();
 
-    await browser.pause(2200); // outlasts the 1500ms kickoff delay in workspace.tsx
+    function readTerminalBuffer(): Promise<string> {
+      return browser.execute(() => {
+        const container = document.querySelector('[data-testid="terminal-container"]') as
+          (HTMLDivElement & { __xterm?: { buffer: { active: { length: number; getLine: (n: number) => { translateToString: (trim: boolean) => string } | undefined } } } }) | null;
+        const term = container?.__xterm;
+        if (!term) return '';
+        const lines: string[] = [];
+        for (let i = 0; i < term.buffer.active.length; i++) {
+          lines.push(term.buffer.active.getLine(i)?.translateToString(true) ?? '');
+        }
+        // Joined without newlines since xterm hard-wraps at the terminal's
+        // column width, which can split the slug itself across two buffer lines.
+        return lines.join('');
+      });
+    }
 
-    const rendered = await browser.execute(() => {
-      const container = document.querySelector('[data-testid="terminal-container"]') as
-        (HTMLDivElement & { __xterm?: { buffer: { active: { length: number; getLine: (n: number) => { translateToString: (trim: boolean) => string } | undefined } } } }) | null;
-      const term = container?.__xterm;
-      if (!term) return '';
-      const lines: string[] = [];
-      for (let i = 0; i < term.buffer.active.length; i++) {
-        lines.push(term.buffer.active.getLine(i)?.translateToString(true) ?? '');
-      }
-      return lines.join('');
+    // Polls rather than a fixed pause: the terminal container/xterm instance
+    // mounting, the 1500ms in-app kickoff delay, and the agent process actually
+    // starting are all variable-latency, more so on a loaded CI runner.
+    await browser.waitUntil(async () => (await readTerminalBuffer()).includes(GENERATED_SLUG), {
+      timeout: E2E_TIMEOUT_MS,
+      timeoutMsg: `Expected the terminal to render the kickoff prompt containing "${GENERATED_SLUG}"`,
     });
-    // The kickoff prompt names the project after the (slugified) name field.
-    // Joined without newlines since xterm hard-wraps at the terminal's column
-    // width, which can split the slug itself across two buffer lines.
-    expect(rendered).toContain(GENERATED_SLUG);
 
     await assertNoErrors();
   });
