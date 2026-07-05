@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { withWorktreeLock } from '../worktree-lock.js';
+import { withWorktreeLock, _getWorktreeLockMapSizeForTests } from '../worktree-lock.js';
 
 function deferred<T>(): { promise: Promise<T>; resolve: (v: T) => void; reject: (e: unknown) => void } {
   let resolve!: (v: T) => void;
@@ -9,6 +9,13 @@ function deferred<T>(): { promise: Promise<T>; resolve: (v: T) => void; reject: 
     reject = rej;
   });
   return { promise, resolve, reject };
+}
+
+// A macrotask boundary guarantees every microtask queued up to this point —
+// including the lock's internal cleanup/delete chain — has run, unlike
+// `await Promise.resolve()` which only advances one tick at a time.
+function flushMicrotasks(): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, 0));
 }
 
 describe('withWorktreeLock', () => {
@@ -80,5 +87,64 @@ describe('withWorktreeLock', () => {
     await expect(withWorktreeLock('/repo/d', async () => {
       throw new Error('specific failure');
     })).rejects.toThrow('specific failure');
+  });
+
+  it('does not retain a map entry once its chain has fully settled', async () => {
+    await withWorktreeLock('/repo/leak-single', async () => undefined);
+    await flushMicrotasks();
+
+    expect(_getWorktreeLockMapSizeForTests()).toBe(0);
+  });
+
+  it('does not accumulate unbounded entries after many distinct repo paths are used', async () => {
+    const paths = Array.from({ length: 200 }, (_, i) => `/repo/leak-many/${i}`);
+    await Promise.all(paths.map((p) => withWorktreeLock(p, async () => undefined)));
+    await flushMicrotasks();
+
+    expect(_getWorktreeLockMapSizeForTests()).toBe(0);
+  });
+
+  it('keeps serializing a call queued in the exact race window between a settling chain and its (guarded) cleanup', async () => {
+    // This reproduces the race the identity check in withWorktreeLock guards
+    // against: call2 and call3 are queued synchronously inside a `.then`
+    // reaction on call1's own promise, which lands them in the same
+    // microtask window the lock's internal cleanup uses to decide whether
+    // to delete its map entry. If cleanup deleted unconditionally, call3
+    // would see no entry for the key and run concurrently with call2
+    // instead of waiting for it.
+    const order: string[] = [];
+    const call2Gate = deferred<void>();
+    let call2: Promise<void>;
+    let call3: Promise<void>;
+
+    const call1 = withWorktreeLock('/repo/race', async () => {
+      order.push('1');
+    });
+
+    const raceSetup = call1.then(() => {
+      call2 = withWorktreeLock('/repo/race', async () => {
+        order.push('2-start');
+        await call2Gate.promise;
+        order.push('2-end');
+      });
+      call3 = withWorktreeLock('/repo/race', async () => {
+        order.push('3');
+      });
+    });
+
+    await raceSetup;
+    await Promise.resolve();
+    await Promise.resolve();
+
+    // call3 must still be queued behind the still-running call2.
+    expect(order).toEqual(['1', '2-start']);
+
+    call2Gate.resolve();
+    await Promise.all([call2!, call3!]);
+
+    expect(order).toEqual(['1', '2-start', '2-end', '3']);
+
+    await flushMicrotasks();
+    expect(_getWorktreeLockMapSizeForTests()).toBe(0);
   });
 });
