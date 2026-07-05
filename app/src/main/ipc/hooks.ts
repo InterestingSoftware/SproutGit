@@ -1,20 +1,49 @@
 /**
- * Hook execution IPC handlers.
+ * Hook CRUD + execution IPC handlers.
  *
  * Hooks are shell scripts that run at lifecycle points (worktree create/delete/switch).
  * They execute in a PTY terminal session visible in the renderer's terminal tab.
+ *
+ * Both local and repo hooks are stored the same way — a JSON file of
+ * HookFileDefinitions (see ../hooks-file.ts) — just in different files with
+ * different write/trust policies:
+ *  - local: `<workspacePath>/.sproutgit/local-hooks.json`, app-writable, always trusted.
+ *  - repo:  `<worktreePath>/sproutgit.hooks.json`, git-tracked, read-only from
+ *    the app, each hook gated by per-hook trust (../hooks-trust.ts) since it
+ *    arrives via `git checkout`.
  */
+import { existsSync } from 'node:fs';
 import { ipcMain, BrowserWindow } from 'electron';
 import { IPC } from '@sproutgit/types';
-import type { WorkspaceHookTrigger, WorkspaceHookShell, HookProgressEvent, WorktreeSwitchHookSource } from '@sproutgit/types';
+import type {
+  WorkspaceHookTrigger,
+  WorkspaceHookShell,
+  HookProgressEvent,
+  WorktreeSwitchHookSource,
+  WorkspaceHook,
+  HookListResult,
+  HookUpsertInput,
+  HookFileDefinition,
+} from '@sproutgit/types';
 import { canonicalize } from '@sproutgit/paths';
-import { openWorkspaceDb, eq } from '@sproutgit/database';
-import { hookDefinitions, worktreeMetadata } from '@sproutgit/database/schema/workspace';
+import { openWorkspaceDb, eq, type ConfigDb } from '@sproutgit/database';
+import { worktreeMetadata, hookDefinitions, hookDependencies } from '@sproutgit/database/schema/workspace';
 import { listWorktrees } from '@sproutgit/git/worktrees';
 import { join, basename, normalize } from 'path';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { manager, sessionWindows, registerHookExitHandler } from './terminal.js';
+import {
+  readHooksFile,
+  writeLocalHooksFile,
+  toWorkspaceHook,
+  hashHookDefinition,
+  localHooksFilePath,
+  repoHooksFilePath,
+  parseHookId,
+} from '../hooks-file.js';
+import { isHookTrusted, trustHook } from '../hooks-trust.js';
+import { log } from '../telemetry.js';
 
 /** Tracks hook IDs that have already fired once this session (for switchOncePerSession). */
 const firedOnceHookIds = new Set<string>();
@@ -48,6 +77,98 @@ function getWorkspaceDb(workspacePath: string) {
   return openWorkspaceDb(dbPath);
 }
 
+// ── Local hook storage ───────────────────────────────────────────────────
+
+/**
+ * One-time migration: older builds stored local hooks in the workspace DB
+ * (`hookDefinitions`/`hookDependencies`). If `local-hooks.json` doesn't
+ * exist yet, convert any legacy rows into it once so existing hooks aren't
+ * lost when the app switches to file-based storage. A no-op once the file
+ * exists (including an empty one written by a workspace that never had
+ * legacy hooks), so this never re-queries the DB on every read.
+ */
+function migrateLegacyLocalHooksIfNeeded(workspacePath: string): void {
+  if (existsSync(localHooksFilePath(workspacePath))) return;
+
+  const db = getWorkspaceDb(workspacePath);
+  let rows: (typeof hookDefinitions.$inferSelect)[];
+  let deps: (typeof hookDependencies.$inferSelect)[];
+  try {
+    rows = db.select().from(hookDefinitions).all();
+    deps = db.select().from(hookDependencies).all();
+  } finally {
+    db.close();
+  }
+
+  const nameById = new Map(rows.map(r => [r.id, r.name]));
+  const dependsOnByHookId = new Map<string, string[]>();
+  for (const dep of deps) {
+    if (!dependsOnByHookId.has(dep.hookId)) dependsOnByHookId.set(dep.hookId, []);
+    dependsOnByHookId.get(dep.hookId)!.push(dep.dependsOnId);
+  }
+
+  const converted: HookFileDefinition[] = rows.map(r => ({
+    name: r.name,
+    scope: r.scope,
+    trigger: r.trigger,
+    executionTarget: r.executionTarget,
+    shell: r.shell,
+    script: r.script,
+    enabled: r.enabled,
+    critical: r.critical,
+    switchOncePerSession: r.switchOncePerSession,
+    switchRunOnCreate: r.switchRunOnCreate,
+    switchRunOnDelete: r.switchRunOnDelete,
+    keepOpenOnCompletion: r.keepOpenOnCompletion,
+    timeoutSeconds: r.timeoutSeconds,
+    dependsOn: (dependsOnByHookId.get(r.id) ?? []).map(id => nameById.get(id)).filter((n): n is string => !!n),
+    createdAt: r.createdAt.getTime(),
+    updatedAt: r.updatedAt.getTime(),
+  }));
+
+  // The old DB schema keyed hooks by UUID, so unlike the new file format it
+  // never enforced unique names — disambiguate rather than silently
+  // dropping/merging a hook (this is a rare, best-effort compatibility path).
+  const seen = new Map<string, number>();
+  for (const hook of converted) {
+    const count = seen.get(hook.name) ?? 0;
+    if (count > 0) {
+      log.warn(`[hooks] migrating legacy hook with duplicate name "${hook.name}" — renaming to disambiguate`);
+      hook.name = `${hook.name} (${count + 1})`;
+    }
+    seen.set(hook.name, count + 1);
+  }
+
+  writeLocalHooksFile(workspacePath, converted);
+}
+
+function readLocalHookDefs(workspacePath: string): HookFileDefinition[] {
+  migrateLegacyLocalHooksIfNeeded(workspacePath);
+  const { hooks, error } = readHooksFile(localHooksFilePath(workspacePath));
+  if (error) log.warn(`[hooks] failed to parse ${localHooksFilePath(workspacePath)}: ${error}`);
+  return hooks;
+}
+
+// ── Merged read path (local + repo) ──────────────────────────────────────
+
+export function getEffectiveHooks(workspacePath: string, worktreePath: string | null, configDb: ConfigDb): HookListResult {
+  const localHooks = readLocalHookDefs(workspacePath).map(d => toWorkspaceHook(d, 'local', true));
+
+  if (!worktreePath) return { hooks: localHooks, repoFileError: null };
+
+  const { hooks: repoDefs, error: repoFileError } = readHooksFile(repoHooksFilePath(worktreePath));
+  const repoHooks = repoDefs.map(d => toWorkspaceHook(d, 'repo', isHookTrusted(configDb, worktreePath, hashHookDefinition(d))));
+
+  return { hooks: [...localHooks, ...repoHooks], repoFileError };
+}
+
+/** Enabled, trusted hooks for `worktreePath` matching `trigger` — the set that's actually eligible to execute. */
+function getEffectiveHooksForTrigger(workspacePath: string, worktreePath: string, configDb: ConfigDb, trigger: WorkspaceHookTrigger): WorkspaceHook[] {
+  return getEffectiveHooks(workspacePath, worktreePath, configDb).hooks.filter(h => h.trigger === trigger && h.enabled && h.trusted);
+}
+
+// ── Execution ─────────────────────────────────────────────────────────────
+
 interface RunHookArgs {
   workspacePath: string;
   hookId: string;
@@ -56,15 +177,15 @@ interface RunHookArgs {
   initiatingWorktreePath?: string | null;
 }
 
-async function runHook(args: RunHookArgs, win: BrowserWindow): Promise<void> {
-  const db = getWorkspaceDb(args.workspacePath);
-  const hook = db
-    .select()
-    .from(hookDefinitions)
-    .where(eq(hookDefinitions.id, args.hookId))
-    .get();
+async function runHook(args: RunHookArgs, win: BrowserWindow, configDb: ConfigDb): Promise<void> {
+  const { hooks } = getEffectiveHooks(args.workspacePath, args.worktreePath, configDb);
+  const hook = hooks.find(h => h.id === args.hookId);
+  if (!hook || !hook.enabled || !hook.trusted) return;
+  await runResolvedHook(hook, args, win);
+}
 
-  if (!hook || !hook.enabled) { db.close(); return; }
+async function runResolvedHook(hook: WorkspaceHook, args: RunHookArgs, win: BrowserWindow): Promise<void> {
+  const db = getWorkspaceDb(args.workspacePath);
 
   // Look up worktree metadata for branch / source ref
   let wtMeta = db
@@ -250,30 +371,22 @@ export interface RunTriggerHooksArgs {
 }
 
 /**
- * Runs every enabled hook registered for `args.trigger`, in the worktree
- * context `args.worktreePath` describes. Exported standalone (rather than
- * only reachable via the HOOK_RUN_TRIGGER IPC handler below) so other
- * main-process code — specifically worktree-lifecycle.ts, which both the
- * renderer's worktree:create/worktree:delete IPC calls and the MCP
+ * Runs every enabled, trusted hook registered for `args.trigger`, in the
+ * worktree context `args.worktreePath` describes. Exported standalone
+ * (rather than only reachable via the HOOK_RUN_TRIGGER IPC handler below)
+ * so other main-process code — specifically worktree-lifecycle.ts, which
+ * both the renderer's worktree:create/worktree:delete IPC calls and the MCP
  * create_worktree/remove_worktree tools go through — can trigger the exact
  * same hook run without a client-side IPC round-trip.
  */
-export async function runTriggerHooks(args: RunTriggerHooksArgs, win: BrowserWindow): Promise<void> {
-  const db = getWorkspaceDb(args.workspacePath);
-  const hooks = db
-    .select()
-    .from(hookDefinitions)
-    .where(eq(hookDefinitions.trigger, args.trigger))
-    .all();
-  db.close();
+export async function runTriggerHooks(args: RunTriggerHooksArgs, win: BrowserWindow, configDb: ConfigDb): Promise<void> {
+  const hooks = getEffectiveHooksForTrigger(args.workspacePath, args.worktreePath, configDb, args.trigger);
 
   const isSwitchTrigger =
     args.trigger === 'after_worktree_switch' ||
     args.trigger === 'before_worktree_switch';
 
   for (const hook of hooks) {
-    if (!hook.enabled) continue;
-
     // Apply switch-specific source flags — only when a source is known.
     // Use === false (not !) to treat NULL as "allow" for backward compatibility.
     if (isSwitchTrigger && args.source !== undefined) {
@@ -290,7 +403,7 @@ export async function runTriggerHooks(args: RunTriggerHooksArgs, win: BrowserWin
       firedOnceHookIds.add(onceKey);
     }
 
-    await runHook({
+    await runResolvedHook(hook, {
       workspacePath: args.workspacePath,
       hookId: hook.id,
       worktreePath: args.worktreePath,
@@ -308,11 +421,100 @@ export async function runTriggerHooks(args: RunTriggerHooksArgs, win: BrowserWin
   }
 }
 
-export function registerHookHandlers(): void {
+export function registerHookHandlers(configDb: ConfigDb): void {
   ipcMain.handle(IPC.HOOK_RUN, async (_e, args: RunHookArgs) => {
     const win = BrowserWindow.fromWebContents(_e.sender);
     if (!win) return;
-    await runHook(args, win);
+    await runHook(args, win, configDb);
+  });
+
+  ipcMain.handle(IPC.HOOK_LIST, (_e, args: { workspacePath: string; worktreePath: string | null }): HookListResult => {
+    return getEffectiveHooks(args.workspacePath, args.worktreePath, configDb);
+  });
+
+  ipcMain.handle(IPC.HOOK_CREATE, (_e, args: { workspacePath: string } & HookUpsertInput) => {
+    const localDefs = readLocalHookDefs(args.workspacePath);
+    if (localDefs.some(h => h.name === args.name)) {
+      throw new Error(`A local hook named "${args.name}" already exists.`);
+    }
+    const now = Date.now();
+    localDefs.push({
+      name: args.name,
+      scope: args.scope,
+      trigger: args.trigger,
+      executionTarget: args.executionTarget,
+      shell: args.shell,
+      script: args.script,
+      enabled: args.enabled,
+      critical: args.critical,
+      switchOncePerSession: args.switchOncePerSession,
+      switchRunOnCreate: args.switchRunOnCreate,
+      switchRunOnDelete: args.switchRunOnDelete,
+      keepOpenOnCompletion: args.keepOpenOnCompletion,
+      timeoutSeconds: args.timeoutSeconds,
+      dependsOn: args.dependsOn,
+      createdAt: now,
+      updatedAt: now,
+    });
+    writeLocalHooksFile(args.workspacePath, localDefs);
+  });
+
+  ipcMain.handle(IPC.HOOK_UPDATE, (_e, args: { workspacePath: string; id: string } & Partial<HookUpsertInput>) => {
+    const parsed = parseHookId(args.id);
+    if (!parsed || parsed.source !== 'local') return; // repo hooks: edit sproutgit.hooks.json + commit instead
+    const localDefs = readLocalHookDefs(args.workspacePath);
+    const index = localDefs.findIndex(h => h.name === parsed.name);
+    if (index === -1) return;
+
+    const current = localDefs[index]!;
+    const newName = args.name ?? current.name;
+    if (newName !== current.name && localDefs.some((h, i) => i !== index && h.name === newName)) {
+      throw new Error(`A local hook named "${newName}" already exists.`);
+    }
+
+    localDefs[index] = {
+      ...current,
+      name: newName,
+      scope: args.scope ?? current.scope,
+      trigger: args.trigger ?? current.trigger,
+      executionTarget: args.executionTarget ?? current.executionTarget,
+      shell: args.shell ?? current.shell,
+      script: args.script ?? current.script,
+      enabled: args.enabled ?? current.enabled,
+      critical: args.critical ?? current.critical,
+      switchOncePerSession: args.switchOncePerSession ?? current.switchOncePerSession,
+      switchRunOnCreate: args.switchRunOnCreate ?? current.switchRunOnCreate,
+      switchRunOnDelete: args.switchRunOnDelete ?? current.switchRunOnDelete,
+      keepOpenOnCompletion: args.keepOpenOnCompletion ?? current.keepOpenOnCompletion,
+      timeoutSeconds: args.timeoutSeconds ?? current.timeoutSeconds,
+      dependsOn: args.dependsOn ?? current.dependsOn,
+      updatedAt: Date.now(),
+    };
+
+    // Rename cascade — the app fully owns this file, so keep other local
+    // hooks' dependsOn references consistent rather than letting them go stale.
+    if (newName !== current.name) {
+      for (const [i, h] of localDefs.entries()) {
+        if (i === index) continue;
+        if (h.dependsOn?.includes(current.name)) {
+          h.dependsOn = h.dependsOn.map(d => d === current.name ? newName : d);
+        }
+      }
+    }
+
+    writeLocalHooksFile(args.workspacePath, localDefs);
+  });
+
+  ipcMain.handle(IPC.HOOK_DELETE, (_e, args: { workspacePath: string; id: string }) => {
+    const parsed = parseHookId(args.id);
+    if (!parsed || parsed.source !== 'local') return;
+    const remaining = readLocalHookDefs(args.workspacePath).filter(h => h.name !== parsed.name);
+    for (const h of remaining) {
+      if (h.dependsOn?.includes(parsed.name)) {
+        h.dependsOn = h.dependsOn.filter(d => d !== parsed.name);
+      }
+    }
+    writeLocalHooksFile(args.workspacePath, remaining);
   });
 
   ipcMain.handle(IPC.HOOK_TOGGLE, (_e, args: {
@@ -320,15 +522,25 @@ export function registerHookHandlers(): void {
     id: string;
     enabled: boolean;
   }) => {
-    const db = getWorkspaceDb(args.workspacePath);
-    try {
-      db.update(hookDefinitions)
-        .set({ enabled: args.enabled, updatedAt: new Date() })
-        .where(eq(hookDefinitions.id, args.id))
-        .run();
-    } finally {
-      db.close();
-    }
+    const parsed = parseHookId(args.id);
+    // Repo hooks aren't stored in a file the app writes — their `enabled`
+    // flag comes from sproutgit.hooks.json itself, so there's nothing to toggle here.
+    if (!parsed || parsed.source !== 'local') return;
+    const localDefs = readLocalHookDefs(args.workspacePath);
+    const hook = localDefs.find(h => h.name === parsed.name);
+    if (!hook) return;
+    hook.enabled = args.enabled;
+    hook.updatedAt = Date.now();
+    writeLocalHooksFile(args.workspacePath, localDefs);
+  });
+
+  ipcMain.handle(IPC.HOOK_TRUST, (_e, args: { worktreePath: string; hookId: string }) => {
+    const parsed = parseHookId(args.hookId);
+    if (!parsed || parsed.source !== 'repo') return;
+    const { hooks: repoDefs } = readHooksFile(repoHooksFilePath(args.worktreePath));
+    const def = repoDefs.find(h => h.name === parsed.name);
+    if (!def) return;
+    trustHook(configDb, args.worktreePath, hashHookDefinition(def));
   });
 
   ipcMain.handle(IPC.HOOK_RUN_SWITCH, async (_e, args: {
@@ -341,14 +553,7 @@ export function registerHookHandlers(): void {
     if (!win) return;
 
     const source = args.source ?? 'manual';
-
-    const db = getWorkspaceDb(args.workspacePath);
-    const hooks = db
-      .select()
-      .from(hookDefinitions)
-      .where(eq(hookDefinitions.trigger, 'before_worktree_switch'))
-      .all();
-    db.close(); // release before running hooks asynchronously
+    const hooks = getEffectiveHooksForTrigger(args.workspacePath, args.targetWorktreePath, configDb, 'before_worktree_switch');
 
     for (const hook of hooks) {
       // Honour switchRunOnCreate / switchRunOnDelete flags.
@@ -364,7 +569,7 @@ export function registerHookHandlers(): void {
       // PTY exit promise, so adding to the set after the await would never execute.
       if (hook.switchOncePerSession) firedOnceHookIds.add(onceKey);
 
-      await runHook({
+      await runResolvedHook(hook, {
         workspacePath: args.workspacePath,
         hookId: hook.id,
         worktreePath: args.targetWorktreePath,
@@ -382,17 +587,9 @@ export function registerHookHandlers(): void {
     const win = BrowserWindow.fromWebContents(_e.sender);
     if (!win) return;
 
-    const db = getWorkspaceDb(args.workspacePath);
-    const hooks = db
-      .select()
-      .from(hookDefinitions)
-      .where(eq(hookDefinitions.trigger, 'after_worktree_create'))
-      .all();
-    db.close(); // release before running hooks asynchronously
-
+    const hooks = getEffectiveHooksForTrigger(args.workspacePath, args.newWorktreePath, configDb, 'after_worktree_create');
     for (const hook of hooks) {
-      if (!hook.enabled) continue;
-      await runHook({
+      await runResolvedHook(hook, {
         workspacePath: args.workspacePath,
         hookId: hook.id,
         worktreePath: args.newWorktreePath,
@@ -405,6 +602,6 @@ export function registerHookHandlers(): void {
   ipcMain.handle(IPC.HOOK_RUN_TRIGGER, async (_e, args: RunTriggerHooksArgs) => {
     const win = BrowserWindow.fromWebContents(_e.sender);
     if (!win) return;
-    await runTriggerHooks(args, win);
+    await runTriggerHooks(args, win, configDb);
   });
 }

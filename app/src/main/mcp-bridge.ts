@@ -16,6 +16,7 @@ import { createServer as createHttpServer, type Server } from 'node:http';
 import { createHash } from 'node:crypto';
 import type { AddressInfo } from 'node:net';
 import type { BrowserWindow } from 'electron';
+import type { ConfigDb } from '@sproutgit/database';
 import { createHttpApp, type McpServerContext } from '@sproutgit/mcp-server';
 import { log } from './telemetry.js';
 import { createWorktreeWithHooks, removeWorktreeWithHooks } from './worktree-lifecycle.js';
@@ -65,6 +66,7 @@ export function deriveDefaultPort(workspacePath: string): number {
 export async function startMcpServer(
   params: McpServerParams,
   getWindow: () => BrowserWindow | null,
+  configDb: ConfigDb,
 ): Promise<number> {
   const existing = runningServers.get(params.workspacePath);
   if (existing) return existing.port;
@@ -89,7 +91,7 @@ export async function startMcpServer(
       fromRef: args.fromRef,
       newBranch: args.newBranch,
       initiatingWorktreePath: null,
-    }, getWindow),
+    }, getWindow, configDb),
     removeWorktree: async args => {
       await removeWorktreeWithHooks({
         workspacePath: params.workspacePath,
@@ -99,7 +101,7 @@ export async function startMcpServer(
         deleteBranch: args.deleteBranch,
         branchName: args.branchName ?? null,
         initiatingWorktreePath: null,
-      }, getWindow);
+      }, getWindow, configDb);
     },
   };
 
