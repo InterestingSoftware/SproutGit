@@ -7,13 +7,31 @@
  * userData directory on request, independent of the user's global npm/PATH
  * state.
  */
+import { app } from 'electron';
 import { spawn } from 'node:child_process';
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { mkdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { AcpAdapterInstallEvent } from '@sproutgit/types';
 import { resolveCommandPath } from './tool-test-helpers.js';
 import type { AcpPresetInfo } from './agents.js';
+
+/**
+ * Reads the version range declared for `npmPackage` in the app's own
+ * package.json `dependencies` — the single source of truth for which
+ * version this build was tested against. `app.getAppPath()` resolves to
+ * the directory containing package.json in both dev and packaged builds.
+ */
+function declaredAdapterVersion(npmPackage: string): string | null {
+  try {
+    const pkgJson = JSON.parse(readFileSync(join(app.getAppPath(), 'package.json'), 'utf8')) as {
+      dependencies?: Record<string, string>;
+    };
+    return pkgJson.dependencies?.[npmPackage] ?? null;
+  } catch {
+    return null;
+  }
+}
 
 /** Directory SproutGit installs on-demand ACP adapters into, one subfolder per npm package. */
 export function acpAdapterInstallDir(userDataPath: string, npmPackage: string): string {
@@ -61,10 +79,16 @@ export async function installAcpAdapter(
     throw new Error(message);
   }
 
+  // Pinned to the same range declared in app/package.json — the version
+  // this build was actually tested against — rather than whatever `latest`
+  // happens to resolve to at install time.
+  const version = declaredAdapterVersion(npmPackage);
+  const packageSpec = version ? `${npmPackage}@${version}` : npmPackage;
+
   await new Promise<void>((resolve, reject) => {
     const child = spawn(
       npmBin,
-      ['install', npmPackage, '--prefix', dir, '--no-save', '--no-audit', '--no-fund', '--loglevel=error'],
+      ['install', packageSpec, '--prefix', dir, '--no-save', '--no-audit', '--no-fund', '--loglevel=error'],
       { stdio: ['ignore', 'pipe', 'pipe'] },
     );
 
