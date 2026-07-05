@@ -31,6 +31,12 @@ hljs.registerLanguage('sql', sqlLang);
 hljs.registerLanguage('python', pythonLang);
 hljs.registerLanguage('go', goLang);
 
+// Unified diff file headers are always "--- a/path" / "+++ b/path" (or /dev/null),
+// i.e. the marker followed by a space — unlike an added/removed line whose content
+// happens to start with "++"/"--", which has no space right after the marker.
+const OLD_FILE_HEADER = /^--- /;
+const NEW_FILE_HEADER = /^\+\+\+ /;
+
 // ─── Props ────────────────────────────────────────────────────────────────────
 
 type Props = {
@@ -223,13 +229,13 @@ export function StagingPanel({
     const lang = languageForPath(diffFile);
     const lines = raw.split('\n');
     return lines.map(line => {
-      if (line.startsWith('+') && !line.startsWith('+++')) {
+      if (line.startsWith('+') && !NEW_FILE_HEADER.test(line)) {
         return `<div class="sg-diff-add">+${highlightCode(line.slice(1), lang)}</div>`;
-      } else if (line.startsWith('-') && !line.startsWith('---')) {
+      } else if (line.startsWith('-') && !OLD_FILE_HEADER.test(line)) {
         return `<div class="sg-diff-del">-${highlightCode(line.slice(1), lang)}</div>`;
       } else if (line.startsWith('@@')) {
         return `<div class="sg-diff-hunk">${escapeHtml(line)}</div>`;
-      } else if (line.startsWith('diff ') || line.startsWith('index ') || line.startsWith('---') || line.startsWith('+++')) {
+      } else if (line.startsWith('diff ') || line.startsWith('index ') || OLD_FILE_HEADER.test(line) || NEW_FILE_HEADER.test(line)) {
         return `<div class="sg-diff-meta">${escapeHtml(line)}</div>`;
       }
       if (line.startsWith(' ')) {
