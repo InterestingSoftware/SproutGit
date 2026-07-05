@@ -74,6 +74,11 @@ type Props = {
   onResize: (sessionId: string, cols: number, rows: number) => void;
   /** Incoming data from the PTY to render. */
   incomingData?: string;
+  /** Characters permanently dropped from the front of `incomingData` by the
+   *  caller's buffer cap. `incomingData` is otherwise treated as an
+   *  ever-growing stream; this offset keeps the write-delta math correct
+   *  once older data has been trimmed out from under it. */
+  droppedLen?: number;
   className?: string;
 };
 
@@ -84,11 +89,13 @@ const isWindows = typeof navigator !== 'undefined' && /windows/i.test(navigator.
  * process via the `onData` / `onResize` callbacks. The parent is responsible
  * for piping incoming data via the `incomingData` prop.
  */
-export function TerminalPane({ sessionId, onData, onResize, incomingData, className }: Props) {
+export function TerminalPane({ sessionId, onData, onResize, incomingData, droppedLen, className }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const termRef = useRef<Terminal | null>(null);
   const fitAddonRef = useRef<FitAddon | null>(null);
-  /** Tracks how many bytes of `incomingData` have already been written. */
+  /** Tracks how many characters of the full (untrimmed) stream have already
+   *  been written — i.e. an absolute position, not an offset into the
+   *  current (possibly trimmed) `incomingData`. */
   const writtenLenRef = useRef<number>(0);
 
   // Mount terminal once.
@@ -188,15 +195,18 @@ export function TerminalPane({ sessionId, onData, onResize, incomingData, classN
   }, [sessionId]);
 
   // Write incoming PTY data — only the new delta since the last write.
+  // `incomingData` may have been trimmed from the front (its absolute start
+  // position is `droppedLen`), so the slice offset is relative to that
+  // absolute start rather than to the string itself.
   useEffect(() => {
     if (incomingData && termRef.current) {
-      const delta = incomingData.slice(writtenLenRef.current);
-      if (delta) {
-        termRef.current.write(delta);
-        writtenLenRef.current = incomingData.length;
-      }
+      const absoluteStart = droppedLen ?? 0;
+      const relativeOffset = Math.max(0, writtenLenRef.current - absoluteStart);
+      const delta = incomingData.slice(relativeOffset);
+      if (delta) termRef.current.write(delta);
+      writtenLenRef.current = absoluteStart + incomingData.length;
     }
-  }, [incomingData]);
+  }, [incomingData, droppedLen]);
 
   return (
     <div
