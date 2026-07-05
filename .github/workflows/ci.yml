@@ -121,12 +121,27 @@ jobs:
       fail-fast: false
       matrix:
         include:
+          # macOS ships both arches from one arm64 host: cctools/lipo can
+          # target x64 without an x64 machine, unlike Windows/Linux native
+          # modules (node-pty) which need to actually compile on that arch.
           - os: macos-14
             platform: mac
+            arch: universal
           - os: windows-latest
             platform: win
+            arch: x64
+          # Hosted arm64 runner so node-pty's node-gyp fallback compiles
+          # natively instead of cross-compiling. Confirm availability/plan
+          # requirements for this runner label before relying on it.
+          - os: windows-11-arm
+            platform: win
+            arch: arm64
           - os: ubuntu-latest
             platform: linux
+            arch: x64
+          - os: ubuntu-24.04-arm
+            platform: linux
+            arch: arm64
     runs-on: ${{ matrix.os }}
     steps:
       # runner.temp is only available within steps, not job-level env.
@@ -183,10 +198,14 @@ jobs:
         # attack surface if a dependency is compromised.
         run: |
           pnpm exec electron-vite build
-          pnpm exec electron-builder --${{ matrix.platform }} --publish never
+          if [ "${{ matrix.arch }}" = "universal" ]; then
+            pnpm exec electron-builder --${{ matrix.platform }} --publish never
+          else
+            pnpm exec electron-builder --${{ matrix.platform }} --${{ matrix.arch }} --publish never
+          fi
       - uses: actions/upload-artifact@v7
         with:
-          name: SproutGit-${{ matrix.platform }}
+          name: SproutGit-${{ matrix.platform }}-${{ matrix.arch }}
           path: |
             app/dist-electron/*.dmg
             app/dist-electron/*.zip

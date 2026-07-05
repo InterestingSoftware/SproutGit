@@ -95,9 +95,12 @@ const RELEASES_PAGE = `${GITHUB}/releases/latest`;
               <span aria-hidden="true">▾</span>
             </button>
             <div id="platform-downloads-menu" class="download-platforms-menu" hidden data-platforms-menu>
-              <a href={RELEASES_PAGE} target="_blank" rel="noopener noreferrer" data-platform-link="macos">macOS</a>
-              <a href={RELEASES_PAGE} target="_blank" rel="noopener noreferrer" data-platform-link="windows">Windows</a>
-              <a href={RELEASES_PAGE} target="_blank" rel="noopener noreferrer" data-platform-link="linux">Linux</a>
+              <a href={RELEASES_PAGE} target="_blank" rel="noopener noreferrer" data-platform-link="macos-arm64">macOS (Apple Silicon)</a>
+              <a href={RELEASES_PAGE} target="_blank" rel="noopener noreferrer" data-platform-link="macos-x64">macOS (Intel)</a>
+              <a href={RELEASES_PAGE} target="_blank" rel="noopener noreferrer" data-platform-link="windows-x64">Windows</a>
+              <a href={RELEASES_PAGE} target="_blank" rel="noopener noreferrer" data-platform-link="windows-arm64">Windows (ARM64)</a>
+              <a href={RELEASES_PAGE} target="_blank" rel="noopener noreferrer" data-platform-link="linux-x64">Linux</a>
+              <a href={RELEASES_PAGE} target="_blank" rel="noopener noreferrer" data-platform-link="linux-arm64">Linux (ARM64)</a>
             </div>
           </div>
         </div>
@@ -106,9 +109,12 @@ const RELEASES_PAGE = `${GITHUB}/releases/latest`;
           <span class="download-links-label" data-download-status>Loading latest release…</span>
           <a href={GITHUB} target="_blank" rel="noopener noreferrer">GitHub</a>
           <a href={RELEASES_PAGE} target="_blank" rel="noopener noreferrer">All releases</a>
-          <a href={RELEASES_PAGE} target="_blank" rel="noopener noreferrer" data-inline-platform-link="macos">macOS</a>
-          <a href={RELEASES_PAGE} target="_blank" rel="noopener noreferrer" data-inline-platform-link="windows">Windows</a>
-          <a href={RELEASES_PAGE} target="_blank" rel="noopener noreferrer" data-inline-platform-link="linux">Linux</a>
+          <a href={RELEASES_PAGE} target="_blank" rel="noopener noreferrer" data-inline-platform-link="macos-arm64">Mac (Apple Silicon)</a>
+          <a href={RELEASES_PAGE} target="_blank" rel="noopener noreferrer" data-inline-platform-link="macos-x64">Mac (Intel)</a>
+          <a href={RELEASES_PAGE} target="_blank" rel="noopener noreferrer" data-inline-platform-link="windows-x64">Windows</a>
+          <a href={RELEASES_PAGE} target="_blank" rel="noopener noreferrer" data-inline-platform-link="windows-arm64">Windows (ARM64)</a>
+          <a href={RELEASES_PAGE} target="_blank" rel="noopener noreferrer" data-inline-platform-link="linux-x64">Linux</a>
+          <a href={RELEASES_PAGE} target="_blank" rel="noopener noreferrer" data-inline-platform-link="linux-arm64">Linux (ARM64)</a>
         </div>
       </div>
 
@@ -274,17 +280,16 @@ const RELEASES_PAGE = `${GITHUB}/releases/latest`;
     const macDownloadLink = document.querySelector('[data-mac-download-link]');
     const closeButtons = document.querySelectorAll('[data-close-mac-dialog]');
 
-    const menuLinks = {
-      macos: root.querySelector('[data-platform-link="macos"]'),
-      windows: root.querySelector('[data-platform-link="windows"]'),
-      linux: root.querySelector('[data-platform-link="linux"]'),
-    };
+    const platformKeys = /** @type {const} */ ([
+      'macos-arm64', 'macos-x64', 'windows-x64', 'windows-arm64', 'linux-x64', 'linux-arm64',
+    ]);
 
-    const inlineLinks = {
-      macos: root.querySelector('[data-inline-platform-link="macos"]'),
-      windows: root.querySelector('[data-inline-platform-link="windows"]'),
-      linux: root.querySelector('[data-inline-platform-link="linux"]'),
-    };
+    const menuLinks = {};
+    const inlineLinks = {};
+    for (const key of platformKeys) {
+      menuLinks[key] = root.querySelector(`[data-platform-link="${key}"]`);
+      inlineLinks[key] = root.querySelector(`[data-inline-platform-link="${key}"]`);
+    }
 
     const detectOS = () => {
       const rawUserAgentData = 'userAgentData' in navigator ? navigator['userAgentData'] : undefined;
@@ -300,26 +305,89 @@ const RELEASES_PAGE = `${GITHUB}/releases/latest`;
       return 'unknown';
     };
 
+    // Apple Silicon vs Intel can't be read from navigator.platform (both report
+    // "MacIntel"). Chromium exposes it via User-Agent Client Hints; everywhere
+    // else we fall back to a WebGL renderer-string heuristic, since Apple
+    // Silicon Macs always report an "Apple" GPU and Intel Macs report an
+    // Intel/AMD one. If neither works, default to arm64 (the common case for
+    // any Mac sold since 2020) — the platform menu always offers the Intel
+    // build explicitly so a mis-detection is one click to correct.
+    const detectMacArch = async () => {
+      const rawUserAgentData = 'userAgentData' in navigator ? navigator['userAgentData'] : undefined;
+      if (rawUserAgentData && typeof rawUserAgentData.getHighEntropyValues === 'function') {
+        try {
+          const { architecture } = await rawUserAgentData.getHighEntropyValues(['architecture']);
+          if (architecture === 'arm') return 'macos-arm64';
+          if (architecture === 'x86') return 'macos-x64';
+        } catch {
+          // fall through to WebGL heuristic
+        }
+      }
+
+      try {
+        const canvas = document.createElement('canvas');
+        const gl = canvas.getContext('webgl') || canvas.getContext('experimental-webgl');
+        const debugInfo = gl && 'getExtension' in gl ? gl.getExtension('WEBGL_debug_renderer_info') : null;
+        const renderer = debugInfo && 'getParameter' in gl ? String(gl.getParameter(debugInfo.UNMASKED_RENDERER_WEBGL) || '') : '';
+        if (/apple/i.test(renderer)) return 'macos-arm64';
+        if (/intel|amd|radeon|nvidia|geforce/i.test(renderer)) return 'macos-x64';
+      } catch {
+        // fall through to default
+      }
+
+      return 'macos-arm64';
+    };
+
+    // Windows/Linux ARM64 is still a small minority of desktops (unlike Apple
+    // Silicon, which is the majority of Macs sold since 2020) — so unlike
+    // detectMacArch, default to x64 rather than guessing arm64 when detection
+    // is inconclusive. Chromium's User-Agent Client Hints report 'arm' for
+    // both Windows-on-ARM and ARM Linux; there's no reliable non-Chromium
+    // signal for CPU architecture on these platforms, so no WebGL fallback.
+    const detectArchDefaultX64 = async (/** @type {'windows' | 'linux'} */ os) => {
+      const rawUserAgentData = 'userAgentData' in navigator ? navigator['userAgentData'] : undefined;
+      if (rawUserAgentData && typeof rawUserAgentData.getHighEntropyValues === 'function') {
+        try {
+          const { architecture } = await rawUserAgentData.getHighEntropyValues(['architecture']);
+          if (architecture === 'arm') return `${os}-arm64`;
+        } catch {
+          // fall through to default
+        }
+      }
+      return `${os}-x64`;
+    };
+
     const assetMatchers = {
-      macos: (/** @type {{ name: string }} */ asset) => asset.name.endsWith('.dmg') && /aarch64|arm64/i.test(asset.name),
-      windows: (/** @type {{ name: string }} */ asset) => asset.name.endsWith('.exe'),
-      linux: (/** @type {{ name: string }} */ asset) => asset.name.endsWith('.AppImage'),
+      'macos-arm64': (/** @type {{ name: string }} */ asset) => asset.name.endsWith('.dmg') && /aarch64|arm64/i.test(asset.name),
+      'macos-x64': (/** @type {{ name: string }} */ asset) => asset.name.endsWith('.dmg') && !/aarch64|arm64/i.test(asset.name),
+      'windows-x64': (/** @type {{ name: string }} */ asset) => asset.name.endsWith('.exe') && !/arm64|aarch64/i.test(asset.name),
+      'windows-arm64': (/** @type {{ name: string }} */ asset) => asset.name.endsWith('.exe') && /arm64|aarch64/i.test(asset.name),
+      'linux-x64': (/** @type {{ name: string }} */ asset) => asset.name.endsWith('.AppImage') && !/arm64|aarch64/i.test(asset.name),
+      'linux-arm64': (/** @type {{ name: string }} */ asset) => asset.name.endsWith('.AppImage') && /arm64|aarch64/i.test(asset.name),
     };
 
     const platformLabels = {
-      macos: 'macOS',
-      windows: 'Windows',
-      linux: 'Linux',
+      'macos-arm64': 'Mac (Apple Silicon)',
+      'macos-x64': 'Mac (Intel)',
+      'windows-x64': 'Windows',
+      'windows-arm64': 'Windows (ARM64)',
+      'linux-x64': 'Linux',
+      'linux-arm64': 'Linux (ARM64)',
       unknown: 'your OS',
     };
 
-    const links = {
-      macos: fallbackUrl,
-      windows: fallbackUrl,
-      linux: fallbackUrl,
-    };
+    const links = {};
+    for (const key of platformKeys) links[key] = fallbackUrl;
 
-    const recommended = detectOS();
+    const detectedOS = detectOS();
+    // Resolved once the async arch-detection settles; the x64/arm64-default
+    // guess holds until then so the button has a sensible label/link on
+    // first paint.
+    let recommended =
+      detectedOS === 'macos' ? 'macos-arm64' :
+      detectedOS === 'windows' ? 'windows-x64' :
+      detectedOS === 'linux' ? 'linux-x64' :
+      'unknown';
 
     const setStatus = (/** @type {string} */ message) => {
       if (status) status.textContent = message;
@@ -332,16 +400,13 @@ const RELEASES_PAGE = `${GITHUB}/releases/latest`;
     };
 
     const syncLinks = () => {
-      if (menuLinks.macos instanceof HTMLAnchorElement) menuLinks.macos.href = links.macos;
-      if (menuLinks.windows instanceof HTMLAnchorElement) menuLinks.windows.href = links.windows;
-      if (menuLinks.linux instanceof HTMLAnchorElement) menuLinks.linux.href = links.linux;
-
-      if (inlineLinks.macos instanceof HTMLAnchorElement) inlineLinks.macos.href = links.macos;
-      if (inlineLinks.windows instanceof HTMLAnchorElement) inlineLinks.windows.href = links.windows;
-      if (inlineLinks.linux instanceof HTMLAnchorElement) inlineLinks.linux.href = links.linux;
+      for (const key of platformKeys) {
+        if (menuLinks[key] instanceof HTMLAnchorElement) menuLinks[key].href = links[key];
+        if (inlineLinks[key] instanceof HTMLAnchorElement) inlineLinks[key].href = links[key];
+      }
 
       if (macDownloadLink instanceof HTMLAnchorElement) {
-        macDownloadLink.href = links.macos;
+        macDownloadLink.href = recommended === 'macos-x64' ? links['macos-x64'] : links['macos-arm64'];
       }
     };
 
@@ -397,52 +462,49 @@ const RELEASES_PAGE = `${GITHUB}/releases/latest`;
 
     if (primaryLink instanceof HTMLAnchorElement) {
       primaryLink.addEventListener('click', (event) => {
-        if (recommended !== 'macos') return;
+        if (!recommended.startsWith('macos')) return;
         if (!(dialog instanceof HTMLDialogElement)) return;
         event.preventDefault();
         dialog.showModal();
       });
     }
 
-    syncLinks();
-    setPrimaryLink(fallbackUrl, recommended === 'unknown' ? 'Download preview' : `Download for ${platformLabels[recommended]}`);
-    setStatus('Loading latest release…');
+    const primaryLabelFor = (/** @type {string} */ key) =>
+      key === 'unknown' ? 'Download preview' : `Download for ${platformLabels[key]}`;
 
-    fetch(apiUrl, {
-      headers: {
-        Accept: 'application/vnd.github+json',
-      },
-    })
-      .then((response) => {
+    (async () => {
+      if (detectedOS === 'macos') {
+        recommended = await detectMacArch();
+      } else if (detectedOS === 'windows') {
+        recommended = await detectArchDefaultX64('windows');
+      } else if (detectedOS === 'linux') {
+        recommended = await detectArchDefaultX64('linux');
+      }
+
+      syncLinks();
+      setPrimaryLink(fallbackUrl, primaryLabelFor(recommended));
+      setStatus('Loading latest release…');
+
+      try {
+        const response = await fetch(apiUrl, { headers: { Accept: 'application/vnd.github+json' } });
         if (!response.ok) {
           throw new Error(`GitHub release lookup failed with status ${response.status}`);
         }
-        return response.json();
-      })
-      .then((release) => {
+        const release = await response.json();
         const assets = Array.isArray(release.assets) ? release.assets : [];
-        links.macos = assets.find(assetMatchers.macos)?.browser_download_url || fallbackUrl;
-        links.windows = assets.find(assetMatchers.windows)?.browser_download_url || fallbackUrl;
-        links.linux = assets.find(assetMatchers.linux)?.browser_download_url || fallbackUrl;
+        for (const key of platformKeys) {
+          links[key] = assets.find(assetMatchers[key])?.browser_download_url || fallbackUrl;
+        }
         syncLinks();
 
-        const primaryHref = recommended === 'macos'
-          ? links.macos
-          : recommended === 'windows'
-            ? links.windows
-            : recommended === 'linux'
-              ? links.linux
-              : fallbackUrl;
-        const primaryLabel = recommended === 'unknown' ? 'Download preview' : `Download for ${platformLabels[recommended]}`;
-
-        setPrimaryLink(primaryHref, primaryLabel);
+        setPrimaryLink(links[recommended] || fallbackUrl, primaryLabelFor(recommended));
         setStatus(`Latest release ${release.tag_name || 'available'}.`);
-      })
-      .catch(() => {
+      } catch {
         syncLinks();
-        setPrimaryLink(fallbackUrl, recommended === 'unknown' ? 'Download preview' : `Download for ${platformLabels[recommended]}`);
+        setPrimaryLink(fallbackUrl, primaryLabelFor(recommended));
         setStatus('Using GitHub release links.');
-      });
+      }
+    })();
   })();
 </script>
 
