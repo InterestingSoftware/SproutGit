@@ -59,6 +59,13 @@ function copyMigrationsPlugin() {
 export default defineConfig({
   main: {
     plugins: [externalizeDepsPlugin({ exclude: WORKSPACE_PACKAGES }), betterSqlite3Stub(), copyMigrationsPlugin()],
+    // Baked in at build time from the CI env — lets a future signing setup
+    // turn mac auto-update back on (see app/src/main/ipc/update.ts) by
+    // setting this env var before `electron-vite build`, with no app source
+    // changes required.
+    define: {
+      __SPROUTGIT_MAC_AUTO_UPDATE_ENABLED__: JSON.stringify(process.env['SPROUTGIT_MAC_AUTO_UPDATE_ENABLED'] === 'true'),
+    },
     build: {
       watch: {
         // Also watch workspace package sources so changes there trigger a

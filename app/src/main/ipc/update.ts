@@ -17,11 +17,16 @@ function send(channel: string, ...args: unknown[]): void {
 // mac artifacts with CSC_IDENTITY_AUTO_DISCOVERY=false and no signing
 // certificate configured (see .github/workflows/ci.yml), so the check always
 // fails after download and the update silently reverts to "Check for
-// updates". Skip the mac update flow entirely until signing is set up,
-// rather than downloading an update that can never install.
+// updates". Skip the mac update flow entirely until signing is set up.
+//
+// __SPROUTGIT_MAC_AUTO_UPDATE_ENABLED__ is baked in at build time (see
+// electron.vite.config.ts) from the SPROUTGIT_MAC_AUTO_UPDATE_ENABLED env
+// var. Once mac builds are actually signed, set that env var to 'true' in
+// ci.yml's mac build step (and drop its CSC_IDENTITY_AUTO_DISCOVERY=false
+// override) to turn this back on — no other app code changes needed.
 const MAC_UPDATE_UNSUPPORTED_MESSAGE = 'Auto-update on macOS requires the app to be code-signed, which is not yet configured for this build.';
 function macUpdateUnsupported(): boolean {
-  return process.platform === 'darwin';
+  return process.platform === 'darwin' && !__SPROUTGIT_MAC_AUTO_UPDATE_ENABLED__;
 }
 
 export function registerUpdateHandlers(): void {
