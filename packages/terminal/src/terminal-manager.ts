@@ -4,9 +4,11 @@ import { execFileSync } from 'node:child_process';
 import { accessSync, constants, existsSync } from 'node:fs';
 import { type WorkspaceHookShell } from '@sproutgit/types';
 import { isPathWithin } from '@sproutgit/paths';
+import { IdleTracker } from './idle-tracker.js';
 
 export type TerminalDataCallback = (sessionId: string, data: string) => void;
 export type TerminalExitCallback = (sessionId: string, exitCode: number) => void;
+export type TerminalIdleCallback = (sessionId: string, meta: SessionMeta) => void;
 
 export type SpawnOptions = {
   cwd: string;
@@ -113,15 +115,22 @@ export class TerminalManager {
       ...(process.platform === 'win32' && { useConpty: true }),
     });
 
-    proc.onData(data => this.onData(id, data));
+    proc.onData(data => {
+      this.handleSessionData(id, data);
+      this.onData(id, data);
+    });
 
     proc.onExit(({ exitCode }) => {
       this.sessions.delete(id);
-      // Fires whether the process exited on its own or was killed via
-      // close() — close() already removes its own session-scoped state
-      // synchronously, so this hook must be idempotent for that case too.
-      this.handleSessionExit(id);
+      // Fired before handleSessionExit() so a subclass's exit callback can
+      // still read per-session metadata (e.g. cwd, agentId) that
+      // handleSessionExit is about to delete — see TerminalManagerWithMeta's
+      // getMeta(). When the session was already close()'d, that metadata is
+      // gone by this point regardless of ordering (close() deletes it
+      // synchronously) — the exit callback naturally sees no metadata, and
+      // finally handleSessionExit() below still runs idempotently.
       this.onExit(id, exitCode);
+      this.handleSessionExit(id);
     });
 
     // Inject a one-shot command (e.g. from a hook launch event).
@@ -180,6 +189,46 @@ export class TerminalManager {
   protected handleSessionExit(_id: string): void {
     // No extra state to clean up in the base class.
   }
+
+  /**
+   * Hook for subclasses to observe each chunk of PTY output (e.g. to track
+   * last-activity time for idle detection) without needing to duplicate the
+   * onData wiring.
+   */
+  protected handleSessionData(_id: string, _data: string): void {
+    // No-op in the base class.
+  }
+}
+
+/** Per-session metadata tracked by TerminalManagerWithMeta. */
+export type SessionMeta = {
+  cwd: string;
+  label: string;
+  agentId: string | null;
+  agentName: string | null;
+  startedAt: number;
+};
+
+/** How long a session's output must be quiet before it's reported idle. */
+const DEFAULT_IDLE_THRESHOLD_MS = 20_000;
+/** How often to scan for newly-idle sessions. */
+const IDLE_CHECK_INTERVAL_MS = 3_000;
+
+/**
+ * Filters idle-tracker results down to agent-launched sessions — a plain
+ * shell tab sitting at an idle prompt is expected and shouldn't be reported
+ * as a "finished" agent session.
+ */
+export function selectIdleAgentSessions(
+  idleIds: string[],
+  meta: ReadonlyMap<string, SessionMeta>,
+): { id: string; meta: SessionMeta }[] {
+  const result: { id: string; meta: SessionMeta }[] = [];
+  for (const id of idleIds) {
+    const m = meta.get(id);
+    if (m && m.agentId !== null) result.push({ id, meta: m });
+  }
+  return result;
 }
 
 /**
@@ -187,7 +236,35 @@ export class TerminalManager {
  * so `closeForPath` can work correctly and the renderer can rebuild labels.
  */
 export class TerminalManagerWithMeta extends TerminalManager {
-  protected meta = new Map<string, { cwd: string; label: string; agentId: string | null; agentName: string | null; startedAt: number }>();
+  protected meta = new Map<string, SessionMeta>();
+  private idleTracker = new IdleTracker();
+  private readonly onIdle: TerminalIdleCallback | null;
+  private readonly idleThresholdMs: number;
+  private readonly idleTimer: ReturnType<typeof setInterval>;
+
+  constructor(
+    onData: TerminalDataCallback,
+    onExit: TerminalExitCallback,
+    onIdle?: TerminalIdleCallback,
+    idleThresholdMs = DEFAULT_IDLE_THRESHOLD_MS,
+  ) {
+    super(onData, onExit);
+    this.onIdle = onIdle ?? null;
+    this.idleThresholdMs = idleThresholdMs;
+    this.idleTimer = setInterval(() => this.pollIdleSessions(), IDLE_CHECK_INTERVAL_MS);
+    // Doesn't need to keep the process alive by itself — the Electron main
+    // process is already kept alive by its window(s).
+    this.idleTimer.unref?.();
+  }
+
+  /** Scans for sessions that just crossed the idle threshold and reports the agent-launched ones. Exposed (not private) so tests can drive it with a controlled clock instead of waiting on the real timer. */
+  pollIdleSessions(now = Date.now()): void {
+    if (!this.onIdle) return;
+    const idleIds = this.idleTracker.checkIdle(this.idleThresholdMs, now);
+    for (const { id, meta } of selectIdleAgentSessions(idleIds, this.meta)) {
+      this.onIdle(id, meta);
+    }
+  }
 
   override spawn(options: SpawnOptions & { label?: string; agentId?: string; agentName?: string }): string {
     const id = super.spawn(options);
@@ -198,16 +275,32 @@ export class TerminalManagerWithMeta extends TerminalManager {
       agentName: options.agentName ?? null,
       startedAt: Date.now(),
     });
+    this.idleTracker.touch(id);
     return id;
+  }
+
+  protected override handleSessionData(id: string): void {
+    this.idleTracker.touch(id);
   }
 
   override close(sessionId: string): void {
     super.close(sessionId);
     this.meta.delete(sessionId);
+    this.idleTracker.remove(sessionId);
   }
 
   protected override handleSessionExit(id: string): void {
     this.meta.delete(id);
+    this.idleTracker.remove(id);
+  }
+
+  /**
+   * Reads a session's metadata without deleting it — used by the exit
+   * callback (registered at construction, fired before handleSessionExit())
+   * to tell whether the session that just exited was agent-launched.
+   */
+  getMeta(sessionId: string): SessionMeta | undefined {
+    return this.meta.get(sessionId);
   }
 
   override closeForPath(pathPrefix: string): void {
@@ -231,7 +324,7 @@ export class TerminalManagerWithMeta extends TerminalManager {
     return this.meta.get(sessionId)?.label;
   }
 
-  listSessions(): { id: string; cwd: string; label: string; agentId: string | null; agentName: string | null; startedAt: number }[] {
+  listSessions(): ({ id: string } & SessionMeta)[] {
     return Array.from(this.meta.entries()).map(([id, m]) => ({
       id,
       cwd: m.cwd,

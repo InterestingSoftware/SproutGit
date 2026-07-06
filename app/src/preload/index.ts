@@ -56,6 +56,9 @@ import type {
   McpConfigWriteResult,
   GlobalErrorEvent,
   ProjectIdeaGenerateResult,
+  AgentSessionStatusEvent,
+  ShowAgentNotificationArgs,
+  NotificationClickedEvent,
 } from '@sproutgit/types';
 
 /**
@@ -224,6 +227,22 @@ const api = {
     };
     ipcRenderer.on(IPC.TERMINAL_EXIT, handler);
     return () => ipcRenderer.off(IPC.TERMINAL_EXIT, handler);
+  },
+
+  onAgentSessionStatus: (callback: (event: AgentSessionStatusEvent) => void) => {
+    const handler = (_e: Electron.IpcRendererEvent, payload: AgentSessionStatusEvent) => callback(payload);
+    ipcRenderer.on(IPC.EVENT_AGENT_SESSION_STATUS, handler);
+    return () => ipcRenderer.off(IPC.EVENT_AGENT_SESSION_STATUS, handler);
+  },
+
+  // ── Notifications ─────────────────────────────────────────────────────────
+  showAgentSessionNotification: (args: ShowAgentNotificationArgs): Promise<void> =>
+    invoke(IPC.NOTIFICATION_SHOW, args),
+
+  onNotificationClicked: (callback: (event: NotificationClickedEvent) => void) => {
+    const handler = (_e: Electron.IpcRendererEvent, payload: NotificationClickedEvent) => callback(payload);
+    ipcRenderer.on(IPC.EVENT_NOTIFICATION_CLICKED, handler);
+    return () => ipcRenderer.off(IPC.EVENT_NOTIFICATION_CLICKED, handler);
   },
 
   // ── Workspace / recent ────────────────────────────────────────────────────
