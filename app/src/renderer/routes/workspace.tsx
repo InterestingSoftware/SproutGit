@@ -786,7 +786,11 @@ function WorkspaceInner() {
    *  the session's worktree (if not already active) and focuses its terminal tab. */
   function handleJumpToSession(session: TerminalInfo) {
     const wt = worktrees.find(w => w.path === session.cwd);
-    if (wt && wt.path !== activeWorktree?.path) {
+    // The dashboard already filters to this workspace's worktrees, but guard
+    // here too — jumping to a session with no matching worktree would leave
+    // activeTerminalId pointing at a tab that can never render.
+    if (!wt) return;
+    if (wt.path !== activeWorktree?.path) {
       void handleWorktreeSwitch(wt);
     }
     useWorkspaceStore.setState(s => ({

@@ -117,6 +117,10 @@ export class TerminalManager {
 
     proc.onExit(({ exitCode }) => {
       this.sessions.delete(id);
+      // Fires whether the process exited on its own or was killed via
+      // close() — close() already removes its own session-scoped state
+      // synchronously, so this hook must be idempotent for that case too.
+      this.handleSessionExit(id);
       this.onExit(id, exitCode);
     });
 
@@ -166,6 +170,16 @@ export class TerminalManager {
   get size(): number {
     return this.sessions.size;
   }
+
+  /**
+   * Hook for subclasses tracking extra per-session state (e.g. metadata maps)
+   * to clean up when a PTY exits — called on every exit path, not just close(),
+   * since a session's process can also exit on its own (agent CLI finishing,
+   * a shell running `exit`, a crash).
+   */
+  protected handleSessionExit(_id: string): void {
+    // No extra state to clean up in the base class.
+  }
 }
 
 /**
@@ -190,6 +204,10 @@ export class TerminalManagerWithMeta extends TerminalManager {
   override close(sessionId: string): void {
     super.close(sessionId);
     this.meta.delete(sessionId);
+  }
+
+  protected override handleSessionExit(id: string): void {
+    this.meta.delete(id);
   }
 
   override closeForPath(pathPrefix: string): void {

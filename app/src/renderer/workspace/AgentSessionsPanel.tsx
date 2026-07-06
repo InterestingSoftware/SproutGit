@@ -52,8 +52,12 @@ export function AgentSessionsPanel({ open, worktrees, onJump, onClose }: Props) 
 
   if (!open) return null;
 
+  // terminal:list is process-wide (not scoped to a workspace or window), so a
+  // session must also match one of this workspace's worktree paths — without
+  // this, a session from a different open workspace/window would show up
+  // here and its "Jump" action would have no worktree to switch to.
   const agentSessions = sessions
-    .filter(s => s.agentId !== null)
+    .filter(s => s.agentId !== null && worktrees.some(w => w.path === s.cwd))
     .sort((a, b) => a.startedAt - b.startedAt);
 
   return (
