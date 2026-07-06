@@ -279,7 +279,7 @@ export class TerminalManagerWithMeta extends TerminalManager {
     return id;
   }
 
-  protected override handleSessionData(id: string): void {
+  protected override handleSessionData(id: string, _data: string): void {
     this.idleTracker.touch(id);
   }
 

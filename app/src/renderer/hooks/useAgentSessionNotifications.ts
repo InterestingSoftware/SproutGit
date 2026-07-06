@@ -55,7 +55,7 @@ export function useAgentSessionNotifications(params: {
           worktreePath: event.cwd,
           terminalId: event.id,
         });
-      })();
+      })().catch(err => console.error('[agent-session-notifications]', err));
     });
 
     const offClicked = api.onNotificationClicked((event: NotificationClickedEvent) => {

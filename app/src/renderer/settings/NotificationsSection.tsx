@@ -12,18 +12,21 @@ export function NotificationsSection({ onToast }: Props) {
   const [loaded, setLoaded] = useState(false);
 
   useEffect(() => {
-    void loadAgentSessionNotificationsEnabled().then(value => {
-      setEnabled(value);
-      setLoaded(true);
-    });
+    void loadAgentSessionNotificationsEnabled()
+      .then(value => setEnabled(value))
+      .catch(err => onToast(String(err), 'error'))
+      .finally(() => setLoaded(true));
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   async function toggle() {
+    const previous = enabled;
     const next = !enabled;
     setEnabled(next);
     try {
       await saveAgentSessionNotificationsEnabled(next);
     } catch (err) {
+      setEnabled(previous);
       onToast(String(err), 'error');
     }
   }
