@@ -128,6 +128,9 @@ export const IPC = {
   GITHUB_LIST_REPOS: 'github:listRepos',
   GITHUB_GET_PR_STATUS: 'github:getPrStatus',
   GITHUB_CREATE_PR: 'github:createPr',
+  GITHUB_GET_CHECK_FAILURE_DETAIL: 'github:getCheckFailureDetail',
+  GITHUB_SET_PR_READY: 'github:setPrReady',
+  GITHUB_MERGE_PR: 'github:mergePr',
   // ── File watcher ─────────────────────────────────────────────────────────
   WATCH_START: 'watch:start',
   WATCH_STOP: 'watch:stop',
@@ -215,7 +218,7 @@ import type {
   HookListResult,
 } from './hooks.js';
 import type { EditorInfo, GitToolInfo, ToolTestResult } from './tools.js';
-import type { GitHubAuthStatus, DeviceCodeResponse, GitHubPollResult, GitHubEmailSuggestion, GitHubRepo, PullRequestStatus, PullRequestInfo } from './github.js';
+import type { GitHubAuthStatus, DeviceCodeResponse, GitHubPollResult, GitHubEmailSuggestion, GitHubRepo, PullRequestStatus, PullRequestInfo, CheckFailureDetail, MergeMethod, MergePullRequestResult } from './github.js';
 import type { TerminalInfo } from './terminal.js';
 import type { SessionAttention } from './attention.js';
 import type { AgentConfig, AcpAdapterStatus } from './agents.js';
@@ -376,6 +379,9 @@ export type IpcMap = {
   'github:listRepos':       { args: [];                    result: GitHubRepo[] };
   'github:getPrStatus':     { args: [worktreePath: string]; result: PullRequestStatus | null };
   'github:createPr':        { args: [args: { worktreePath: string; title: string; body?: string; base: string; draft?: boolean }]; result: PullRequestInfo };
+  'github:getCheckFailureDetail': { args: [args: { worktreePath: string; checkId: string }]; result: CheckFailureDetail | null };
+  'github:setPrReady':      { args: [args: { worktreePath: string; ready: boolean }]; result: PullRequestInfo };
+  'github:mergePr':         { args: [args: { worktreePath: string; method: MergeMethod }]; result: MergePullRequestResult };
   // ── Watcher ───────────────────────────────────────────────────────────────
   'watch:start': { args: [repoPath: string]; result: void };
   'watch:stop':  { args: [repoPath: string]; result: void };

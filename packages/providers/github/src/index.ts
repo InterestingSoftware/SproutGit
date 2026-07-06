@@ -7,7 +7,11 @@ import type {
   ChecksState,
   PullRequestInfo,
   PullRequestStatus,
+  PullRequestCheck,
   CreatePullRequestInput,
+  CheckFailureDetail,
+  MergeMethod,
+  MergePullRequestResult,
 } from '@sproutgit/types';
 
 export const GITHUB_CLIENT_ID = 'Ov23li7ulFUcqulDi8u8';
@@ -42,6 +46,36 @@ async function ghApiPost(endpoint: string, token: string, body: unknown): Promis
       'X-GitHub-Api-Version': '2022-11-28',
     },
     body: JSON.stringify(body),
+  });
+}
+
+async function ghApiPut(endpoint: string, token: string, body: unknown): Promise<Response> {
+  return fetch(`https://api.github.com${endpoint}`, {
+    method: 'PUT',
+    headers: {
+      Authorization: `Bearer ${token}`,
+      Accept: 'application/json',
+      'Content-Type': 'application/json',
+      'X-GitHub-Api-Version': '2022-11-28',
+    },
+    body: JSON.stringify(body),
+  });
+}
+
+/**
+ * GitHub's REST API has no endpoint to flip a PR between draft and ready for
+ * review — that only exists as a GraphQL mutation. Everything else in this
+ * file uses REST; this is the one place that talks to `/graphql`.
+ */
+async function ghGraphqlFetch(query: string, variables: Record<string, unknown>, token: string): Promise<Response> {
+  return fetch('https://api.github.com/graphql', {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${token}`,
+      Accept: 'application/vnd.github+json',
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ query, variables }),
   });
 }
 
@@ -206,6 +240,7 @@ export async function fetchGithubIssue(url: string, token: string): Promise<Prov
 
 type RawPullRequest = {
   number: number;
+  node_id: string;
   html_url: string;
   title: string;
   state: string;
@@ -218,6 +253,7 @@ type RawPullRequest = {
 function mapPullRequest(pr: RawPullRequest): PullRequestInfo {
   return {
     number: pr.number,
+    nodeId: pr.node_id,
     url: pr.html_url,
     title: pr.title,
     state: pr.merged_at ? 'merged' : pr.state === 'closed' ? 'closed' : 'open',
@@ -322,7 +358,73 @@ export async function getCombinedCheckState(
   }
 }
 
-/** Looks up the open/most-recent PR for `branch` plus its combined check state. */
+/**
+ * Fetches the per-check breakdown for `ref`, covering both the Checks API
+ * (GitHub Actions and other check-run producers) and the legacy commit-statuses
+ * API. Unlike `getCombinedCheckState`, callers get the individual name/status/
+ * conclusion/details-url for every check rather than one rolled-up state.
+ * Best-effort: returns an empty list on any failure.
+ */
+export async function getPullRequestChecks(
+  owner: string,
+  repo: string,
+  ref: string,
+  token: string,
+): Promise<PullRequestCheck[]> {
+  try {
+    const [statusRes, checkRunsRes] = await Promise.all([
+      ghApiFetch(`/repos/${owner}/${repo}/commits/${encodeURIComponent(ref)}/status`, token),
+      ghApiFetch(`/repos/${owner}/${repo}/commits/${encodeURIComponent(ref)}/check-runs`, token),
+    ]);
+
+    const checks: PullRequestCheck[] = [];
+
+    if (statusRes.ok) {
+      const data = await statusRes.json() as {
+        statuses: Array<{ id: number; context: string; state: string; target_url: string | null }>;
+      };
+      for (const s of data.statuses) {
+        checks.push({
+          id: `status:${s.id}`,
+          name: s.context,
+          source: 'status',
+          status: s.state === 'pending' ? 'in_progress' : 'completed',
+          conclusion: s.state === 'pending' ? null : s.state,
+          detailsUrl: s.target_url,
+        });
+      }
+    }
+
+    if (checkRunsRes.ok) {
+      const data = await checkRunsRes.json() as {
+        check_runs: Array<{
+          id: number;
+          name: string;
+          status: string;
+          conclusion: string | null;
+          details_url: string | null;
+          html_url: string | null;
+        }>;
+      };
+      for (const run of data.check_runs) {
+        checks.push({
+          id: `check_run:${run.id}`,
+          name: run.name,
+          source: 'check_run',
+          status: run.status === 'queued' || run.status === 'in_progress' ? run.status : 'completed',
+          conclusion: run.conclusion,
+          detailsUrl: run.details_url ?? run.html_url,
+        });
+      }
+    }
+
+    return checks;
+  } catch {
+    return [];
+  }
+}
+
+/** Looks up the open/most-recent PR for `branch` plus its combined check state and per-check breakdown. */
 export async function getPullRequestStatus(
   owner: string,
   repo: string,
@@ -330,9 +432,111 @@ export async function getPullRequestStatus(
   token: string,
 ): Promise<PullRequestStatus> {
   const pullRequest = await findPullRequestForBranch(owner, repo, branch, token);
-  if (!pullRequest) return { pullRequest: null, checksState: 'none' };
-  const checksState = await getCombinedCheckState(owner, repo, pullRequest.headBranch, token);
-  return { pullRequest, checksState };
+  if (!pullRequest) return { pullRequest: null, checksState: 'none', checks: [] };
+  const [checksState, checks] = await Promise.all([
+    getCombinedCheckState(owner, repo, pullRequest.headBranch, token),
+    getPullRequestChecks(owner, repo, pullRequest.headBranch, token),
+  ]);
+  return { pullRequest, checksState, checks };
+}
+
+/**
+ * Fetches the failure summary/log excerpt + annotations for one check run.
+ * `checkId` is a `PullRequestCheck.id` — only `check_run:<id>` ids have
+ * failure detail (legacy commit statuses carry no log output), so this
+ * returns null for a `status:<id>` id or any API failure.
+ */
+export async function getCheckFailureDetail(
+  owner: string,
+  repo: string,
+  checkId: string,
+  token: string,
+): Promise<CheckFailureDetail | null> {
+  const [source, rawId] = checkId.split(':');
+  if (source !== 'check_run' || !rawId) return null;
+
+  try {
+    const [runRes, annotationsRes] = await Promise.all([
+      ghApiFetch(`/repos/${owner}/${repo}/check-runs/${rawId}`, token),
+      ghApiFetch(`/repos/${owner}/${repo}/check-runs/${rawId}/annotations`, token),
+    ]);
+    if (!runRes.ok) return null;
+
+    const run = await runRes.json() as {
+      name: string;
+      output: { summary: string | null; text: string | null } | null;
+    };
+    const annotations = annotationsRes.ok
+      ? (await annotationsRes.json() as Array<{
+          path: string;
+          start_line: number;
+          end_line: number;
+          annotation_level: string;
+          message: string;
+          title: string | null;
+        }>).map(a => ({
+          path: a.path,
+          startLine: a.start_line,
+          endLine: a.end_line,
+          annotationLevel: a.annotation_level,
+          message: a.message,
+          title: a.title,
+        }))
+      : [];
+
+    return {
+      name: run.name,
+      summary: run.output?.summary ?? null,
+      text: run.output?.text ?? null,
+      annotations,
+    };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Flips a PR between draft and ready-for-review. GitHub's REST API has no
+ * field for this (the PATCH pulls endpoint doesn't accept `draft`), so this
+ * goes through the GraphQL mutations `markPullRequestReadyForReview` /
+ * `convertPullRequestToDraft`, keyed by the PR's GraphQL node id.
+ */
+export async function setPullRequestReadyForReview(
+  nodeId: string,
+  ready: boolean,
+  token: string,
+): Promise<void> {
+  const mutation = ready
+    ? `mutation($id: ID!) { markPullRequestReadyForReview(input: { pullRequestId: $id }) { pullRequest { id } } }`
+    : `mutation($id: ID!) { convertPullRequestToDraft(input: { pullRequestId: $id }) { pullRequest { id } } }`;
+
+  const res = await ghGraphqlFetch(mutation, { id: nodeId }, token);
+  if (!res.ok) {
+    const body = await res.text().catch(() => '');
+    throw new Error(`GitHub ${ready ? 'ready for review' : 'convert to draft'} failed: ${res.status}${body ? ` — ${body}` : ''}`);
+  }
+  const data = await res.json() as { errors?: Array<{ message: string }> };
+  if (data.errors?.length) {
+    throw new Error(`GitHub ${ready ? 'ready for review' : 'convert to draft'} failed: ${data.errors.map(e => e.message).join('; ')}`);
+  }
+}
+
+/** Merges a PR using the given method. Throws on any API failure (including a merge conflict, which GitHub reports as a 405/409 with a message). */
+export async function mergePullRequest(
+  owner: string,
+  repo: string,
+  pullNumber: number,
+  method: MergeMethod,
+  token: string,
+): Promise<MergePullRequestResult> {
+  const res = await ghApiPut(`/repos/${owner}/${repo}/pulls/${pullNumber}/merge`, token, {
+    merge_method: method,
+  });
+  const data = await res.json().catch(() => ({})) as { merged?: boolean; message?: string };
+  if (!res.ok) {
+    throw new Error(`GitHub merge PR failed: ${res.status}${data.message ? ` — ${data.message}` : ''}`);
+  }
+  return { merged: data.merged ?? false, message: data.message ?? '' };
 }
 
 /** Creates a PR from `input.head` into `input.base`. Throws on any API failure. */

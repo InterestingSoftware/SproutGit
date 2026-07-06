@@ -160,6 +160,9 @@ function WorkspaceInner() {
   const [createPrTarget, setCreatePrTarget] = useState<WorktreeInfo | null>(
     null,
   );
+  const [prDetailsTarget, setPrDetailsTarget] = useState<WorktreeInfo | null>(
+    null,
+  );
 
   // ── Recent workspaces (for the title bar's workspace switcher) ─────────
   const { loadRecentWorkspaces, switchWorkspace } =
@@ -391,6 +394,7 @@ function WorkspaceInner() {
             onJumpToAttention={handleJumpToAttention}
             onLaunchAgent={(wtPath) => void terminalManager.launchAgent(wtPath)}
             onCreatePr={(wt) => setCreatePrTarget(wt)}
+            onOpenPrDetails={(wt) => setPrDetailsTarget(wt)}
           />
 
           {/* Main content */}
@@ -701,6 +705,9 @@ function WorkspaceInner() {
             queryKey: qk.prStatus(createPrTarget.path),
           })
         }
+        prDetailsTarget={prDetailsTarget}
+        prDetailsStatus={prDetailsTarget ? (prStatuses[prDetailsTarget.path] ?? null) : null}
+        onClosePrDetails={() => setPrDetailsTarget(null)}
         runHookTarget={runHookTarget}
         onCloseRunHookModal={() => setRunHookTarget(null)}
         deleteTarget={deleteTarget}
