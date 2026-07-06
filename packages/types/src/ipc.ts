@@ -172,6 +172,8 @@ export const IPC = {
   MCP_SET_PORT: 'mcp:setPort',
   MCP_WRITE_CLIENT_CONFIG: 'mcp:writeClientConfig',
   MCP_GET_MANUAL_SNIPPET: 'mcp:getManualSnippet',
+  // Fired by main when the report_session_done MCP tool is called, so the renderer can toast it.
+  EVENT_MCP_SESSION_DONE: 'event:mcpSessionDone',
   // ── Global error reporting (main → renderer push events) ──────────────────
   EVENT_GLOBAL_ERROR: 'event:globalError',
 } as const;

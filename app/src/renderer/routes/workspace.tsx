@@ -33,6 +33,7 @@ import { useWorktreeSelection } from "../hooks/useWorktreeSelection.js";
 import { useCommitDiffState } from "../hooks/useCommitDiffState.js";
 import { useTerminalManager } from "../hooks/useTerminalManager.js";
 import { useAutoUpdateListeners } from "../hooks/useAutoUpdateListeners.js";
+import { useMcpSessionDoneListener } from "../hooks/useMcpSessionDoneListener.js";
 import { useWorkspaceFileWatchers } from "../hooks/useWorkspaceFileWatchers.js";
 import { useWorkspaceUiPersistence } from "../hooks/useWorkspaceUiPersistence.js";
 import { useEditorTabsForWorktree } from "../hooks/useEditorTabsForWorktree.js";
@@ -86,6 +87,7 @@ function WorkspaceInner() {
     (s) => s.pendingCreationBranch,
   );
   const updateState = useAutoUpdateListeners();
+  useMcpSessionDoneListener(toast);
 
   // ── File editor tabs (Zustand) ─────────────────────────────────────────
   const { editorTabsForActiveWorktree, editorActiveTabKey, activeEditorTab } =

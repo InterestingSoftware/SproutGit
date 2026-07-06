@@ -14,3 +14,11 @@ export type McpConfigWriteResult = {
   /** Absolute path of the config file that was created or merged into. */
   configPath: string;
 };
+
+/** Pushed to the renderer when an MCP client calls the `report_session_done` tool, so the UI can surface it (e.g. a toast). */
+export type McpSessionDoneEvent = {
+  /** Absolute path of the worktree the reporting agent was working in. */
+  worktreePath: string;
+  /** Optional free-text summary the agent provided of what it did. */
+  summary: string | null;
+};

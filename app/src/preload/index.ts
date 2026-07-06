@@ -54,6 +54,7 @@ import type {
   McpClientId,
   McpServerStatus,
   McpConfigWriteResult,
+  McpSessionDoneEvent,
   GlobalErrorEvent,
   ProjectIdeaGenerateResult,
 } from '@sproutgit/types';
@@ -405,6 +406,12 @@ const api = {
     const handler = (_e: Electron.IpcRendererEvent, payload: AgentTerminalLaunchEvent) => callback(payload);
     ipcRenderer.on(IPC.EVENT_AGENT_TERMINAL_LAUNCH, handler);
     return () => ipcRenderer.off(IPC.EVENT_AGENT_TERMINAL_LAUNCH, handler);
+  },
+
+  onMcpSessionDone: (callback: (event: McpSessionDoneEvent) => void) => {
+    const handler = (_e: Electron.IpcRendererEvent, payload: McpSessionDoneEvent) => callback(payload);
+    ipcRenderer.on(IPC.EVENT_MCP_SESSION_DONE, handler);
+    return () => ipcRenderer.off(IPC.EVENT_MCP_SESSION_DONE, handler);
   },
 
   // ── Chat (Integrated agent mode) ─────────────────────────────────────────
