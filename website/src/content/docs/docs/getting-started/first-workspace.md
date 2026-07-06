@@ -20,7 +20,7 @@ and make the first commit.
 
 Clone an existing Git repository (from GitHub or any URL) into a new
 workspace folder under your configured projects folder. If you've connected
-your GitHub account (**Settings → GitHub**), the clone dialog autocompletes
+your GitHub account (**Settings → Git Provider**), the clone dialog autocompletes
 against your repos.
 
 ## Open Folder

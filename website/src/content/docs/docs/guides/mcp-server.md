@@ -68,11 +68,11 @@ as creating/removing a worktree from the UI — including running any
 [hooks](/docs/guides/writing-hooks/) configured for that lifecycle event.
 
 :::note
-`create_worktree` and `remove_worktree` are currently **disabled by
-default** for every workspace, pending a permission-gate setting in a
-future release. The read-only tools (`list_worktrees`,
-`get_workspace_info`, `get_worktree_status`) always work once the server is
-enabled.
+`create_worktree` and `remove_worktree` are **currently disabled for every
+workspace, with no way to turn them on yet** — there's no permission-gate
+setting for them in the app yet, so they unconditionally refuse. The
+read-only tools (`list_worktrees`, `get_workspace_info`,
+`get_worktree_status`) always work once the server is enabled.
 :::
 
 ![MCP server settings](../../../../assets/screenshots/mac/settings/preferences-light.png)
