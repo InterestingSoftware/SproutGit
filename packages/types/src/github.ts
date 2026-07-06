@@ -32,3 +32,32 @@ export type GitHubEmailSuggestion = {
   primary: boolean;
   verified: boolean;
 };
+
+export type PullRequestState = 'open' | 'closed' | 'merged';
+
+export type ChecksState = 'passing' | 'failing' | 'pending' | 'none';
+
+export type PullRequestInfo = {
+  number: number;
+  url: string;
+  title: string;
+  state: PullRequestState;
+  draft: boolean;
+  headBranch: string;
+  baseBranch: string;
+};
+
+export type PullRequestStatus = {
+  pullRequest: PullRequestInfo | null;
+  checksState: ChecksState;
+};
+
+export type CreatePullRequestInput = {
+  owner: string;
+  repo: string;
+  head: string;
+  base: string;
+  title: string;
+  body?: string;
+  draft?: boolean;
+};

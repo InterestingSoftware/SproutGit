@@ -8,7 +8,7 @@ import { api } from './api.js';
  */
 
 import { useQuery, useQueries, useMutation, useQueryClient } from '@tanstack/react-query';
-import type { CommitEntry, RefInfo, WorktreeInfo, WorkspaceStatus, WorktreePushStatus, IssueTrackerPattern, FetchSummary, FileTreeNode } from '@sproutgit/types';
+import type { CommitEntry, RefInfo, WorktreeInfo, WorkspaceStatus, WorktreePushStatus, IssueTrackerPattern, FetchSummary, FileTreeNode, GitHubAuthStatus, PullRequestStatus } from '@sproutgit/types';
 
 // ── Query key factory ─────────────────────────────────────────────────────────
 
@@ -26,6 +26,8 @@ export const qk = {
     ['diffContent', repoPath, range, file, staged] as const,
   issueTrackerPatterns: (worktreePath: string) => ['issueTrackerPatterns', worktreePath] as const,
   fileTree: (worktreePath: string) => ['fileTree', worktreePath] as const,
+  githubAuthStatus: () => ['githubAuthStatus'] as const,
+  prStatus: (worktreePath: string) => ['prStatus', worktreePath] as const,
 } as const;
 
 // ── Workspace inspection ──────────────────────────────────────────────────────
@@ -147,6 +149,49 @@ export function useWorktreeChangeCounts(
     counts[targets[i]!.path] = results[i]?.data?.length ?? 0;
   }
   return counts;
+}
+
+// ── GitHub PR status ─────────────────────────────────────────────────────────
+
+export function useGithubAuthStatus() {
+  return useQuery({
+    queryKey: qk.githubAuthStatus(),
+    queryFn: () => api.githubAuthStatus() as Promise<GitHubAuthStatus>,
+    staleTime: 30_000,
+    retry: 0,
+  });
+}
+
+/**
+ * Fetches PR + combined check status for every non-root worktree, one query
+ * per worktree (mirrors useWorktreeChangeCounts). Gated on GitHub being
+ * connected — when it's not, no IPC calls fire and every entry is null,
+ * which the sidebar treats as "no PR info" rather than an error.
+ */
+export function usePrStatuses(
+  worktrees: WorktreeInfo[],
+  rootPath: string | undefined,
+  githubConnected: boolean,
+) {
+  const targets = worktrees.filter(w => w.path !== rootPath && !!w.path);
+
+  const results = useQueries({
+    queries: targets.map(wt => ({
+      queryKey: qk.prStatus(wt.path),
+      queryFn: () => api.githubGetPrStatus(wt.path) as Promise<PullRequestStatus | null>,
+      enabled: githubConnected,
+      staleTime: 30_000,
+      refetchInterval: 60_000,
+      retry: 0,
+      throwOnError: false,
+    })),
+  });
+
+  const statuses: Record<string, PullRequestStatus | null> = {};
+  for (let i = 0; i < targets.length; i++) {
+    statuses[targets[i]!.path] = results[i]?.data ?? null;
+  }
+  return statuses;
 }
 
 // ── Mutations ─────────────────────────────────────────────────────────────────

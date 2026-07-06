@@ -43,6 +43,7 @@ import { NewWorktreeDialog } from '../workspace/dialogs/NewWorktreeDialog.js';
 import { DeleteWorktreeDialog } from '../workspace/dialogs/DeleteWorktreeDialog.js';
 import { PublishDialog } from '../workspace/dialogs/PublishDialog.js';
 import { RunHookDialog } from '../workspace/dialogs/RunHookDialog.js';
+import { CreatePrDialog } from '../workspace/dialogs/CreatePrDialog.js';
 import { loadCommitMessageGeneratorSettings } from '../commit-message-generator-settings.js';
 import { consumePendingScaffold } from '../pending-scaffold.js';
 import {
@@ -61,6 +62,8 @@ import {
   useWorktreeChangeCounts,
   useIssueTrackerPatterns,
   useFileTree,
+  useGithubAuthStatus,
+  usePrStatuses,
 } from '../queries.js';
 
 // ── Search params ─────────────────────────────────────────────────────────────
@@ -229,6 +232,12 @@ function WorkspaceInner() {
   // ── Worktree change counts (sidebar badges) ───────────────────────────
   const rootP = workspaceStatus?.rootPath;
   const worktreeChangeCounts = useWorktreeChangeCounts(worktrees, rootP);
+
+  // ── PR + checks status (sidebar badges) ───────────────────────────────
+  const { data: githubAuth } = useGithubAuthStatus();
+  const githubConnected = githubAuth?.authenticated ?? false;
+  const prStatuses = usePrStatuses(worktrees, rootP, githubConnected);
+  const [createPrTarget, setCreatePrTarget] = useState<WorktreeInfo | null>(null);
 
   // ── Pick initial active worktree once worktrees load ─────────────────
   const [pendingNewWorktreePath, setPendingNewWorktreePath] = useState<string | null>(null);
@@ -1240,6 +1249,8 @@ function WorkspaceInner() {
             activeWorktree={activeWorktree}
             workspaceStatus={workspaceStatus ?? null}
             worktreeChangeCounts={worktreeChangeCounts}
+            prStatuses={prStatuses}
+            githubConnected={githubConnected}
             fetching={fetching}
             pulling={pulling}
             pushing={pushing}
@@ -1267,6 +1278,7 @@ function WorkspaceInner() {
             agentConfigured={agentConfigured}
             worktreesWithLiveAgent={worktreesWithLiveAgent}
             onLaunchAgent={wtPath => void launchAgent(wtPath)}
+            onCreatePr={wt => setCreatePrTarget(wt)}
           />
 
           {/* Main content */}
@@ -1696,6 +1708,16 @@ function WorkspaceInner() {
         onClose={() => setShowPublishModal(false)}
         onToast={(msg, v) => toast(msg, v)}
         onPublished={() => activeWorktree && void qc.invalidateQueries({ queryKey: qk.pushStatus(activeWorktree.path) })}
+      />
+
+      {/* Create PR dialog */}
+      <CreatePrDialog
+        open={!!createPrTarget}
+        worktree={createPrTarget}
+        refs={refs}
+        onClose={() => setCreatePrTarget(null)}
+        onToast={(msg, v) => toast(msg, v)}
+        onCreated={() => createPrTarget && void qc.invalidateQueries({ queryKey: qk.prStatus(createPrTarget.path) })}
       />
 
       {/* Run hook dialog */}

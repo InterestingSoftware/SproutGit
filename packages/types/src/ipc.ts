@@ -118,6 +118,8 @@ export const IPC = {
   GITHUB_LOGOUT: 'github:logout',
   GITHUB_LIST_EMAILS: 'github:listEmails',
   GITHUB_LIST_REPOS: 'github:listRepos',
+  GITHUB_GET_PR_STATUS: 'github:getPrStatus',
+  GITHUB_CREATE_PR: 'github:createPr',
   // ── File watcher ─────────────────────────────────────────────────────────
   WATCH_START: 'watch:start',
   WATCH_STOP: 'watch:stop',
@@ -203,7 +205,7 @@ import type {
   HookListResult,
 } from './hooks.js';
 import type { EditorInfo, GitToolInfo, ToolTestResult } from './tools.js';
-import type { GitHubAuthStatus, DeviceCodeResponse, GitHubPollResult, GitHubEmailSuggestion, GitHubRepo } from './github.js';
+import type { GitHubAuthStatus, DeviceCodeResponse, GitHubPollResult, GitHubEmailSuggestion, GitHubRepo, PullRequestStatus, PullRequestInfo } from './github.js';
 import type { TerminalInfo } from './terminal.js';
 import type { AgentConfig, AcpAdapterStatus } from './agents.js';
 import type { ChatConfigOption } from './chat.js';
@@ -356,6 +358,8 @@ export type IpcMap = {
   'github:logout':          { args: [];                    result: void };
   'github:listEmails':      { args: [];                    result: GitHubEmailSuggestion[] };
   'github:listRepos':       { args: [];                    result: GitHubRepo[] };
+  'github:getPrStatus':     { args: [worktreePath: string]; result: PullRequestStatus | null };
+  'github:createPr':        { args: [args: { worktreePath: string; title: string; body?: string; base: string; draft?: boolean }]; result: PullRequestInfo };
   // ── Watcher ───────────────────────────────────────────────────────────────
   'watch:start': { args: [repoPath: string]; result: void };
   'watch:stop':  { args: [repoPath: string]; result: void };

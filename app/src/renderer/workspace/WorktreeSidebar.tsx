@@ -8,8 +8,8 @@ import {
   useContextMenu,
   UpdateBadge,
 } from '@sproutgit/ui';
-import { GitBranch, RefreshCw, ArrowDownToLine, ArrowUpFromLine, Download, Plus, Sliders, Trash2, MoreHorizontal, FolderPen, FolderSearch, SquareTerminal, Play, Copy, CopyPlus, Bot, Link2, Rocket, PanelLeftClose, PanelLeftOpen } from 'lucide-react';
-import type { WorktreeInfo, WorkspaceStatus } from '@sproutgit/types';
+import { GitBranch, RefreshCw, ArrowDownToLine, ArrowUpFromLine, Download, Plus, Sliders, Trash2, MoreHorizontal, FolderPen, FolderSearch, SquareTerminal, Play, Copy, CopyPlus, Bot, Link2, Rocket, PanelLeftClose, PanelLeftOpen, GitPullRequest, GitPullRequestDraft, GitPullRequestClosed, GitPullRequestCreate, GitMerge, CircleCheck, CircleX, CircleDashed } from 'lucide-react';
+import type { WorktreeInfo, WorkspaceStatus, PullRequestStatus } from '@sproutgit/types';
 import type { UpdateState } from '@sproutgit/ui';
 
 type Props = {
@@ -31,6 +31,10 @@ type Props = {
   collapsed?: boolean;
   /** Toggles the collapsed state — wired to a toolbar button and Cmd/Ctrl+B. */
   onToggleCollapsed?: () => void;
+  /** PR + combined check status per worktree path. Missing/null entries render no PR badge — this is also what "not connected to GitHub" degrades to. */
+  prStatuses: Record<string, PullRequestStatus | null>;
+  /** Gates the "Create PR" action — hidden (not errored) when GitHub isn't connected. */
+  githubConnected: boolean;
   onWorktreeSwitch: (wt: WorktreeInfo) => void;
   onFetch: () => void;
   onPull: () => void;
@@ -43,6 +47,7 @@ type Props = {
   onRunCreateHooks: (wt: WorktreeInfo) => void;
   onDeleteWorktree: (wt: WorktreeInfo) => void;
   onLaunchAgent: (worktreePath: string) => void;
+  onCreatePr: (wt: WorktreeInfo) => void;
 };
 
 const iconBtn = 'inline-flex items-center justify-center p-1.5 bg-transparent border-none cursor-pointer text-(--sg-text-faint) rounded-[4px] transition-colors hover:text-(--sg-text) hover:bg-(--sg-surface-raised) disabled:opacity-40 disabled:cursor-not-allowed';
@@ -54,6 +59,50 @@ function isPersistentBranch(branch: string | null) {
 function tildify(p: string, home: string) {
   if (home && p.startsWith(home)) return '~' + p.slice(home.length);
   return p;
+}
+
+/** Small pill showing a worktree's PR number/state + combined check state. Renders nothing when there's no PR (including the unauthenticated/degraded case). */
+function PrBadge({ status }: { status: PullRequestStatus | null | undefined }) {
+  const pr = status?.pullRequest;
+  if (!pr) return null;
+
+  const stateIcon = pr.draft
+    ? <GitPullRequestDraft size={11} />
+    : pr.state === 'merged'
+      ? <GitMerge size={11} />
+      : pr.state === 'closed'
+        ? <GitPullRequestClosed size={11} />
+        : <GitPullRequest size={11} />;
+  const stateColor = pr.draft
+    ? 'text-(--sg-text-faint)'
+    : pr.state === 'merged'
+      ? 'text-(--sg-accent)'
+      : pr.state === 'closed'
+        ? 'text-(--sg-danger)'
+        : 'text-(--sg-primary)';
+
+  const checksState = status?.checksState;
+  const checksIcon = checksState === 'passing'
+    ? <CircleCheck size={10} className="text-(--sg-primary)" />
+    : checksState === 'failing'
+      ? <CircleX size={10} className="text-(--sg-danger)" />
+      : checksState === 'pending'
+        ? <CircleDashed size={10} className="text-(--sg-warning)" />
+        : null;
+
+  return (
+    <button
+      type="button"
+      className={`sg-pr-badge inline-flex shrink-0 items-center gap-0.5 rounded-full border border-(--sg-border) px-1.5 py-0 text-[9px] leading-4 cursor-pointer bg-transparent hover:bg-(--sg-surface-raised) ${stateColor}`}
+      data-testid="pr-badge"
+      title={`#${pr.number} ${pr.title}${checksState && checksState !== 'none' ? ` — checks ${checksState}` : ''}`}
+      onClick={e => { e.stopPropagation(); void api.openUrl(pr.url); }}
+    >
+      {stateIcon}
+      <span>#{pr.number}</span>
+      {checksIcon}
+    </button>
+  );
 }
 
 type InventoryRow = {
@@ -80,6 +129,8 @@ export function WorktreeSidebar({
   worktreesWithLiveAgent,
   collapsed = false,
   onToggleCollapsed,
+  prStatuses,
+  githubConnected,
   onWorktreeSwitch,
   onFetch,
   onPull,
@@ -92,6 +143,7 @@ export function WorktreeSidebar({
   onRunCreateHooks,
   onDeleteWorktree,
   onLaunchAgent,
+  onCreatePr,
 }: Props) {
   const toast = useToast();
   const contextMenu = useContextMenu();
@@ -108,6 +160,15 @@ export function WorktreeSidebar({
       icon: <Bot size={14} />,
       onClick: () => onLaunchAgent(worktreePath),
     }];
+  }
+
+  function prMenuItems(wt: WorktreeInfo) {
+    if (!githubConnected) return [];
+    const pr = prStatuses[wt.path]?.pullRequest;
+    if (pr) {
+      return [{ label: 'View PR', icon: <GitPullRequest size={14} />, onClick: () => void api.openUrl(pr.url) }];
+    }
+    return [{ label: 'Create PR…', icon: <GitPullRequestCreate size={14} />, onClick: () => onCreatePr(wt) }];
   }
 
   const rootPath = workspaceStatus?.rootPath ?? '';
@@ -334,6 +395,7 @@ export function WorktreeSidebar({
                       onClick: () => onOpenTerminal(row.wt.path, row.wt.branch ?? row.wt.path.split('/').pop()),
                     },
                     ...(agentMenuItems(row.wt.path).length > 0 ? ['separator' as const, ...agentMenuItems(row.wt.path)] : []),
+                    ...(prMenuItems(row.wt).length > 0 ? ['separator' as const, ...prMenuItems(row.wt)] : []),
                     'separator',
                     { label: 'Fetch', icon: <RefreshCw size={14} />, onClick: () => void api.fetch(row.wt.path).then((summary) => {
                       toast(describeFetchSummary(summary), summary.hadNoRemotes ? 'info' : 'success');
@@ -398,6 +460,7 @@ export function WorktreeSidebar({
                         <Bot size={10} />
                       </span>
                     )}
+                    <PrBadge status={prStatuses[row.wt.path]} />
                   </div>
                   <p className="truncate text-[10px] text-(--sg-text-dim)">
                     {isPending ? '' : tildify(row.wt.path, homeDir)}
@@ -418,6 +481,18 @@ export function WorktreeSidebar({
                       <Bot size={13} />
                     </button>
                   )}
+                  {githubConnected && !prStatuses[row.wt.path]?.pullRequest && (
+                    <button
+                      type="button"
+                      onClick={e => { e.stopPropagation(); onCreatePr(row.wt); }}
+                      className="sg-create-pr-btn rounded p-1 text-(--sg-text-dim) hover:bg-(--sg-surface) hover:text-(--sg-primary) border-none cursor-pointer bg-transparent"
+                      title="Create PR"
+                      aria-label="Create PR"
+                      data-testid="btn-create-pr"
+                    >
+                      <GitPullRequestCreate size={13} />
+                    </button>
+                  )}
                   <button
                     type="button"
                     onClick={e => {
@@ -427,6 +502,7 @@ export function WorktreeSidebar({
                         { label: /mac/i.test(navigator.platform) ? 'Reveal in Finder' : 'Reveal in Explorer', icon: <FolderSearch size={14} />, onClick: () => void api.revealInFinder(row.wt.path).catch((err: unknown) => toast(String(err), 'error')) },
                         { label: 'Open Terminal Here', icon: <SquareTerminal size={14} />, onClick: () => onOpenTerminal(row.wt.path, row.wt.branch ?? row.wt.path.split('/').pop()) },
                         ...(agentMenuItems(row.wt.path).length > 0 ? ['separator' as const, ...agentMenuItems(row.wt.path)] : []),
+                        ...(prMenuItems(row.wt).length > 0 ? ['separator' as const, ...prMenuItems(row.wt)] : []),
                         'separator',
                         { label: 'Run Hook…', icon: <Play size={14} />, onClick: () => onOpenRunHookModal(row.wt) },
                         ...(row.wt.isExternal
