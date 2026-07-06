@@ -8,7 +8,17 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-FRAMES_DIR="$ROOT_DIR/e2e/test-results/demo-gif-frames/mac/demo"
+
+# Mirrors e2e/helpers/screenshots.ts's PLATFORM_FOLDER logic — captured
+# frames are nested under a platform subfolder named for the OS that ran
+# the capture (mac/windows/linux), not necessarily "mac".
+case "$(uname -s)" in
+  Darwin) PLATFORM_FOLDER="mac" ;;
+  MINGW*|MSYS*|CYGWIN*) PLATFORM_FOLDER="windows" ;;
+  *) PLATFORM_FOLDER="linux" ;;
+esac
+
+FRAMES_DIR="$ROOT_DIR/e2e/test-results/demo-gif-frames/$PLATFORM_FOLDER/demo"
 OUT_GIF="$ROOT_DIR/website/public/demo.gif"
 WORK_DIR="$(mktemp -d)"
 trap 'rm -rf "$WORK_DIR"' EXIT
