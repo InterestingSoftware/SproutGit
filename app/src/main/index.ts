@@ -168,6 +168,11 @@ function createWindow(): BrowserWindow {
       sandbox: true,
       contextIsolation: true,
       nodeIntegration: false,
+      // Electron renderer processes don't inherit the main process's argv —
+      // additionalArguments is the documented way to forward a flag onto the
+      // renderer/preload process.argv (used by app/src/preload/index.ts to
+      // expose api.isE2E without a round-trip IPC call).
+      ...(isE2EMode && { additionalArguments: ['--sproutgit-e2e'] }),
     },
   });
 

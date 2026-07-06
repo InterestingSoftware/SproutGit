@@ -648,7 +648,7 @@ export function WorktreeSidebar({
           aria-label="Worktrees"
         >
           {inventoryRows.length === 0 && !creatingWorktree && (
-            <div className="m-3 rounded-lg border border-dashed border-(--sg-border) p-4 flex flex-col items-center gap-3 text-center">
+            <div className="m-3 rounded-lg border border-dashed border-(--sg-border) p-4 flex flex-col items-center gap-3 text-center" data-testid="worktree-empty-state">
               <div className="w-9 h-9 rounded-full bg-(--sg-surface-raised) flex items-center justify-center">
                 <GitBranch size={18} className="text-(--sg-primary)" />
               </div>
@@ -657,13 +657,24 @@ export function WorktreeSidebar({
                   No worktrees yet
                 </p>
                 <p className="text-[11px] text-(--sg-text-faint) mt-1 m-0 leading-relaxed">
-                  Create a worktree for each branch you want to work on in
-                  parallel.
+                  A worktree is its own isolated working copy of one branch — nothing to stash or switch away from when you juggle several at once.
                 </p>
+              </div>
+              <div className="w-full flex flex-col gap-1.5 text-left">
+                <div className="flex items-center gap-2 text-[11px] text-(--sg-text-dim)">
+                  <span className="flex items-center justify-center w-4 h-4 rounded-full bg-(--sg-primary)/15 text-(--sg-primary) text-[9px] font-bold shrink-0">1</span>
+                  Create a worktree for the branch you want to work on
+                </div>
+                <div className="flex items-center gap-2 text-[11px] text-(--sg-text-dim)">
+                  <span className="flex items-center justify-center w-4 h-4 rounded-full bg-(--sg-primary)/15 text-(--sg-primary) text-[9px] font-bold shrink-0">2</span>
+                  <Bot size={12} className="text-(--sg-text-faint) shrink-0" />
+                  Launch an AI agent right inside it
+                </div>
               </div>
               <button
                 className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-(--sg-primary) text-white text-xs font-medium hover:bg-(--sg-primary-hover) transition-colors cursor-pointer border-none"
                 onClick={onNewWorktree}
+                data-testid="btn-create-first-worktree"
               >
                 <Plus size={12} /> Create first worktree
               </button>
