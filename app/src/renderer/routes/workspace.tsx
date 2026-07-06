@@ -59,6 +59,7 @@ import {
   usePush,
   useDeleteWorktree,
   useWorktreeChangeCounts,
+  useWorktreeHealth,
   useIssueTrackerPatterns,
   useFileTree,
 } from '../queries.js';
@@ -229,6 +230,7 @@ function WorkspaceInner() {
   // ── Worktree change counts (sidebar badges) ───────────────────────────
   const rootP = workspaceStatus?.rootPath;
   const worktreeChangeCounts = useWorktreeChangeCounts(worktrees, rootP);
+  const { data: worktreeHealth = {} } = useWorktreeHealth(gitRepoPath, worktrees, rootP);
 
   // ── Pick initial active worktree once worktrees load ─────────────────
   const [pendingNewWorktreePath, setPendingNewWorktreePath] = useState<string | null>(null);
@@ -437,10 +439,12 @@ function WorkspaceInner() {
       toast(`Failed to watch workspace for changes: ${String(err)}`, 'error'));
     const offWorktree = api.onWorktreeChanged(() => {
       void qc.invalidateQueries({ queryKey: qk.worktrees(gitRepoPath) });
+      void qc.invalidateQueries({ queryKey: qk.worktreeHealth(gitRepoPath) });
     });
     const offRefs = api.onGitRefsChanged(() => {
       void qc.invalidateQueries({ queryKey: qk.commits(gitRepoPath) });
       void qc.invalidateQueries({ queryKey: qk.refs(gitRepoPath) });
+      void qc.invalidateQueries({ queryKey: qk.worktreeHealth(gitRepoPath) });
     });
     return () => {
       void api.stopWatching(gitRepoPath).catch(() => undefined);
@@ -470,7 +474,10 @@ function WorkspaceInner() {
       if (event.worktreePath !== worktreePath) return;
       void qc.invalidateQueries({ queryKey: qk.fileTree(worktreePath) });
       void qc.invalidateQueries({ queryKey: qk.worktreeStatus(worktreePath) });
-      if (gitRepoPath) void qc.invalidateQueries({ queryKey: qk.worktreeChangeCounts(gitRepoPath) });
+      if (gitRepoPath) {
+        void qc.invalidateQueries({ queryKey: qk.worktreeChangeCounts(gitRepoPath) });
+        void qc.invalidateQueries({ queryKey: qk.worktreeHealth(gitRepoPath) });
+      }
 
       const key = tabKey(worktreePath, event.relativePath);
       if (!useEditorStore.getState().tabs[key]) return;
@@ -1240,6 +1247,7 @@ function WorkspaceInner() {
             activeWorktree={activeWorktree}
             workspaceStatus={workspaceStatus ?? null}
             worktreeChangeCounts={worktreeChangeCounts}
+            worktreeHealth={worktreeHealth}
             fetching={fetching}
             pulling={pulling}
             pushing={pushing}

@@ -13,7 +13,8 @@
     "./remote": "./src/remote.ts",
     "./config": "./src/config.ts",
     "./init": "./src/init.ts",
-    "./diff": "./src/diff.ts"
+    "./diff": "./src/diff.ts",
+    "./health": "./src/health.ts"
   },
   "scripts": {
     "typecheck": "tsgo --noEmit",

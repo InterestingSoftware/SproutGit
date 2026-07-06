@@ -31,5 +31,6 @@ export {
   ConversionRollbackFailedError,
 } from './convert.js';
 export { isBareRepoPath } from './bare.js';
+export { getWorktreeHealth, getWorktreesHealth } from './health.js';
 export { readIssueTrackerFile } from './issuetracker.js';
 export { waitForIdleRepo } from './pending-ops.js';

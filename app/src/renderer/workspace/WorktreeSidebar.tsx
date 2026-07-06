@@ -8,9 +8,29 @@ import {
   useContextMenu,
   UpdateBadge,
 } from '@sproutgit/ui';
-import { GitBranch, RefreshCw, ArrowDownToLine, ArrowUpFromLine, Download, Plus, Sliders, Trash2, MoreHorizontal, FolderPen, FolderSearch, SquareTerminal, Play, Copy, CopyPlus, Bot, Link2, Rocket, PanelLeftClose, PanelLeftOpen } from 'lucide-react';
-import type { WorktreeInfo, WorkspaceStatus } from '@sproutgit/types';
+import { GitBranch, RefreshCw, ArrowDownToLine, ArrowUpFromLine, Download, Plus, Sliders, Trash2, MoreHorizontal, FolderPen, FolderSearch, SquareTerminal, Play, Copy, CopyPlus, Bot, Link2, Rocket, PanelLeftClose, PanelLeftOpen, ArrowUp, ArrowDown, Clock } from 'lucide-react';
+import type { WorktreeInfo, WorkspaceStatus, WorktreeHealth } from '@sproutgit/types';
 import type { UpdateState } from '@sproutgit/ui';
+
+/** Formats an ISO timestamp as a short relative time (e.g. "2h ago"). */
+function formatRelativeDate(iso: string): string {
+  try {
+    const date = new Date(iso);
+    const diff = Date.now() - date.getTime();
+    const mins = Math.floor(diff / 60_000);
+    const hours = Math.floor(diff / 3_600_000);
+    const days = Math.floor(diff / 86_400_000);
+    if (mins < 1) return 'just now';
+    if (mins < 60) return `${mins}m ago`;
+    if (hours < 24) return `${hours}h ago`;
+    if (days === 1) return 'yesterday';
+    if (days < 30) return `${days}d ago`;
+    if (days < 365) return `${Math.floor(days / 30)}mo ago`;
+    return `${Math.floor(days / 365)}y ago`;
+  } catch {
+    return iso;
+  }
+}
 
 type Props = {
   workspacePath: string;
@@ -18,6 +38,7 @@ type Props = {
   activeWorktree: WorktreeInfo | null;
   workspaceStatus: WorkspaceStatus | null;
   worktreeChangeCounts: Record<string, number>;
+  worktreeHealth: Record<string, WorktreeHealth>;
   fetching: boolean;
   pulling: boolean;
   pushing: boolean;
@@ -70,6 +91,7 @@ export function WorktreeSidebar({
   activeWorktree,
   workspaceStatus,
   worktreeChangeCounts,
+  worktreeHealth,
   fetching,
   pulling,
   pushing,
@@ -298,6 +320,7 @@ export function WorktreeSidebar({
             const isPending = row.wt.path === PENDING_PATH;
             const isRowBusy = isPending;
             const changeCount = worktreeChangeCounts[row.wt.path] ?? 0;
+            const health = worktreeHealth[row.wt.path];
 
             return (
               <div
@@ -384,8 +407,29 @@ export function WorktreeSidebar({
                     <span className="shrink-0 rounded-full border border-(--sg-border) px-1.5 py-0 text-[9px] leading-4 text-(--sg-text-dim)">
                       {row.typeLabel}
                     </span>
+                    {health && (health.ahead > 0 || health.behind > 0) && (
+                      <span
+                        className="sg-worktree-ahead-behind flex shrink-0 items-center gap-1 text-[9px] font-medium text-(--sg-text-dim)"
+                        data-testid="worktree-ahead-behind"
+                        title={`${health.ahead} ahead, ${health.behind} behind ${health.compareRef ?? ''}`.trim()}
+                      >
+                        {health.ahead > 0 && (
+                          <span className="flex items-center gap-0.5">
+                            <ArrowUp size={9} />{health.ahead}
+                          </span>
+                        )}
+                        {health.behind > 0 && (
+                          <span className="flex items-center gap-0.5">
+                            <ArrowDown size={9} />{health.behind}
+                          </span>
+                        )}
+                      </span>
+                    )}
                     {changeCount > 0 && (
-                      <span className="shrink-0 rounded-full bg-(--sg-warning)/20 px-1.5 py-0 text-[9px] leading-4 font-semibold text-(--sg-warning)">
+                      <span
+                        className="shrink-0 rounded-full bg-(--sg-warning)/20 px-1.5 py-0 text-[9px] leading-4 font-semibold text-(--sg-warning)"
+                        data-testid="worktree-dirty-count"
+                      >
                         {changeCount}
                       </span>
                     )}
@@ -399,9 +443,21 @@ export function WorktreeSidebar({
                       </span>
                     )}
                   </div>
-                  <p className="truncate text-[10px] text-(--sg-text-dim)">
-                    {isPending ? '' : tildify(row.wt.path, homeDir)}
-                  </p>
+                  <div className="flex items-center gap-1.5">
+                    <p className="min-w-0 flex-1 truncate text-[10px] text-(--sg-text-dim)">
+                      {isPending ? '' : tildify(row.wt.path, homeDir)}
+                    </p>
+                    {health?.lastCommitAt && (
+                      <span
+                        className="sg-worktree-last-commit flex shrink-0 items-center gap-0.5 text-[9px] text-(--sg-text-faint)"
+                        data-testid="worktree-last-commit"
+                        title={new Date(health.lastCommitAt).toLocaleString()}
+                      >
+                        <Clock size={9} />
+                        {formatRelativeDate(health.lastCommitAt)}
+                      </span>
+                    )}
+                  </div>
                 </div>
 
                 {/* Action buttons (shown on hover / when active) */}

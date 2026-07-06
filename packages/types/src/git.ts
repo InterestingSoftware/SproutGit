@@ -133,3 +133,28 @@ export type GitOpProgressEvent = {
   message: string;
   percent: number | null;
 };
+
+/**
+ * Snapshot of a worktree's health relative to its comparison ref, for the
+ * sidebar's ahead/behind, dirty-count, and last-commit-age badges.
+ */
+export type WorktreeHealth = {
+  worktreePath: string;
+  /** Commits on HEAD not yet on `compareRef`. */
+  ahead: number;
+  /** Commits on `compareRef` not yet on HEAD. */
+  behind: number;
+  /** Count of modified + untracked files (working tree and index combined). */
+  dirtyCount: number;
+  /** ISO-8601 author date of the most recent commit, or null for an unborn branch. */
+  lastCommitAt: string | null;
+  /** Whether the current branch has a configured upstream. */
+  hasUpstream: boolean;
+  /**
+   * The ref ahead/behind was computed against — the upstream when one
+   * exists, otherwise the repo's default remote branch. Null when neither
+   * is available (e.g. no remote configured), in which case ahead/behind
+   * are both 0.
+   */
+  compareRef: string | null;
+};
