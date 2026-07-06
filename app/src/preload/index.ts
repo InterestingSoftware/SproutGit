@@ -56,6 +56,7 @@ import type {
   McpConfigWriteResult,
   GlobalErrorEvent,
   ProjectIdeaGenerateResult,
+  SessionAttention,
 } from '@sproutgit/types';
 
 /**
@@ -433,6 +434,22 @@ const api = {
     const handler = (_e: Electron.IpcRendererEvent, payload: ChatSessionExitEvent) => callback(payload);
     ipcRenderer.on(IPC.EVENT_CHAT_EXIT, handler);
     return () => ipcRenderer.off(IPC.EVENT_CHAT_EXIT, handler);
+  },
+
+  // ── Session attention (#140) ──────────────────────────────────────────────
+  listSessionAttention: (): Promise<SessionAttention[]> =>
+    invoke(IPC.SESSION_ATTENTION_LIST),
+
+  onSessionAttentionChanged: (callback: (entry: SessionAttention) => void) => {
+    const handler = (_e: Electron.IpcRendererEvent, payload: SessionAttention) => callback(payload);
+    ipcRenderer.on(IPC.EVENT_SESSION_ATTENTION_CHANGED, handler);
+    return () => ipcRenderer.off(IPC.EVENT_SESSION_ATTENTION_CHANGED, handler);
+  },
+
+  onSessionAttentionRemoved: (callback: (sessionId: string) => void) => {
+    const handler = (_e: Electron.IpcRendererEvent, payload: { sessionId: string }) => callback(payload.sessionId);
+    ipcRenderer.on(IPC.EVENT_SESSION_ATTENTION_REMOVED, handler);
+    return () => ipcRenderer.off(IPC.EVENT_SESSION_ATTENTION_REMOVED, handler);
   },
 
   // ── Commit message generator ──────────────────────────────────────────────

@@ -3,6 +3,7 @@ import { IPC } from '@sproutgit/types';
 import { TerminalManagerWithMeta } from '@sproutgit/terminal';
 import { handle } from './handle.js';
 import { log } from '../telemetry.js';
+import { ptyIdleHeuristic } from './session-attention.js';
 
 // Forward PTY output/exit events to the renderer window that created the session.
 export const sessionWindows = new Map<string, BrowserWindow>();
@@ -16,12 +17,16 @@ export function registerHookExitHandler(id: string, handler: (exitCode: number) 
 
 export const manager = new TerminalManagerWithMeta(
   (id, data) => {
+    // No-op for sessions the idle heuristic isn't watching (i.e. anything
+    // that isn't an agent-launched terminal — see agents.ts's AGENT_LAUNCH).
+    ptyIdleHeuristic.noteOutput(id);
     const win = sessionWindows.get(id);
     if (win && !win.isDestroyed()) {
       win.webContents.send(IPC.TERMINAL_DATA, { id, data });
     }
   },
   (id, exitCode) => {
+    ptyIdleHeuristic.finish(id, exitCode === 0);
     const win = sessionWindows.get(id);
     if (win && !win.isDestroyed()) {
       win.webContents.send(IPC.TERMINAL_EXIT, { id });

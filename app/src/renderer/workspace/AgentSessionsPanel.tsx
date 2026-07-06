@@ -1,14 +1,53 @@
 import { useEffect, useState } from 'react';
-import { Bot, X, ArrowRight, Radar } from 'lucide-react';
+import { Bot, X, ArrowRight, Radar, Loader2, ShieldQuestion, Hourglass, CircleCheck, CircleX } from 'lucide-react';
 import { api } from '../api.js';
-import type { WorktreeInfo, TerminalInfo } from '@sproutgit/types';
+import type { WorktreeInfo, TerminalInfo, SessionAttention } from '@sproutgit/types';
 
 type Props = {
   open: boolean;
   worktrees: WorktreeInfo[];
+  /** Live attention state (working/awaiting-permission/awaiting-input/finished/failed) keyed by session id — see useSessionAttention(). */
+  attentionBySession: Record<string, SessionAttention>;
   onJump: (session: TerminalInfo) => void;
   onClose: () => void;
 };
+
+/** Small state chip shown per session row — falls back to "Working" while a fresh session's first attention update hasn't arrived yet. */
+function AttentionChip({ attention }: { attention: SessionAttention | undefined }) {
+  const state = attention?.state ?? 'working';
+  switch (state) {
+    case 'awaiting-permission':
+      return (
+        <span className="sg-attention-chip inline-flex items-center gap-1 rounded-full bg-(--sg-warning)/15 px-1.5 py-0 text-[9px] font-semibold text-(--sg-warning)" data-testid="attention-chip" data-state={state}>
+          <ShieldQuestion size={9} /> Needs permission
+        </span>
+      );
+    case 'awaiting-input':
+      return (
+        <span className="sg-attention-chip inline-flex items-center gap-1 rounded-full bg-(--sg-warning)/15 px-1.5 py-0 text-[9px] font-semibold text-(--sg-warning)" data-testid="attention-chip" data-state={state}>
+          <Hourglass size={9} /> {attention?.heuristic ? 'Idle' : 'Awaiting input'}
+        </span>
+      );
+    case 'finished':
+      return (
+        <span className="sg-attention-chip inline-flex items-center gap-1 rounded-full bg-(--sg-text-faint)/15 px-1.5 py-0 text-[9px] font-semibold text-(--sg-text-dim)" data-testid="attention-chip" data-state={state}>
+          <CircleCheck size={9} /> Finished
+        </span>
+      );
+    case 'failed':
+      return (
+        <span className="sg-attention-chip inline-flex items-center gap-1 rounded-full bg-(--sg-danger)/15 px-1.5 py-0 text-[9px] font-semibold text-(--sg-danger)" data-testid="attention-chip" data-state={state}>
+          <CircleX size={9} /> Failed
+        </span>
+      );
+    default:
+      return (
+        <span className="sg-attention-chip inline-flex items-center gap-1 rounded-full bg-(--sg-primary)/15 px-1.5 py-0 text-[9px] font-semibold text-(--sg-primary)" data-testid="attention-chip" data-state={state}>
+          <Loader2 size={9} className="animate-spin" /> Working
+        </span>
+      );
+  }
+}
 
 function formatElapsed(startedAt: number, now: number): string {
   const totalSeconds = Math.max(0, Math.floor((now - startedAt) / 1000));
@@ -34,7 +73,7 @@ function worktreeLabel(cwd: string, worktrees: WorktreeInfo[]): string {
  * elapsed time and cross-window session state accurate without threading
  * this into the renderer's existing per-window terminalSessions store.
  */
-export function AgentSessionsPanel({ open, worktrees, onJump, onClose }: Props) {
+export function AgentSessionsPanel({ open, worktrees, attentionBySession, onJump, onClose }: Props) {
   const [sessions, setSessions] = useState<TerminalInfo[]>([]);
   const [now, setNow] = useState(() => Date.now());
 
@@ -108,8 +147,9 @@ export function AgentSessionsPanel({ open, worktrees, onJump, onClose }: Props) 
               >
                 <Bot size={14} className="shrink-0 text-(--sg-primary)" />
                 <div className="min-w-0 flex-1">
-                  <p className="m-0 truncate text-xs font-semibold text-(--sg-text)">
-                    {worktreeLabel(session.cwd, worktrees)}
+                  <p className="m-0 flex items-center gap-1.5 truncate text-xs font-semibold text-(--sg-text)">
+                    <span className="truncate">{worktreeLabel(session.cwd, worktrees)}</span>
+                    <AttentionChip attention={attentionBySession[session.id]} />
                   </p>
                   <p className="m-0 truncate text-[10px] text-(--sg-text-dim)">
                     {session.agentName ?? 'agent'} · {formatElapsed(session.startedAt, now)}
