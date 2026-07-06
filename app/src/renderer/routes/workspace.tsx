@@ -14,8 +14,8 @@ import {
   WindowControls,
   UpdateBadge,
 } from '@sproutgit/ui';
-import { GitBranch, Terminal, GitMerge, X, ChevronRight, ChevronDown, Settings, Plus, Columns2, Rows3, LayoutGrid, Pencil, PanelTop, SquareSplitHorizontal, ChevronsRight, Trash2, Bot, FileCode2, AppWindow, FolderOpen } from 'lucide-react';
-import type { CommitEntry, DiffFileEntry, WorktreeInfo, WorktreeSwitchHookSource, AgentConfig, FileChangedEvent, RecentWorkspace } from '@sproutgit/types';
+import { GitBranch, Terminal, GitMerge, X, ChevronRight, ChevronDown, Settings, Plus, Columns2, Rows3, LayoutGrid, Pencil, PanelTop, SquareSplitHorizontal, ChevronsRight, Trash2, Bot, FileCode2, AppWindow, FolderOpen, Radar } from 'lucide-react';
+import type { CommitEntry, DiffFileEntry, WorktreeInfo, WorktreeSwitchHookSource, AgentConfig, FileChangedEvent, RecentWorkspace, TerminalInfo } from '@sproutgit/types';
 import { useToast } from '../toast-context.js';
 import { reportError } from '../error-reporting.js';
 import { useUpdateStore } from '../stores/update-store.js';
@@ -35,6 +35,7 @@ import {
   setActiveTab as setActiveEditorTab,
 } from '../stores/editor-store.js';
 import { WorktreeSidebar } from '../workspace/WorktreeSidebar.js';
+import { AgentSessionsPanel } from '../workspace/AgentSessionsPanel.js';
 import { ChatPanel } from '../workspace/ChatPanel.js';
 import { CommitDiffPanel } from '../workspace/CommitDiffPanel.js';
 import { FileTreePanel } from '../workspace/FileTreePanel.js';
@@ -310,6 +311,7 @@ function WorkspaceInner() {
   const [runHookTarget, setRunHookTarget] = useState<WorktreeInfo | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<WorktreeInfo | null>(null);
   const [showNewWorktree, setShowNewWorktree] = useState(false);
+  const [sessionsPanelOpen, setSessionsPanelOpen] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(() => sessionStorage.getItem('sg_sidebar_collapsed') === '1');
   const [recentWorkspaces, setRecentWorkspaces] = useState<RecentWorkspace[]>([]);
 
@@ -789,6 +791,25 @@ function WorkspaceInner() {
       .catch((err: unknown) => toast(`Switch hooks failed: ${String(err)}`, 'error'));
   }
 
+  /** Jump-to-terminal action from the agent sessions dashboard: switches to
+   *  the session's worktree (if not already active) and focuses its terminal tab. */
+  function handleJumpToSession(session: TerminalInfo) {
+    const wt = worktrees.find(w => w.path === session.cwd);
+    // The dashboard already filters to this workspace's worktrees, but guard
+    // here too — jumping to a session with no matching worktree would leave
+    // activeTerminalId pointing at a tab that can never render.
+    if (!wt) return;
+    if (wt.path !== activeWorktree?.path) {
+      void handleWorktreeSwitch(wt);
+    }
+    useWorkspaceStore.setState(s => ({
+      activeTerminalId: session.id,
+      activeTab: 'terminal',
+      worktreeActiveTerminalId: { ...s.worktreeActiveTerminalId, [session.cwd]: session.id },
+    }));
+    setSessionsPanelOpen(false);
+  }
+
   async function doDeleteWorktree(wt: WorktreeInfo) {
     const isDeletingActive = activeWorktree?.path === wt.path;
     const nextWt = isDeletingActive
@@ -1230,6 +1251,22 @@ function WorkspaceInner() {
           </div>
           <div className="flex items-center h-full pr-1 gap-0.5 shrink-0" style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}>
             <UpdateBadge state={updateState} onInstall={() => void api.installUpdate()} />
+            <button
+              className="relative inline-flex items-center justify-center p-2 bg-transparent border-none cursor-pointer text-(--sg-text-faint) rounded-sm transition-colors hover:text-(--sg-text) hover:bg-(--sg-surface-raised)"
+              title="Agent Sessions"
+              aria-label="Agent Sessions"
+              onClick={() => setSessionsPanelOpen(v => !v)}
+              data-testid="btn-agent-sessions"
+            >
+              <Radar size={16} />
+              {worktreesWithLiveAgent.size > 0 && (
+                <span
+                  className="absolute top-1 right-1 h-1.5 w-1.5 rounded-full bg-(--sg-primary)"
+                  aria-hidden="true"
+                  data-testid="agent-sessions-live-dot"
+                />
+              )}
+            </button>
             <button className="inline-flex items-center justify-center p-2 bg-transparent border-none cursor-pointer text-(--sg-text-faint) rounded-sm transition-colors hover:text-(--sg-text) hover:bg-(--sg-surface-raised)" title="New Window" onClick={() => void api.openNewWindow()}>
               <AppWindow size={16} />
             </button>
@@ -1660,6 +1697,14 @@ function WorkspaceInner() {
           </div>
         </div>{/* end body */}
       </div>
+
+      {/* Agent sessions dashboard */}
+      <AgentSessionsPanel
+        open={sessionsPanelOpen}
+        worktrees={worktrees}
+        onJump={session => handleJumpToSession(session)}
+        onClose={() => setSessionsPanelOpen(false)}
+      />
 
       {/* Hooks settings modal */}
       <WorkspaceHooksModal
