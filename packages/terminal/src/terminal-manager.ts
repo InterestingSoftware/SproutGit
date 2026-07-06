@@ -173,11 +173,17 @@ export class TerminalManager {
  * so `closeForPath` can work correctly and the renderer can rebuild labels.
  */
 export class TerminalManagerWithMeta extends TerminalManager {
-  protected meta = new Map<string, { cwd: string; label: string; agentId: string | null }>();
+  protected meta = new Map<string, { cwd: string; label: string; agentId: string | null; agentName: string | null; startedAt: number }>();
 
-  override spawn(options: SpawnOptions & { label?: string; agentId?: string }): string {
+  override spawn(options: SpawnOptions & { label?: string; agentId?: string; agentName?: string }): string {
     const id = super.spawn(options);
-    this.meta.set(id, { cwd: options.cwd, label: options.label ?? options.cwd, agentId: options.agentId ?? null });
+    this.meta.set(id, {
+      cwd: options.cwd,
+      label: options.label ?? options.cwd,
+      agentId: options.agentId ?? null,
+      agentName: options.agentName ?? null,
+      startedAt: Date.now(),
+    });
     return id;
   }
 
@@ -207,8 +213,15 @@ export class TerminalManagerWithMeta extends TerminalManager {
     return this.meta.get(sessionId)?.label;
   }
 
-  listSessions(): { id: string; cwd: string; label: string; agentId: string | null }[] {
-    return Array.from(this.meta.entries()).map(([id, m]) => ({ id, cwd: m.cwd, label: m.label, agentId: m.agentId }));
+  listSessions(): { id: string; cwd: string; label: string; agentId: string | null; agentName: string | null; startedAt: number }[] {
+    return Array.from(this.meta.entries()).map(([id, m]) => ({
+      id,
+      cwd: m.cwd,
+      label: m.label,
+      agentId: m.agentId,
+      agentName: m.agentName,
+      startedAt: m.startedAt,
+    }));
   }
 }
 
