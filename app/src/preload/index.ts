@@ -15,6 +15,8 @@ import type {
   GitHubAuthStatus,
   GitHubEmailSuggestion,
   GitHubRepo,
+  PullRequestStatus,
+  PullRequestInfo,
   EditorInfo,
   GitToolInfo,
   WorkspaceInitResult,
@@ -76,6 +78,13 @@ function invoke<K extends keyof IpcMap>(
  * to Node.js or the Electron internals.
  */
 const api = {
+  // ── Environment ───────────────────────────────────────────────────────────
+  // Static (not IPC) — preload has direct Node access even under context
+  // isolation, so this reads argv locally instead of round-tripping to main.
+  // Lets renderer-only behavior (e.g. the onboarding tour) opt out of
+  // WebdriverIO's shared, long-lived session without a dedicated IPC channel.
+  isE2E: process.argv.includes('--sproutgit-e2e'),
+
   // ── Git info ──────────────────────────────────────────────────────────────
   gitInfo: (): Promise<GitInfo> =>
     invoke(IPC.GIT_INFO),
@@ -584,6 +593,12 @@ const api = {
 
   githubListRepos: (): Promise<GitHubRepo[]> =>
     invoke(IPC.GITHUB_LIST_REPOS),
+
+  githubGetPrStatus: (worktreePath: string): Promise<PullRequestStatus | null> =>
+    invoke(IPC.GITHUB_GET_PR_STATUS, worktreePath),
+
+  githubCreatePr: (args: { worktreePath: string; title: string; body?: string; base: string; draft?: boolean }): Promise<PullRequestInfo> =>
+    invoke(IPC.GITHUB_CREATE_PR, args),
 
   // ── Auto-update ─────────────────────────────────────────────────────────
   checkForUpdates: (): Promise<void> =>

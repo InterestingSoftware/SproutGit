@@ -91,6 +91,6 @@ export function registerTerminalHandlers(): void {
   });
 
   handle(IPC.TERMINAL_LIST, () => {
-    return manager.listSessions().map(s => ({ ...s, label: s.label }));
+    return manager.listSessions();
   });
 }
