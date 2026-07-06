@@ -5,7 +5,7 @@ import { useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { StagingPanel, Spinner, ContextMenuProvider } from "@sproutgit/ui";
 import { GitBranch, GitMerge, Terminal, Bot, FileCode2 } from "lucide-react";
-import type { WorktreeInfo, TerminalInfo } from "@sproutgit/types";
+import type { WorktreeInfo } from "@sproutgit/types";
 import { useToast } from "../toast-context.js";
 import { useWorkspaceStore } from "../stores/workspace-store.js";
 import {
@@ -32,6 +32,7 @@ import { useScaffoldKickoff } from "../hooks/useScaffoldKickoff.js";
 import { useWorktreeSelection } from "../hooks/useWorktreeSelection.js";
 import { useCommitDiffState } from "../hooks/useCommitDiffState.js";
 import { useTerminalManager } from "../hooks/useTerminalManager.js";
+import { useAgentSessionNotifications } from "../hooks/useAgentSessionNotifications.js";
 import { useAutoUpdateListeners } from "../hooks/useAutoUpdateListeners.js";
 import { useMcpSessionDoneListener } from "../hooks/useMcpSessionDoneListener.js";
 import { useWorkspaceFileWatchers } from "../hooks/useWorkspaceFileWatchers.js";
@@ -200,9 +201,10 @@ function WorkspaceInner() {
     closeDeleteDialog: () => setDeleteTarget(null),
   });
 
-  /** Jump-to-terminal action from the agent sessions dashboard: switches to
-   *  the session's worktree (if not already active) and focuses its terminal tab. */
-  function handleJumpToSession(session: TerminalInfo) {
+  /** Jump-to-terminal action from the agent sessions dashboard (and from
+   *  clicking an agent-session-finished OS notification): switches to the
+   *  session's worktree (if not already active) and focuses its terminal tab. */
+  function handleJumpToSession(session: { id: string; cwd: string }) {
     const wt = worktrees.find((w) => w.path === session.cwd);
     // The dashboard already filters to this workspace's worktrees, but guard
     // here too — jumping to a session with no matching worktree would leave
@@ -221,6 +223,8 @@ function WorkspaceInner() {
     }));
     setSessionsPanelOpen(false);
   }
+
+  useAgentSessionNotifications({ worktrees, onJump: handleJumpToSession });
 
   // ── Commit diff state ──────────────────────────────────────────────────
   const {

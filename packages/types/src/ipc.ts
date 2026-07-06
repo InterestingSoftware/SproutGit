@@ -49,6 +49,10 @@ export const IPC = {
   TERMINAL_CLOSE: 'terminal:close',
   TERMINAL_LIST: 'terminal:list',
   TERMINAL_CLOSE_ALL: 'terminal:closeAll',
+  EVENT_AGENT_SESSION_STATUS: 'event:agentSessionStatus',
+  // ── Notifications ────────────────────────────────────────────────────────
+  NOTIFICATION_SHOW: 'notification:show',
+  EVENT_NOTIFICATION_CLICKED: 'event:notificationClicked',
   // ── Settings ─────────────────────────────────────────────────────────────
   SETTINGS_GET: 'settings:get',
   SETTINGS_SET: 'settings:set',
@@ -217,6 +221,7 @@ import type { IssueTrackerPattern } from './issuetracker.js';
 import type { ProviderIssue } from './providers.js';
 import type { FileTreeNode, FileReadResult } from './files.js';
 import type { McpClientId, McpServerStatus, McpConfigWriteResult } from './mcp.js';
+import type { ShowAgentNotificationArgs } from './notifications.js';
 
 /** Shape of one row returned by WORKTREE_GET_META / WORKTREE_SET_META. */
 export type WorktreeMetaRow = {
@@ -319,6 +324,8 @@ export type IpcMap = {
   'terminal:closeForPath': { args: [pathPrefix: string];                     result: void };
   'terminal:closeAll': { args: [];                                           result: void };
   'terminal:list':   { args: [];                                             result: TerminalInfo[] };
+  // ── Notifications ─────────────────────────────────────────────────────────
+  'notification:show': { args: [args: ShowAgentNotificationArgs];            result: void };
   // ── Settings ──────────────────────────────────────────────────────────────
   'settings:get':    { args: [key: string];                                  result: string | null };
   'settings:set':    { args: [args: { key: string; value: string }];        result: void };
