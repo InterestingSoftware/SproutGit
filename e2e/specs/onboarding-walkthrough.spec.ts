@@ -37,10 +37,11 @@ async function readTourDismissal(): Promise<string | null> {
 }
 
 /**
- * The tour's onDestroyed hook writes the dismissal setting via a
- * fire-and-forget `void api.setSetting(...)` (see homeTour.ts) — it doesn't
- * block the click that triggered it. Poll instead of reading once so this
- * doesn't race the IPC round-trip.
+ * The tour's onDismiss callback (wired up in routes/index.tsx, not
+ * homeTour.ts — homeTour.ts only invokes the callback it's given) writes
+ * the dismissal setting via a fire-and-forget `void api.setSetting(...)` —
+ * it doesn't block the click that triggered it. Poll instead of reading
+ * once so this doesn't race the IPC round-trip.
  */
 async function expectTourDismissalPersisted(): Promise<void> {
   await browser.waitUntil(async () => (await readTourDismissal()) === '1', {
