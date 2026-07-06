@@ -51,7 +51,7 @@ packages/
   types/                ← @sproutgit/types — shared types + ALL IPC channel constants
   ui/                   ← @sproutgit/ui — shared React components
   providers/github/     ← @sproutgit/provider-github — GitHub OAuth + repo listing
-  mcp-server/           ← @sproutgit/mcp-server — MCP server exposing worktree tools to external agents, see docs/mcp-server.md
+  mcp-server/           ← @sproutgit/mcp-server — MCP server exposing worktree tools to external agents, see website/src/content/docs/docs/guides/mcp-server.md
   ts-config/            ← shared tsconfig
 e2e/                    ← WebdriverIO end-to-end tests
 website/                ← Astro marketing site

@@ -6,7 +6,9 @@ import type { ToastFn } from "../toast-context.js";
 export function useMcpSessionDoneListener(toast: ToastFn) {
   useEffect(() => {
     const offMcpSessionDone = api.onMcpSessionDone((event) => {
-      const name = event.worktreePath.split("/").pop() ?? event.worktreePath;
+      // Split on both separators — worktreePath comes from the main process
+      // and may be a Windows path (backslash-separated).
+      const name = event.worktreePath.split(/[/\\]/).pop() || event.worktreePath;
       toast(
         event.summary
           ? `${name}: ${event.summary}`

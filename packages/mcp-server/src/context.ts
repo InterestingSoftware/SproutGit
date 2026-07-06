@@ -34,7 +34,9 @@ export type McpServerContext = {
   /**
    * Notifies the host app that a calling agent has finished a session of
    * work in a worktree, so the UI can surface it (e.g. a toast). Purely
-   * informational — doesn't touch git or the filesystem, so unlike
+   * informational — it never mutates git or filesystem state (the handler's
+   * own known-worktree check does read via listWorktrees, but that's the
+   * same read every other read-only tool does), so unlike
    * createWorktree/removeWorktree it isn't gated by mutatingToolsEnabled.
    */
   reportSessionDone: (args: { worktreePath: string; summary: string | null }) => Promise<void>;
