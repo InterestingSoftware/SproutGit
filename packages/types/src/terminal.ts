@@ -19,4 +19,8 @@ export type TerminalInfo = {
   label: string | null;
   /** Set when this session was launched via agent:launch, identifying which agent is running. */
   agentId: string | null;
+  /** The configured agent's command basename (e.g. "claude"), set only for agent-launched sessions. */
+  agentName: string | null;
+  /** Unix ms timestamp when this session was spawned — used to compute elapsed time. */
+  startedAt: number;
 };

@@ -4,6 +4,7 @@ import { NewWorktreeDialog } from "./dialogs/NewWorktreeDialog.js";
 import { DeleteWorktreeDialog } from "./dialogs/DeleteWorktreeDialog.js";
 import { PublishDialog } from "./dialogs/PublishDialog.js";
 import { RunHookDialog } from "./dialogs/RunHookDialog.js";
+import { CreatePrDialog } from "./dialogs/CreatePrDialog.js";
 import type {
   RefInfo,
   WorktreeInfo,
@@ -34,6 +35,10 @@ type Props = {
   onClosePublishModal: () => void;
   onPublished: () => void;
 
+  createPrTarget: WorktreeInfo | null;
+  onCloseCreatePr: () => void;
+  onPrCreated: () => void;
+
   runHookTarget: WorktreeInfo | null;
   onCloseRunHookModal: () => void;
 
@@ -62,6 +67,9 @@ export function WorkspaceDialogs({
   showPublishModal,
   onClosePublishModal,
   onPublished,
+  createPrTarget,
+  onCloseCreatePr,
+  onPrCreated,
   runHookTarget,
   onCloseRunHookModal,
   deleteTarget,
@@ -110,6 +118,16 @@ export function WorkspaceDialogs({
         onClose={onClosePublishModal}
         onToast={(msg, v) => toast(msg, v)}
         onPublished={onPublished}
+      />
+
+      {/* Create PR dialog */}
+      <CreatePrDialog
+        open={!!createPrTarget}
+        worktree={createPrTarget}
+        refs={refs}
+        onClose={onCloseCreatePr}
+        onToast={(msg, v) => toast(msg, v)}
+        onCreated={onPrCreated}
       />
 
       {/* Run hook dialog */}

@@ -117,6 +117,10 @@ export class TerminalManager {
 
     proc.onExit(({ exitCode }) => {
       this.sessions.delete(id);
+      // Fires whether the process exited on its own or was killed via
+      // close() — close() already removes its own session-scoped state
+      // synchronously, so this hook must be idempotent for that case too.
+      this.handleSessionExit(id);
       this.onExit(id, exitCode);
     });
 
@@ -166,6 +170,16 @@ export class TerminalManager {
   get size(): number {
     return this.sessions.size;
   }
+
+  /**
+   * Hook for subclasses tracking extra per-session state (e.g. metadata maps)
+   * to clean up when a PTY exits — called on every exit path, not just close(),
+   * since a session's process can also exit on its own (agent CLI finishing,
+   * a shell running `exit`, a crash).
+   */
+  protected handleSessionExit(_id: string): void {
+    // No extra state to clean up in the base class.
+  }
 }
 
 /**
@@ -173,17 +187,27 @@ export class TerminalManager {
  * so `closeForPath` can work correctly and the renderer can rebuild labels.
  */
 export class TerminalManagerWithMeta extends TerminalManager {
-  protected meta = new Map<string, { cwd: string; label: string; agentId: string | null }>();
+  protected meta = new Map<string, { cwd: string; label: string; agentId: string | null; agentName: string | null; startedAt: number }>();
 
-  override spawn(options: SpawnOptions & { label?: string; agentId?: string }): string {
+  override spawn(options: SpawnOptions & { label?: string; agentId?: string; agentName?: string }): string {
     const id = super.spawn(options);
-    this.meta.set(id, { cwd: options.cwd, label: options.label ?? options.cwd, agentId: options.agentId ?? null });
+    this.meta.set(id, {
+      cwd: options.cwd,
+      label: options.label ?? options.cwd,
+      agentId: options.agentId ?? null,
+      agentName: options.agentName ?? null,
+      startedAt: Date.now(),
+    });
     return id;
   }
 
   override close(sessionId: string): void {
     super.close(sessionId);
     this.meta.delete(sessionId);
+  }
+
+  protected override handleSessionExit(id: string): void {
+    this.meta.delete(id);
   }
 
   override closeForPath(pathPrefix: string): void {
@@ -207,8 +231,15 @@ export class TerminalManagerWithMeta extends TerminalManager {
     return this.meta.get(sessionId)?.label;
   }
 
-  listSessions(): { id: string; cwd: string; label: string; agentId: string | null }[] {
-    return Array.from(this.meta.entries()).map(([id, m]) => ({ id, cwd: m.cwd, label: m.label, agentId: m.agentId }));
+  listSessions(): { id: string; cwd: string; label: string; agentId: string | null; agentName: string | null; startedAt: number }[] {
+    return Array.from(this.meta.entries()).map(([id, m]) => ({
+      id,
+      cwd: m.cwd,
+      label: m.label,
+      agentId: m.agentId,
+      agentName: m.agentName,
+      startedAt: m.startedAt,
+    }));
   }
 }
 

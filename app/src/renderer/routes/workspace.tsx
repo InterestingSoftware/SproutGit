@@ -5,7 +5,7 @@ import { useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { StagingPanel, Spinner, ContextMenuProvider } from "@sproutgit/ui";
 import { GitBranch, GitMerge, Terminal, Bot, FileCode2 } from "lucide-react";
-import type { WorktreeInfo } from "@sproutgit/types";
+import type { WorktreeInfo, TerminalInfo } from "@sproutgit/types";
 import { useToast } from "../toast-context.js";
 import { useWorkspaceStore } from "../stores/workspace-store.js";
 import {
@@ -16,6 +16,7 @@ import {
   resolveConflictKeepMine,
 } from "../stores/editor-store.js";
 import { WorktreeSidebar } from "../workspace/WorktreeSidebar.js";
+import { AgentSessionsPanel } from "../workspace/AgentSessionsPanel.js";
 import { ChatPanel } from "../workspace/ChatPanel.js";
 import { FileTreePanel } from "../workspace/FileTreePanel.js";
 import { FileEditorPanel } from "../workspace/FileEditorPanel.js";
@@ -49,6 +50,8 @@ import {
   useWorktreeChangeCounts,
   useIssueTrackerPatterns,
   useFileTree,
+  useGithubAuthStatus,
+  usePrStatuses,
 } from "../queries.js";
 
 // ── Search params ─────────────────────────────────────────────────────────────
@@ -142,6 +145,14 @@ function WorkspaceInner() {
   const rootP = workspaceStatus?.rootPath;
   const worktreeChangeCounts = useWorktreeChangeCounts(worktrees, rootP);
 
+  // ── PR + checks status (sidebar badges) ───────────────────────────────
+  const { data: githubAuth } = useGithubAuthStatus();
+  const githubConnected = githubAuth?.authenticated ?? false;
+  const prStatuses = usePrStatuses(worktrees, rootP, githubConnected);
+  const [createPrTarget, setCreatePrTarget] = useState<WorktreeInfo | null>(
+    null,
+  );
+
   // ── Recent workspaces (for the title bar's workspace switcher) ─────────
   const { loadRecentWorkspaces, switchWorkspace } =
     useRecentWorkspaces(workspacePath);
@@ -152,6 +163,7 @@ function WorkspaceInner() {
   const [runHookTarget, setRunHookTarget] = useState<WorktreeInfo | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<WorktreeInfo | null>(null);
   const [showNewWorktree, setShowNewWorktree] = useState(false);
+  const [sessionsPanelOpen, setSessionsPanelOpen] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(
     () => sessionStorage.getItem("sg_sidebar_collapsed") === "1",
   );
@@ -185,6 +197,28 @@ function WorkspaceInner() {
     toast,
     closeDeleteDialog: () => setDeleteTarget(null),
   });
+
+  /** Jump-to-terminal action from the agent sessions dashboard: switches to
+   *  the session's worktree (if not already active) and focuses its terminal tab. */
+  function handleJumpToSession(session: TerminalInfo) {
+    const wt = worktrees.find((w) => w.path === session.cwd);
+    // The dashboard already filters to this workspace's worktrees, but guard
+    // here too — jumping to a session with no matching worktree would leave
+    // activeTerminalId pointing at a tab that can never render.
+    if (!wt) return;
+    if (wt.path !== activeWorktree?.path) {
+      void handleWorktreeSwitch(wt);
+    }
+    useWorkspaceStore.setState((s) => ({
+      activeTerminalId: session.id,
+      activeTab: "terminal",
+      worktreeActiveTerminalId: {
+        ...s.worktreeActiveTerminalId,
+        [session.cwd]: session.id,
+      },
+    }));
+    setSessionsPanelOpen(false);
+  }
 
   // ── Commit diff state ──────────────────────────────────────────────────
   const {
@@ -251,6 +285,8 @@ function WorkspaceInner() {
           updateState={updateState}
           loadRecentWorkspaces={loadRecentWorkspaces}
           onSwitchWorkspace={switchWorkspace}
+          hasLiveAgentSession={worktreesWithLiveAgent.size > 0}
+          onToggleSessionsPanel={() => setSessionsPanelOpen((v) => !v)}
         />
 
         {/* ── Body: sidebar + main content ── */}
@@ -262,6 +298,8 @@ function WorkspaceInner() {
             activeWorktree={activeWorktree}
             workspaceStatus={workspaceStatus ?? null}
             worktreeChangeCounts={worktreeChangeCounts}
+            prStatuses={prStatuses}
+            githubConnected={githubConnected}
             fetching={fetching}
             pulling={pulling}
             pushing={pushing}
@@ -296,6 +334,7 @@ function WorkspaceInner() {
             agentConfigured={agentConfigured}
             worktreesWithLiveAgent={worktreesWithLiveAgent}
             onLaunchAgent={(wtPath) => void terminalManager.launchAgent(wtPath)}
+            onCreatePr={(wt) => setCreatePrTarget(wt)}
           />
 
           {/* Main content */}
@@ -558,6 +597,14 @@ function WorkspaceInner() {
         {/* end body */}
       </div>
 
+      {/* Agent sessions dashboard */}
+      <AgentSessionsPanel
+        open={sessionsPanelOpen}
+        worktrees={worktrees}
+        onJump={(session) => handleJumpToSession(session)}
+        onClose={() => setSessionsPanelOpen(false)}
+      />
+
       <WorkspaceDialogs
         workspacePath={workspacePath}
         activeWorktree={activeWorktree}
@@ -587,6 +634,14 @@ function WorkspaceInner() {
           activeWorktree &&
           void qc.invalidateQueries({
             queryKey: qk.pushStatus(activeWorktree.path),
+          })
+        }
+        createPrTarget={createPrTarget}
+        onCloseCreatePr={() => setCreatePrTarget(null)}
+        onPrCreated={() =>
+          createPrTarget &&
+          void qc.invalidateQueries({
+            queryKey: qk.prStatus(createPrTarget.path),
           })
         }
         runHookTarget={runHookTarget}
