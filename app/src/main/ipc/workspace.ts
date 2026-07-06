@@ -1,7 +1,8 @@
 import { app } from 'electron';
 import { handle } from './handle.js';
 import { IPC } from '@sproutgit/types';
-import { openConfigDb, openWorkspaceDb, eq, notInArray } from '@sproutgit/database';
+import type { HookRunRecord } from '@sproutgit/types';
+import { openConfigDb, openWorkspaceDb, eq, desc, notInArray } from '@sproutgit/database';
 import { join } from 'path';
 import { recentWorkspaces } from '@sproutgit/database/schema/config';
 import { log } from '../telemetry.js';
@@ -44,7 +45,7 @@ export function workspaceDbPath(workspacePath: string): string {
  * for the rest of the process lifetime. Opening and closing within each
  * synchronous call means a late read can't leave a lingering lock behind.
  */
-function withWorkspaceDb<T>(
+export function withWorkspaceDb<T>(
   workspacePath: string,
   // `T extends Promise<unknown> ? never : T` rejects async/Promise-returning
   // callbacks at the call site — db.close() below runs synchronously right
@@ -58,6 +59,23 @@ function withWorkspaceDb<T>(
   } finally {
     db.close();
   }
+}
+
+/**
+ * Reads the hook-run audit log for one worktree, most recent first.
+ * Exported standalone (in addition to being reachable if a future IPC
+ * channel needs it) so the MCP list_hook_runs tool (see
+ * app/src/main/mcp-bridge.ts) can read it directly, in-process, the same
+ * way it reuses createLocalHook/updateLocalHook/etc. from ipc/hooks.ts.
+ */
+export function listHookRuns(workspacePath: string, worktreePath: string, limit = 50): HookRunRecord[] {
+  return withWorkspaceDb(workspacePath, db =>
+    db.select().from(hookRuns)
+      .where(eq(hookRuns.worktreePath, worktreePath))
+      .orderBy(desc(hookRuns.ranAt))
+      .limit(limit)
+      .all()
+      .map(r => ({ ...r, ranAt: r.ranAt.toISOString() })));
 }
 
 export interface SetWorktreeMetaArgs {

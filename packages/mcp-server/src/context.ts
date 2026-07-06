@@ -1,4 +1,10 @@
-import type { CreateWorktreeResult } from '@sproutgit/types';
+import type {
+  CreateWorktreeResult,
+  HookListResult,
+  HookRunOutcome,
+  HookRunRecord,
+  HookUpsertInput,
+} from '@sproutgit/types';
 
 /**
  * Everything a tool handler needs to know about the workspace it's running
@@ -40,4 +46,36 @@ export type McpServerContext = {
    * createWorktree/removeWorktree it isn't gated by mutatingToolsEnabled.
    */
   reportSessionDone: (args: { worktreePath: string; summary: string | null }) => Promise<void>;
+
+  /**
+   * Lists effective hooks (local + repo merged, each tagged with its
+   * source, trigger, enabled/trusted state) — `getEffectiveHooks` in
+   * app/src/main/ipc/hooks.ts. Pass `null` for `worktreePath` to see only
+   * workspace-level local hooks with no worktree in view. Read-only: this
+   * is the *entire* trust-related surface exposed over MCP — there is no
+   * corresponding trust tool anywhere in this package.
+   */
+  listHooks: (worktreePath: string | null) => HookListResult;
+  /** Reads the hook-run audit log for one worktree, most recent first — app/src/main/ipc/workspace.ts's listHookRuns. */
+  listHookRuns: (worktreePath: string, limit?: number) => HookRunRecord[];
+  /**
+   * Local-hook writes only (`.sproutgit/local-hooks.json`) — repo hooks
+   * (`sproutgit.hooks.json`) stay read-only through MCP, same as the app's
+   * own UI. These delegate to the exact same createLocalHook/updateLocalHook/
+   * deleteLocalHook/toggleLocalHook functions app/src/main/ipc/hooks.ts's
+   * HOOK_CREATE/UPDATE/DELETE/TOGGLE IPC handlers use, including dependsOn
+   * validation — never duplicated here.
+   */
+  createLocalHook: (input: HookUpsertInput) => void;
+  updateLocalHook: (id: string, input: Partial<HookUpsertInput>) => void;
+  deleteLocalHook: (id: string) => void;
+  toggleLocalHook: (id: string, enabled: boolean) => void;
+  /**
+   * Runs one hook through the exact same execution path as the Run Hook
+   * dialog (app/src/main/ipc/hooks.ts's runHook). Never bypasses trust — an
+   * untrusted repo hook, a disabled hook, or an unknown hookId all resolve
+   * with `status: 'not_run'` and an explanatory `errorMessage`, instead of
+   * throwing or silently no-op-ing.
+   */
+  runHook: (args: { hookId: string; worktreePath: string; initiatingWorktreePath?: string | null }) => Promise<HookRunOutcome>;
 };
