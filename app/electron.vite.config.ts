@@ -12,6 +12,7 @@ const WORKSPACE_PACKAGES = [
   '@sproutgit/git',
   '@sproutgit/terminal',
   '@sproutgit/provider-github',
+  '@sproutgit/fs-watch',
 ];
 
 /**

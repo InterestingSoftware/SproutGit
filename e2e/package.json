@@ -5,7 +5,8 @@
   "scripts": {
     "test": "wdio run wdio.conf.ts",
     "test:headed": "wdio run wdio.conf.ts --headless false",
-    "screenshots": "CAPTURE_SCREENSHOTS=1 SCREENSHOT_TARGET=../website/src/assets/screenshots wdio run wdio.conf.ts --spec specs/hero-screenshots.spec.ts"
+    "screenshots": "CAPTURE_SCREENSHOTS=1 SCREENSHOT_TARGET=../website/src/assets/screenshots wdio run wdio.conf.ts --spec specs/hero-screenshots.spec.ts",
+    "demo-gif-frames": "CAPTURE_SCREENSHOTS=1 SCREENSHOT_TARGET=../e2e/test-results/demo-gif-frames wdio run wdio.conf.ts --spec specs/demo-gif.spec.ts"
   },
   "devDependencies": {
     "@types/mocha": "^10.0.10",
