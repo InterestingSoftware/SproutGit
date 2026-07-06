@@ -8,7 +8,13 @@ const { handleMock, execFileMock, getAgentConfigMock } = vi.hoisted(() => ({
 
 vi.mock('electron', () => ({ ipcMain: { handle: handleMock } }));
 vi.mock('../../telemetry.js', () => ({ log: { error: vi.fn(), info: vi.fn(), warn: vi.fn() } }));
-vi.mock('@sproutgit/database', () => ({ getAgentConfig: (...args: unknown[]) => getAgentConfigMock(...args) }));
+vi.mock('@sproutgit/database', () => ({
+  getAgentRoster: () => ({
+    agents: [{ id: 'a', name: 'Agent', env: {}, ...getAgentConfigMock() }],
+    defaultAgentId: 'a',
+  }),
+  resolveRosterAgent: (roster: { agents: unknown[] }) => roster.agents[0],
+}));
 vi.mock('node:child_process', () => ({ execFile: (...args: unknown[]) => execFileMock(...args) }));
 
 import { registerProjectIdeaGeneratorHandlers } from '../project-idea-generator.js';
@@ -45,7 +51,7 @@ describe('projectIdea:generate', () => {
     getAgentConfigMock.mockReturnValue({ command: '', args: [], mode: 'terminal' });
     const handler = getRegisteredHandler();
     const result = await handler({}, { pitch: 'a cli tool' });
-    expect(result).toEqual({ error: 'No AI agent configured. Set one in Settings → AI Agent.' });
+    expect(result).toEqual({ error: 'No AI agent configured. Set one in Settings → AI Agents.' });
     expect(execFileMock).not.toHaveBeenCalled();
   });
 

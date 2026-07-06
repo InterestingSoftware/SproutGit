@@ -15,7 +15,7 @@ import {
   UpdateBadge,
 } from '@sproutgit/ui';
 import { GitBranch, Terminal, GitMerge, X, ChevronRight, ChevronDown, Settings, Plus, Columns2, Rows3, LayoutGrid, Pencil, PanelTop, SquareSplitHorizontal, ChevronsRight, Trash2, Bot, FileCode2, AppWindow, FolderOpen } from 'lucide-react';
-import type { CommitEntry, DiffFileEntry, WorktreeInfo, WorktreeSwitchHookSource, AgentConfig, FileChangedEvent, RecentWorkspace } from '@sproutgit/types';
+import type { CommitEntry, DiffFileEntry, WorktreeInfo, WorktreeSwitchHookSource, AgentRoster, FileChangedEvent, RecentWorkspace } from '@sproutgit/types';
 import { useToast } from '../toast-context.js';
 import { reportError } from '../error-reporting.js';
 import { useUpdateStore } from '../stores/update-store.js';
@@ -156,14 +156,15 @@ function WorkspaceInner() {
   }, []);
 
   // ── Coding agent ──────────────────────────────────────────────────────
-  const [agentConfig, setAgentConfig] = useState<AgentConfig | null>(null);
+  const [agentRoster, setAgentRoster] = useState<AgentRoster | null>(null);
 
   useEffect(() => {
     // A failure here leaves the Chat tab looking unconfigured with no
     // indication why — surface it instead.
-    void api.getAgentConfig().then(setAgentConfig).catch((err: unknown) => reportError('Failed to load agent configuration', err));
+    void api.getAgentRoster().then(setAgentRoster).catch((err: unknown) => reportError('Failed to load agent configuration', err));
   }, []);
-  const agentConfigured = !!agentConfig?.command.trim();
+  const defaultAgent = agentRoster ? (agentRoster.agents.find(a => a.id === agentRoster.defaultAgentId) ?? agentRoster.agents[0] ?? null) : null;
+  const agentConfigured = !!defaultAgent?.command.trim();
 
   // ── Scaffold kickoff for a project just created from the homescreen's
   // "New from idea" flow — see pending-scaffold.ts. Keyed by workspacePath
@@ -176,17 +177,17 @@ function WorkspaceInner() {
   const [chatAutoPrompt, setChatAutoPrompt] = useState<string | undefined>(undefined);
 
   useEffect(() => {
-    if (!activeWorktree || !agentConfig) return;
+    if (!activeWorktree || !defaultAgent) return;
     const prompt = consumePendingScaffold(workspacePath);
     if (!prompt) return;
-    if (agentConfig.mode === 'integrated') {
+    if (defaultAgent.mode === 'integrated') {
       setChatAutoPrompt(prompt);
       useWorkspaceStore.setState({ activeTab: 'chat' });
       return;
     }
     void (async () => {
       try {
-        const terminalId = await api.launchAgent({ workspacePath, worktreePath: activeWorktree.path });
+        const terminalId = await api.launchAgent({ workspacePath, worktreePath: activeWorktree.path, agentId: defaultAgent.id });
         // Give the CLI a moment to boot before "typing" the kickoff prompt.
         setTimeout(() => { void api.writeTerminal(terminalId, `${prompt}\n`).catch(() => undefined); }, 1500);
       } catch (err) {
@@ -194,7 +195,7 @@ function WorkspaceInner() {
       }
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeWorktree, agentConfig, workspacePath]);
+  }, [activeWorktree, defaultAgent, workspacePath]);
 
   // Worktree paths that currently have a live agent-launched terminal session.
   const worktreesWithLiveAgent = new Set(
@@ -527,10 +528,10 @@ function WorkspaceInner() {
     if (!activeWorktree && (activeTab === 'staging' || activeTab === 'terminal' || activeTab === 'chat' || activeTab === 'files')) {
       useWorkspaceStore.setState({ activeTab: 'graph' });
     }
-    if (activeTab === 'chat' && agentConfig && agentConfig.mode !== 'integrated') {
+    if (activeTab === 'chat' && defaultAgent && defaultAgent.mode !== 'integrated') {
       useWorkspaceStore.setState({ activeTab: 'graph' });
     }
-  }, [activeWorktree, activeTab, agentConfig]);
+  }, [activeWorktree, activeTab, defaultAgent]);
 
   useEffect(() => {
     sessionStorage.setItem('sg_active_tab', activeTab);
@@ -986,7 +987,7 @@ function WorkspaceInner() {
 
   async function launchAgent(worktreePath: string) {
     try {
-      await api.launchAgent({ workspacePath, worktreePath });
+      await api.launchAgent(defaultAgent ? { workspacePath, worktreePath, agentId: defaultAgent.id } : { workspacePath, worktreePath });
     } catch (err) {
       toast(`Failed to launch agent: ${String(err)}`, 'error');
     }
@@ -1311,7 +1312,7 @@ function WorkspaceInner() {
               >
                 <Terminal size={12} /> Terminal{visibleSessions.length > 1 ? ` (${visibleSessions.length})` : ''}
               </button>
-              {agentConfig?.mode === 'integrated' && (
+              {defaultAgent?.mode === 'integrated' && (
                 <button
                   className={tabCls(activeTab === 'chat', !activeWorktree)}
                   onClick={() => {
@@ -1611,7 +1612,7 @@ function WorkspaceInner() {
                   )}
 
                   {/* Chat tab (Integrated AI agent mode) */}
-                  {activeTab === 'chat' && activeWorktree && agentConfig?.mode === 'integrated' && (
+                  {activeTab === 'chat' && activeWorktree && defaultAgent?.mode === 'integrated' && (
                     <ChatPanel worktreePath={activeWorktree.path} {...(chatAutoPrompt ? { autoPrompt: chatAutoPrompt } : {})} />
                   )}
 

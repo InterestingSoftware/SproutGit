@@ -5,7 +5,7 @@ import { useState, useEffect, useRef } from 'react';
 import { AppWindow, ArrowRight, Clock, Download, FolderInput, FolderOpen, Play, Settings, Sparkles, X, AlertTriangle } from 'lucide-react';
 import { Spinner, WindowControls, UpdateBadge, Autocomplete, ResizableSidebar } from '@sproutgit/ui';
 import type { UpdateState } from '@sproutgit/ui';
-import type { AgentConfig, GitHubRepo, GitInfo, GitHubAuthStatus, GitOpProgressEvent, RecentWorkspace } from '@sproutgit/types';
+import type { AgentRoster, GitHubRepo, GitInfo, GitHubAuthStatus, GitOpProgressEvent, RecentWorkspace } from '@sproutgit/types';
 import { useToast } from '../toast-context.js';
 import { reportError } from '../error-reporting.js';
 import { setPendingScaffold } from '../pending-scaffold.js';
@@ -103,7 +103,8 @@ function HomeView() {
   const importPathRef = useRef<HTMLInputElement>(null);
 
   // Idea modal (new project from a pitch) — only offered once an AI agent is configured
-  const [agentConfig, setAgentConfig] = useState<AgentConfig | null>(null);
+  const [agentRoster, setAgentRoster] = useState<AgentRoster | null>(null);
+  const defaultAgent = agentRoster ? (agentRoster.agents.find(a => a.id === agentRoster.defaultAgentId) ?? agentRoster.agents[0] ?? null) : null;
   const [showIdea, setShowIdea] = useState(false);
   const [ideaPitch, setIdeaPitch] = useState('');
   const [ideaGenerating, setIdeaGenerating] = useState(false);
@@ -160,7 +161,7 @@ function HomeView() {
       }
     }).catch(() => undefined);
 
-    void api.getAgentConfig().then(setAgentConfig).catch(() => undefined);
+    void api.getAgentRoster().then(setAgentRoster).catch(() => undefined);
   }, []);
 
   useEffect(() => { if (showClone) setTimeout(() => cloneUrlRef.current?.focus(), 50); }, [showClone]);
@@ -456,7 +457,7 @@ function HomeView() {
             </div>
 
             <div className="flex flex-col gap-0.5 p-2">
-              {!!agentConfig?.command.trim() && (
+              {!!defaultAgent?.command.trim() && (
                 <button className={actionBtn} data-testid="btn-new-from-idea" onClick={() => { resetIdeaState(); setShowIdea(true); }}>
                   <span className={actionIcon}><Sparkles size={14} strokeWidth={2} /></span>
                   <span>New from idea</span>
