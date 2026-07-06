@@ -170,6 +170,14 @@ export const IPC = {
   MCP_SET_PORT: 'mcp:setPort',
   MCP_WRITE_CLIENT_CONFIG: 'mcp:writeClientConfig',
   MCP_GET_MANUAL_SNIPPET: 'mcp:getManualSnippet',
+  // ── AI provider registry ─────────────────────────────────────────────────
+  AI_PROVIDER_LIST: 'aiProvider:list',
+  AI_PROVIDER_UPSERT: 'aiProvider:upsert',
+  AI_PROVIDER_DELETE: 'aiProvider:delete',
+  AI_PROVIDER_CLEAR_API_KEY: 'aiProvider:clearApiKey',
+  AI_PROVIDER_GET_CATALOG: 'aiProvider:getCatalog',
+  AI_PROVIDER_REFRESH_CATALOG: 'aiProvider:refreshCatalog',
+  AI_PROVIDER_LIST_ALL_CATALOGS: 'aiProvider:listAllCatalogs',
   // ── Global error reporting (main → renderer push events) ──────────────────
   EVENT_GLOBAL_ERROR: 'event:globalError',
 } as const;
@@ -213,6 +221,7 @@ import type { IssueTrackerPattern } from './issuetracker.js';
 import type { ProviderIssue } from './providers.js';
 import type { FileTreeNode, FileReadResult } from './files.js';
 import type { McpClientId, McpServerStatus, McpConfigWriteResult } from './mcp.js';
+import type { AiProviderConfig, AiProviderStatus, AiProviderCatalog } from './ai-providers.js';
 
 /** Shape of one row returned by WORKTREE_GET_META / WORKTREE_SET_META. */
 export type WorktreeMetaRow = {
@@ -386,6 +395,14 @@ export type IpcMap = {
   'mcp:setPort':           { args: [args: { workspacePath: string; port: number | null }];            result: McpServerStatus };
   'mcp:writeClientConfig': { args: [args: { workspacePath: string; client: McpClientId }];            result: McpConfigWriteResult };
   'mcp:getManualSnippet':  { args: [args: { workspacePath: string; client?: McpClientId }];           result: string };
+  // ── AI provider registry ──────────────────────────────────────────────────
+  'aiProvider:list':          { args: [];                                                              result: AiProviderStatus[] };
+  'aiProvider:upsert':        { args: [args: { config: AiProviderConfig; apiKey?: string }];            result: AiProviderStatus };
+  'aiProvider:delete':        { args: [providerId: string];                                            result: void };
+  'aiProvider:clearApiKey':   { args: [providerId: string];                                            result: AiProviderStatus | null };
+  'aiProvider:getCatalog':    { args: [providerId: string];                                            result: AiProviderCatalog };
+  'aiProvider:refreshCatalog':{ args: [providerId: string];                                            result: AiProviderCatalog };
+  'aiProvider:listAllCatalogs': { args: [];                                                             result: AiProviderCatalog[] };
 };
 
 /** Union of all invoke-able channel strings. */

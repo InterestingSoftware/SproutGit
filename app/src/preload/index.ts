@@ -54,6 +54,9 @@ import type {
   McpConfigWriteResult,
   GlobalErrorEvent,
   ProjectIdeaGenerateResult,
+  AiProviderConfig,
+  AiProviderStatus,
+  AiProviderCatalog,
 } from '@sproutgit/types';
 
 /**
@@ -669,6 +672,28 @@ const api = {
 
   mcpGetManualSnippet: (workspacePath: string, client?: McpClientId): Promise<string> =>
     invoke(IPC.MCP_GET_MANUAL_SNIPPET, client ? { workspacePath, client } : { workspacePath }),
+
+  // ── AI provider registry ──────────────────────────────────────────────────
+  listAiProviders: (): Promise<AiProviderStatus[]> =>
+    invoke(IPC.AI_PROVIDER_LIST),
+
+  upsertAiProvider: (config: AiProviderConfig, apiKey?: string): Promise<AiProviderStatus> =>
+    invoke(IPC.AI_PROVIDER_UPSERT, apiKey !== undefined ? { config, apiKey } : { config }),
+
+  deleteAiProvider: (providerId: string): Promise<void> =>
+    invoke(IPC.AI_PROVIDER_DELETE, providerId),
+
+  clearAiProviderApiKey: (providerId: string): Promise<AiProviderStatus | null> =>
+    invoke(IPC.AI_PROVIDER_CLEAR_API_KEY, providerId),
+
+  getAiProviderCatalog: (providerId: string): Promise<AiProviderCatalog> =>
+    invoke(IPC.AI_PROVIDER_GET_CATALOG, providerId),
+
+  refreshAiProviderCatalog: (providerId: string): Promise<AiProviderCatalog> =>
+    invoke(IPC.AI_PROVIDER_REFRESH_CATALOG, providerId),
+
+  listAllAiProviderCatalogs: (): Promise<AiProviderCatalog[]> =>
+    invoke(IPC.AI_PROVIDER_LIST_ALL_CATALOGS),
 
   // ── Global error reporting ────────────────────────────────────────────────
   onGlobalError: (callback: (event: GlobalErrorEvent) => void) => {

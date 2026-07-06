@@ -2,6 +2,7 @@ import { Sparkles } from "lucide-react";
 import type { ToastData } from "@sproutgit/ui";
 import { AgentsSection } from "./AgentsSection.js";
 import { CommitMessageGeneratorSection } from "./CommitMessageGeneratorSection.js";
+import { AIProvidersSection } from "./AIProvidersSection.js";
 
 interface Props {
   onToast: (msg: string, variant?: ToastData["variant"]) => void;
@@ -24,6 +25,7 @@ export function AISection({ onToast }: Props) {
       <div className="divide-y divide-(--sg-border)">
         <AgentsSection onToast={onToast} />
         <CommitMessageGeneratorSection onToast={onToast} />
+        <AIProvidersSection onToast={onToast} />
       </div>
     </section>
   );
