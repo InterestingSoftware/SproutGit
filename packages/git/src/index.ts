@@ -21,6 +21,7 @@ export {
   pullWorktree,
   pushWorktreeBranch,
   getWorktreePushStatus,
+  getRemoteUrl,
 } from './remote.js';
 export { getDiffFiles, getDiffContent, getWorkingDiff, getStagedDiff } from './diff.js';
 export { initBareRepo, cloneBareRepo } from './init.js';

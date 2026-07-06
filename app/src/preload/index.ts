@@ -15,6 +15,8 @@ import type {
   GitHubAuthStatus,
   GitHubEmailSuggestion,
   GitHubRepo,
+  PullRequestStatus,
+  PullRequestInfo,
   EditorInfo,
   GitToolInfo,
   WorkspaceInitResult,
@@ -577,6 +579,12 @@ const api = {
 
   githubListRepos: (): Promise<GitHubRepo[]> =>
     invoke(IPC.GITHUB_LIST_REPOS),
+
+  githubGetPrStatus: (worktreePath: string): Promise<PullRequestStatus | null> =>
+    invoke(IPC.GITHUB_GET_PR_STATUS, worktreePath),
+
+  githubCreatePr: (args: { worktreePath: string; title: string; body?: string; base: string; draft?: boolean }): Promise<PullRequestInfo> =>
+    invoke(IPC.GITHUB_CREATE_PR, args),
 
   // ── Auto-update ─────────────────────────────────────────────────────────
   checkForUpdates: (): Promise<void> =>
