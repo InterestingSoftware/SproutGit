@@ -9,7 +9,10 @@ import {
   X,
 } from "lucide-react";
 import { api } from "../api.js";
-import { useWorkspaceStore } from "../stores/workspace-store.js";
+import {
+  useWorkspaceStore,
+  type TerminalLayout,
+} from "../stores/workspace-store.js";
 
 type TerminalSession = ReturnType<
   typeof useWorkspaceStore.getState
@@ -20,7 +23,7 @@ type Props = {
   activeWorktreePath: string | undefined;
   visibleSessions: TerminalSession[];
   activeTerminalId: string | null;
-  terminalLayout: "tabs" | "split" | "grid";
+  terminalLayout: TerminalLayout;
   availableShells: { name: string; path: string }[];
   renamingTerminalId: string | null;
   renameValue: string;
@@ -32,7 +35,7 @@ type Props = {
   onSelectTerminal: (id: string) => void;
   onCommitRename: () => void;
   onCancelRename: () => void;
-  onSetLayout: (layout: "tabs" | "split" | "grid") => void;
+  onSetLayout: (layout: TerminalLayout) => void;
   terminalPanelStyle: (id: string) => CSSProperties;
   terminalWrapperClass: () => string;
 };

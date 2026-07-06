@@ -143,7 +143,7 @@ function WorkspaceInner() {
   const worktreeChangeCounts = useWorktreeChangeCounts(worktrees, rootP);
 
   // ── Recent workspaces (for the title bar's workspace switcher) ─────────
-  const { recentWorkspaces, loadRecentWorkspaces, switchWorkspace } =
+  const { loadRecentWorkspaces, switchWorkspace } =
     useRecentWorkspaces(workspacePath);
 
   // ── Local UI state ────────────────────────────────────────────────────
@@ -249,7 +249,6 @@ function WorkspaceInner() {
           workspacePath={workspacePath}
           activeWorktree={activeWorktree}
           updateState={updateState}
-          recentWorkspaces={recentWorkspaces}
           loadRecentWorkspaces={loadRecentWorkspaces}
           onSwitchWorkspace={switchWorkspace}
         />

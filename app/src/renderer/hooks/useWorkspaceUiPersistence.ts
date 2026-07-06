@@ -1,6 +1,10 @@
 import { useEffect } from "react";
 import { api } from "../api.js";
-import { useWorkspaceStore, type Tab } from "../stores/workspace-store.js";
+import {
+  useWorkspaceStore,
+  type Tab,
+  type TerminalLayout,
+} from "../stores/workspace-store.js";
 import type { AgentConfig, WorktreeInfo } from "@sproutgit/types";
 
 /**
@@ -14,7 +18,7 @@ export function useWorkspaceUiPersistence(params: {
   workspacePath: string;
   activeWorktree: WorktreeInfo | null;
   activeTab: Tab;
-  terminalLayout: string;
+  terminalLayout: TerminalLayout;
   agentConfig: AgentConfig | null;
   sidebarCollapsed: boolean;
   setSidebarCollapsed: (updater: (collapsed: boolean) => boolean) => void;

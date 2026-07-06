@@ -1,5 +1,5 @@
 import { api } from "../api.js";
-import { useToast } from "../toast-context.js";
+import { useToast, type ToastFn } from "../toast-context.js";
 import { describeFetchSummary } from "../queries.js";
 import { useEffect, useState, type ReactNode } from "react";
 import {
@@ -34,10 +34,6 @@ import type { WorktreeInfo, WorkspaceStatus } from "@sproutgit/types";
 import type { UpdateState } from "@sproutgit/ui";
 
 type MenuItems = Parameters<ReturnType<typeof useContextMenu>["open"]>[1];
-type ToastFn = (
-  message: string,
-  variant?: "success" | "error" | "info",
-) => void;
 
 /** Items shared by the row's right-click menu and its "..." quick-actions menu. */
 function commonWorktreeMenuItems(

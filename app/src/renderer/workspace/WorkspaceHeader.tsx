@@ -21,7 +21,6 @@ type Props = {
   workspacePath: string;
   activeWorktree: WorktreeInfo | null;
   updateState: UpdateState;
-  recentWorkspaces: RecentWorkspace[];
   loadRecentWorkspaces: () => Promise<RecentWorkspace[]>;
   onSwitchWorkspace: (path: string) => void;
 };
@@ -38,7 +37,6 @@ export function WorkspaceHeader({
   workspacePath,
   activeWorktree,
   updateState,
-  recentWorkspaces,
   loadRecentWorkspaces,
   onSwitchWorkspace,
 }: Props) {
