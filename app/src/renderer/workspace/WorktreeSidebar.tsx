@@ -284,7 +284,7 @@ export function WorktreeSidebar({
             <span>New</span>
           </button>
           <div className="mx-1 h-4 w-px bg-(--sg-border)" />
-          <button className={iconBtn} title="Workspace hooks" onClick={onOpenHooksModal}>
+          <button className={iconBtn} title="Workspace hooks" onClick={onOpenHooksModal} data-testid="btn-open-hooks-modal">
             <Sliders size={15} />
           </button>
           <button className={iconBtn} title="Refresh" onClick={onRefresh}>
