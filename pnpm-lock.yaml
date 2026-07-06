@@ -70,6 +70,9 @@ importers:
       '@tanstack/react-router':
         specifier: ^1.170.16
         version: 1.170.16(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
+      driver.js:
+        specifier: ^1.6.0
+        version: 1.6.0
       electron-log:
         specifier: ^5.4.4
         version: 5.4.4
@@ -181,7 +184,7 @@ importers:
         version: '@typescript/native-preview@7.0.0-dev.20260630.1'
       wdio-electron-service:
         specifier: ^9.2.1
-        version: 9.2.1(electron@43.0.0(supports-color@8.1.1))(expect-webdriverio@5.7.0)(supports-color@8.1.1)(webdriverio@9.29.1(puppeteer-core@22.15.0))
+        version: 9.2.1(electron@43.0.0)(expect-webdriverio@5.7.0)(supports-color@8.1.1)(webdriverio@9.29.1(puppeteer-core@22.15.0))
       webdriverio:
         specifier: ^9.29.1
         version: 9.29.1(puppeteer-core@22.15.0)
@@ -3696,6 +3699,9 @@ packages:
   dotenv@17.4.2:
     resolution: {integrity: sha512-nI4U3TottKAcAD9LLud4Cb7b2QztQMUEfHbvhTH09bqXTxnSie8WnjPALV/WMCrJZ6UV/qHJ6L03OqO3LcdYZw==}
     engines: {node: '>=12'}
+
+  driver.js@1.6.0:
+    resolution: {integrity: sha512-gryo9QS7AZhz8J0bmdf42dwaTzcd1BgSJLnaSM7cPJbu8bTW8wIEuiGDy4MoCvB4Sr8wA9g5o2G9EFNVYZGeVQ==}
 
   drizzle-kit@0.31.10:
     resolution: {integrity: sha512-7OZcmQUrdGI+DUNNsKBn1aW8qSoKuTH7d0mYgSP8bAzdFzKoovxEFnoGQp2dVs82EOJeYycqRtciopszwUf8bw==}
@@ -9731,6 +9737,8 @@ snapshots:
 
   dotenv@17.4.2: {}
 
+  driver.js@1.6.0: {}
+
   drizzle-kit@0.31.10:
     dependencies:
       '@drizzle-team/brocli': 0.10.2
@@ -12659,7 +12667,7 @@ snapshots:
       defaults: 1.0.4
     optional: true
 
-  wdio-electron-service@9.2.1(electron@43.0.0(supports-color@8.1.1))(expect-webdriverio@5.7.0)(supports-color@8.1.1)(webdriverio@9.29.1(puppeteer-core@22.15.0)):
+  wdio-electron-service@9.2.1(electron@43.0.0)(expect-webdriverio@5.7.0)(supports-color@8.1.1)(webdriverio@9.29.1(puppeteer-core@22.15.0)):
     dependencies:
       '@babel/parser': 7.29.7
       '@electron/fuses': 2.1.3
