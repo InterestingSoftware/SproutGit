@@ -257,11 +257,15 @@ export async function findPullRequestForBranch(
   token: string,
 ): Promise<PullRequestInfo | null> {
   const endpoint = `/repos/${owner}/${repo}/pulls?head=${owner}:${encodeURIComponent(branch)}&state=all&sort=updated&direction=desc&per_page=1`;
-  const res = await ghApiFetch(endpoint, token);
-  if (!res.ok) return null;
-  const prs = await res.json() as RawPullRequest[];
-  const pr = prs[0];
-  return pr ? mapPullRequest(pr) : null;
+  try {
+    const res = await ghApiFetch(endpoint, token);
+    if (!res.ok) return null;
+    const prs = await res.json() as RawPullRequest[];
+    const pr = prs[0];
+    return pr ? mapPullRequest(pr) : null;
+  } catch {
+    return null;
+  }
 }
 
 /**
@@ -276,42 +280,46 @@ export async function getCombinedCheckState(
   ref: string,
   token: string,
 ): Promise<ChecksState> {
-  const [statusRes, checkRunsRes] = await Promise.all([
-    ghApiFetch(`/repos/${owner}/${repo}/commits/${encodeURIComponent(ref)}/status`, token),
-    ghApiFetch(`/repos/${owner}/${repo}/commits/${encodeURIComponent(ref)}/check-runs`, token),
-  ]);
+  try {
+    const [statusRes, checkRunsRes] = await Promise.all([
+      ghApiFetch(`/repos/${owner}/${repo}/commits/${encodeURIComponent(ref)}/status`, token),
+      ghApiFetch(`/repos/${owner}/${repo}/commits/${encodeURIComponent(ref)}/check-runs`, token),
+    ]);
 
-  let hasAny = false;
-  let hasFailure = false;
-  let hasPending = false;
+    let hasAny = false;
+    let hasFailure = false;
+    let hasPending = false;
 
-  if (statusRes.ok) {
-    const status = await statusRes.json() as { state: string; statuses: unknown[] };
-    if (status.statuses.length > 0) {
-      hasAny = true;
-      if (status.state === 'failure' || status.state === 'error') hasFailure = true;
-      else if (status.state === 'pending') hasPending = true;
-    }
-  }
-
-  if (checkRunsRes.ok) {
-    const data = await checkRunsRes.json() as {
-      check_runs: Array<{ status: string; conclusion: string | null }>;
-    };
-    if (data.check_runs.length > 0) {
-      hasAny = true;
-      const failingConclusions = new Set(['failure', 'timed_out', 'cancelled', 'action_required']);
-      for (const run of data.check_runs) {
-        if (run.status !== 'completed') hasPending = true;
-        else if (run.conclusion && failingConclusions.has(run.conclusion)) hasFailure = true;
+    if (statusRes.ok) {
+      const status = await statusRes.json() as { state: string; statuses: unknown[] };
+      if (status.statuses.length > 0) {
+        hasAny = true;
+        if (status.state === 'failure' || status.state === 'error') hasFailure = true;
+        else if (status.state === 'pending') hasPending = true;
       }
     }
-  }
 
-  if (!hasAny) return 'none';
-  if (hasFailure) return 'failing';
-  if (hasPending) return 'pending';
-  return 'passing';
+    if (checkRunsRes.ok) {
+      const data = await checkRunsRes.json() as {
+        check_runs: Array<{ status: string; conclusion: string | null }>;
+      };
+      if (data.check_runs.length > 0) {
+        hasAny = true;
+        const failingConclusions = new Set(['failure', 'timed_out', 'cancelled', 'action_required']);
+        for (const run of data.check_runs) {
+          if (run.status !== 'completed') hasPending = true;
+          else if (run.conclusion && failingConclusions.has(run.conclusion)) hasFailure = true;
+        }
+      }
+    }
+
+    if (!hasAny) return 'none';
+    if (hasFailure) return 'failing';
+    if (hasPending) return 'pending';
+    return 'passing';
+  } catch {
+    return 'none';
+  }
 }
 
 /** Looks up the open/most-recent PR for `branch` plus its combined check state. */

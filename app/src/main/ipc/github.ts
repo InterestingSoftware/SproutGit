@@ -105,11 +105,18 @@ export function registerGithubHandlers(userDataPath: string): void {
   });
 
   handle(IPC.GITHUB_GET_PR_STATUS, async (_e, worktreePath: string): Promise<PullRequestStatus | null> => {
-    const cred = getStoredGithubToken(userDataPath);
-    if (!cred) return null;
-    const context = await resolveWorktreeGithubContext(worktreePath);
-    if (!context) return null;
-    return getPullRequestStatus(context.owner, context.repo, context.branch, cred.token);
+    // Best-effort: this only feeds a sidebar badge, so a transient git or
+    // network failure here should degrade to "no PR info" rather than
+    // surfacing as a query error in the UI.
+    try {
+      const cred = getStoredGithubToken(userDataPath);
+      if (!cred) return null;
+      const context = await resolveWorktreeGithubContext(worktreePath);
+      if (!context) return null;
+      return await getPullRequestStatus(context.owner, context.repo, context.branch, cred.token);
+    } catch {
+      return null;
+    }
   });
 
   handle(IPC.GITHUB_CREATE_PR, async (

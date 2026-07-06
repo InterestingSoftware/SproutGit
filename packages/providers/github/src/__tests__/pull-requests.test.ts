@@ -58,6 +58,12 @@ describe('findPullRequestForBranch', () => {
     expect(result).toBeNull();
   });
 
+  it('returns null (rather than throwing) when fetch rejects at the transport level', async () => {
+    global.fetch = vi.fn().mockRejectedValue(new TypeError('network error')) as unknown as typeof fetch;
+    const result = await findPullRequestForBranch('acme', 'widgets', 'feat/x', 'token');
+    expect(result).toBeNull();
+  });
+
   it('returns null when no PR is found', async () => {
     global.fetch = vi.fn().mockResolvedValue({ ok: true, json: () => Promise.resolve([]) }) as unknown as typeof fetch;
     const result = await findPullRequestForBranch('acme', 'widgets', 'feat/x', 'token');
@@ -146,6 +152,11 @@ describe('getCombinedCheckState', () => {
 
   it('returns "none" when neither API has any checks', async () => {
     mockFetchFor({ state: 'pending', statuses: [] }, { check_runs: [] });
+    expect(await getCombinedCheckState('acme', 'widgets', 'abc123', 'token')).toBe('none');
+  });
+
+  it('returns "none" (rather than throwing) when fetch rejects at the transport level', async () => {
+    global.fetch = vi.fn().mockRejectedValue(new TypeError('network error')) as unknown as typeof fetch;
     expect(await getCombinedCheckState('acme', 'widgets', 'abc123', 'token')).toBe('none');
   });
 

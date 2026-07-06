@@ -173,13 +173,16 @@ export function usePrStatuses(
   rootPath: string | undefined,
   githubConnected: boolean,
 ) {
-  const targets = worktrees.filter(w => w.path !== rootPath && !!w.path);
+  // Waits for rootPath to resolve (rather than just excluding `undefined`)
+  // so the still-unknown root worktree doesn't get a wasted PR-status IPC
+  // call/refetch cycle before workspaceStatus has loaded.
+  const targets = rootPath ? worktrees.filter(w => w.path !== rootPath && !!w.path) : [];
 
   const results = useQueries({
     queries: targets.map(wt => ({
       queryKey: qk.prStatus(wt.path),
       queryFn: () => api.githubGetPrStatus(wt.path) as Promise<PullRequestStatus | null>,
-      enabled: githubConnected,
+      enabled: githubConnected && !!rootPath,
       staleTime: 30_000,
       refetchInterval: 60_000,
       retry: 0,
