@@ -695,6 +695,17 @@ function WorkspaceInner() {
     return () => { offAgentTerminal(); };
   }, []);
 
+  // ── MCP session-done listener ────────────────────────────────────────
+
+  useEffect(() => {
+    const offMcpSessionDone = api.onMcpSessionDone((event) => {
+      const name = event.worktreePath.split('/').pop() ?? event.worktreePath;
+      toast(event.summary ? `${name}: ${event.summary}` : `Agent session finished in ${name}`, 'success');
+    });
+
+    return () => { offMcpSessionDone(); };
+  }, [toast]);
+
   // ── Auto-update listeners ─────────────────────────────────────────────
 
   useEffect(() => {

@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
-import { listWorktrees, getWorktreeStatus } from '@sproutgit/git';
+import { listWorktrees, getWorktreeStatus, getWorkingDiff } from '@sproutgit/git';
 import type { McpServerContext } from './context.js';
 
 function textResult(value: unknown): CallToolResult {
@@ -37,20 +37,49 @@ export async function getWorkspaceInfoHandler(context: McpServerContext): Promis
   });
 }
 
+/**
+ * Only ever operate against a path this workspace itself reported via
+ * list_worktrees — never an arbitrary path handed in by the calling agent,
+ * mirroring the IPC rule that file paths must be validated as within the
+ * workspace before touching the filesystem. Returns an error result if
+ * `worktreePath` isn't one of them, otherwise `undefined`.
+ */
+async function assertKnownWorktree(context: McpServerContext, worktreePath: string): Promise<CallToolResult | undefined> {
+  const { worktrees } = await listWorktrees(context.gitRepoPath, context.managedWorktreesPath);
+  if (!worktrees.some(w => w.path === worktreePath)) {
+    return errorResult(`"${worktreePath}" is not a known worktree of this workspace. Call list_worktrees first.`);
+  }
+  return undefined;
+}
+
 export async function getWorktreeStatusHandler(
   context: McpServerContext,
   args: { worktreePath: string },
 ): Promise<CallToolResult> {
-  // Only ever run git status against a path this workspace itself reported
-  // via list_worktrees — never an arbitrary path handed in by the calling
-  // agent, mirroring the IPC rule that file paths must be validated as
-  // within the workspace before touching the filesystem.
-  const { worktrees } = await listWorktrees(context.gitRepoPath, context.managedWorktreesPath);
-  if (!worktrees.some(w => w.path === args.worktreePath)) {
-    return errorResult(`"${args.worktreePath}" is not a known worktree of this workspace. Call list_worktrees first.`);
-  }
+  const knownError = await assertKnownWorktree(context, args.worktreePath);
+  if (knownError) return knownError;
   const status = await getWorktreeStatus(args.worktreePath);
   return textResult(status);
+}
+
+export async function getWorktreeDiffHandler(
+  context: McpServerContext,
+  args: { worktreePath: string; filePath?: string | undefined },
+): Promise<CallToolResult> {
+  const knownError = await assertKnownWorktree(context, args.worktreePath);
+  if (knownError) return knownError;
+  const diff = await getWorkingDiff(args.worktreePath, args.filePath ?? null);
+  return textResult(diff);
+}
+
+export async function reportSessionDoneHandler(
+  context: McpServerContext,
+  args: { worktreePath: string; summary?: string | undefined },
+): Promise<CallToolResult> {
+  const knownError = await assertKnownWorktree(context, args.worktreePath);
+  if (knownError) return knownError;
+  await context.reportSessionDone({ worktreePath: args.worktreePath, summary: args.summary ?? null });
+  return textResult({ acknowledged: true, worktreePath: args.worktreePath });
 }
 
 export async function createWorktreeHandler(
@@ -86,9 +115,10 @@ export async function removeWorktreeHandler(
 }
 
 /**
- * Registers the full first-cut MCP tool set against `server`, scoped to a
- * single workspace via `context`. Read-only tools (`list_worktrees`,
- * `get_worktree_status`, `get_workspace_info`) always run; the mutating
+ * Registers the full MCP tool set against `server`, scoped to a single
+ * workspace via `context`. Read-only tools (`list_worktrees`,
+ * `get_worktree_status`, `get_worktree_diff`, `get_workspace_info`) and the
+ * purely informational `report_session_done` always run; the mutating
  * tools (`create_worktree`, `remove_worktree`) check
  * `context.mutatingToolsEnabled()` first and refuse otherwise.
  */
@@ -121,6 +151,32 @@ export function registerTools(server: McpServer, context: McpServerContext): voi
       },
     },
     args => getWorktreeStatusHandler(context, args),
+  );
+
+  server.registerTool(
+    'get_worktree_diff',
+    {
+      title: 'Get worktree diff',
+      description: 'Returns the unified diff of a worktree\'s current working tree (staged + unstaged changes) against HEAD, optionally scoped to one file.',
+      inputSchema: {
+        worktreePath: z.string().describe('Absolute path of the worktree, as returned by list_worktrees.'),
+        filePath: z.string().optional().describe('Restrict the diff to this file, relative to the worktree root. Omit for the full diff.'),
+      },
+    },
+    args => getWorktreeDiffHandler(context, args),
+  );
+
+  server.registerTool(
+    'report_session_done',
+    {
+      title: 'Report session done',
+      description: 'Tells SproutGit that the calling agent has finished a session of work in a worktree, so the app can surface it to the user (e.g. a toast).',
+      inputSchema: {
+        worktreePath: z.string().describe('Absolute path of the worktree the session ran in, as returned by list_worktrees.'),
+        summary: z.string().optional().describe('Optional free-text summary of what the session did.'),
+      },
+    },
+    args => reportSessionDoneHandler(context, args),
   );
 
   server.registerTool(

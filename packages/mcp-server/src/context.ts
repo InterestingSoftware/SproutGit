@@ -31,4 +31,11 @@ export type McpServerContext = {
   createWorktree: (args: { fromRef: string; newBranch: string }) => Promise<CreateWorktreeResult>;
   /** Same as createWorktree, but for removal — see app/src/main/worktree-lifecycle.ts. Throws if worktreePath isn't a registered worktree of this repo. */
   removeWorktree: (args: { worktreePath: string; deleteBranch: boolean; branchName?: string | null }) => Promise<void>;
+  /**
+   * Notifies the host app that a calling agent has finished a session of
+   * work in a worktree, so the UI can surface it (e.g. a toast). Purely
+   * informational — doesn't touch git or the filesystem, so unlike
+   * createWorktree/removeWorktree it isn't gated by mutatingToolsEnabled.
+   */
+  reportSessionDone: (args: { worktreePath: string; summary: string | null }) => Promise<void>;
 };
