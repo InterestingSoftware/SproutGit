@@ -1,0 +1,63 @@
+name: Improvement idea
+description: Propose an enhancement to SproutGit — feature, UX, docs, performance, DX, or website/marketing.
+title: "idea: "
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for helping improve SproutGit! Fill in what you can — a clear problem statement matters more than a complete form.
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      description: Which part of the project does this touch?
+      options:
+        - UX
+        - Feature
+        - Documentation
+        - Quality (security / hardening / a11y / telemetry)
+        - Performance
+        - Dev experience
+        - Marketing / website
+    validations:
+      required: true
+  - type: dropdown
+    id: priority
+    attributes:
+      label: Suggested priority
+      description: |
+        P0 — adoption blocker: stops a new user from succeeding in their first session.
+        P1 — differentiator: strengthens the worktree-first / agent-native story.
+        P2 — table stakes: expected of any polished Git GUI.
+        P3 — exploratory: speculative, revisit later.
+      options:
+        - P0 — adoption blocker
+        - P1 — differentiator
+        - P2 — table stakes
+        - P3 — exploratory
+        - Not sure
+    validations:
+      required: true
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What's painful or missing today? Who hits it, and when?
+      placeholder: e.g. Creating a worktree leaves it unrunnable until I manually copy .env and run pnpm install.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: What would you build? Rough sketches welcome.
+    validations:
+      required: false
+  - type: textarea
+    id: context
+    attributes:
+      label: Alternatives & context
+      description: Workarounds you use today, prior art in other tools, related issues or links.
+    validations:
+      required: false
