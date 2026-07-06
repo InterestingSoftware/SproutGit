@@ -138,6 +138,10 @@ describe('mcp-bridge lifecycle', () => {
     expect(getMcpStatus('/never/started')).toEqual({ running: false, port: null });
   });
 
+  // Slower than the other tests in this file — a real repo init (several git
+  // subprocess spawns) plus a real HTTP server plus two sequential fetches
+  // (initialize + tools/call), which on Windows CI runners can push past the
+  // default 5000ms test timeout.
   it('report_session_done pushes an EVENT_MCP_SESSION_DONE event to the workspace window', async () => {
     const repo = initTestRepo();
     repos.push(repo);
@@ -154,7 +158,7 @@ describe('mcp-bridge lifecycle', () => {
     expect(body.result?.isError).toBeUndefined();
 
     expect(send).toHaveBeenCalledWith(IPC.EVENT_MCP_SESSION_DONE, { worktreePath: repo, summary: 'Implemented the feature' });
-  });
+  }, 15_000);
 
   it('report_session_done is a no-op (does not throw) when the workspace window is not open', async () => {
     const repo = initTestRepo();
@@ -166,5 +170,5 @@ describe('mcp-bridge lifecycle', () => {
       worktreePath: repo,
     }) as { result?: { isError?: boolean } };
     expect(body.result?.isError).toBeUndefined();
-  });
+  }, 15_000);
 });
