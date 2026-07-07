@@ -28,18 +28,22 @@ export function GitHubSection({ onToast, onAuthChange, workspacePath }: Props) {
 
   useEffect(() => {
     if (!workspacePath) return;
-    void api.getWorkspaceState(workspacePath, AGENT_PR_PERMISSION_KEY).then((saved) => {
-      setAgentPrPermission(saved && isAgentPrPermission(saved) ? saved : DEFAULT_AGENT_PR_PERMISSION);
-    });
+    void api.getWorkspaceState(workspacePath, AGENT_PR_PERMISSION_KEY)
+      .then((saved) => {
+        setAgentPrPermission(saved && isAgentPrPermission(saved) ? saved : DEFAULT_AGENT_PR_PERMISSION);
+      })
+      .catch(() => setAgentPrPermission(DEFAULT_AGENT_PR_PERMISSION));
   }, [workspacePath]);
 
   async function handlePermissionChange(next: AgentPrPermission) {
+    const previous = agentPrPermission;
     setAgentPrPermission(next);
     if (!workspacePath) return;
     setSavingPermission(true);
     try {
       await api.setWorkspaceState(workspacePath, AGENT_PR_PERMISSION_KEY, next);
     } catch (err) {
+      setAgentPrPermission(previous);
       onToast(String(err), 'error');
     } finally {
       setSavingPermission(false);

@@ -383,7 +383,14 @@ export async function getPullRequestChecks(
       const data = await statusRes.json() as {
         statuses: Array<{ id: number; context: string; state: string; target_url: string | null }>;
       };
+      // The commit-statuses API returns every status ever posted for this ref,
+      // which can include several entries per `context` (e.g. a CI provider
+      // posting pending → success). GitHub returns them most-recent-first, so
+      // keeping the first entry per context gives the current state.
+      const seenContexts = new Set<string>();
       for (const s of data.statuses) {
+        if (seenContexts.has(s.context)) continue;
+        seenContexts.add(s.context);
         checks.push({
           id: `status:${s.id}`,
           name: s.context,

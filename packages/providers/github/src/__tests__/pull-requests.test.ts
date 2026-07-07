@@ -347,6 +347,28 @@ describe('getPullRequestChecks', () => {
     expect(checks).toHaveLength(2);
     expect(checks.map(c => c.id)).toEqual(['status:1', 'check_run:2']);
   });
+
+  it('de-dupes repeated commit statuses for the same context, keeping the most recent (first) entry', async () => {
+    mockFetchFor(
+      {
+        statuses: [
+          { id: 3, context: 'ci/build', state: 'success', target_url: 'https://ci/3' },
+          { id: 2, context: 'ci/build', state: 'pending', target_url: 'https://ci/2' },
+          { id: 1, context: 'ci/build', state: 'pending', target_url: 'https://ci/1' },
+        ],
+      },
+      { check_runs: [] },
+    );
+    const checks = await getPullRequestChecks('acme', 'widgets', 'abc123', 'token');
+    expect(checks).toEqual([{
+      id: 'status:3',
+      name: 'ci/build',
+      source: 'status',
+      status: 'completed',
+      conclusion: 'success',
+      detailsUrl: 'https://ci/3',
+    }]);
+  });
 });
 
 describe('getCheckFailureDetail', () => {
