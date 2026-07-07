@@ -291,7 +291,7 @@ export type IpcMap = {
   'worktree:getMeta':    { args: [args: { workspacePath: string; worktreePath: string }]; result: WorktreeMetaRow | null };
   'worktree:setMeta':    { args: [args: { workspacePath: string; worktreePath: string; branch?: string; sourceRef?: string; rootRepoPath?: string; issueRef?: string | null; issueTitle?: string | null }]; result: void };
   'worktree:pruneMetadata': { args: [args: { workspacePath: string; activeWorktreePaths: string[] }]; result: void };
-  'worktree:healthBatch': { args: [args: { repoPath: string; worktreePaths: string[] }]; result: Record<string, WorktreeHealth> };
+  'worktree:healthBatch': { args: [args: { repoPath: string; worktreePaths: string[] }]; result: Partial<Record<string, WorktreeHealth>> };
   'worktree:listProvenance': { args: [workspacePath: string]; result: WorktreeProvenance[] };
   'worktree:getProvenance':  { args: [args: { workspacePath: string; worktreePath: string }]; result: WorktreeProvenance | null };
   // ── Workspace ─────────────────────────────────────────────────────────────

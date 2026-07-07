@@ -133,7 +133,7 @@ const api = {
   pruneWorktreeMetadata: (args: { workspacePath: string; activeWorktreePaths: string[] }): Promise<void> =>
     invoke(IPC.WORKTREE_PRUNE_METADATA, args),
 
-  getWorktreesHealth: (args: { repoPath: string; worktreePaths: string[] }): Promise<Record<string, WorktreeHealth>> =>
+  getWorktreesHealth: (args: { repoPath: string; worktreePaths: string[] }): Promise<Partial<Record<string, WorktreeHealth>>> =>
     invoke(IPC.WORKTREE_HEALTH_BATCH, args),
 
   // ── Commits ───────────────────────────────────────────────────────────────

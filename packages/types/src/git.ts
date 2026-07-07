@@ -136,7 +136,10 @@ export type GitOpProgressEvent = {
 
 /**
  * Snapshot of a worktree's health relative to its comparison ref, for the
- * sidebar's ahead/behind, dirty-count, and last-commit-age badges.
+ * sidebar's ahead/behind and last-commit-age badges. Dirty-file count is
+ * intentionally not included here — the sidebar already gets it from the
+ * pre-existing per-worktree status polling (`useWorktreeChangeCounts`),
+ * so computing it again here would just run `git status` twice per refresh.
  */
 export type WorktreeHealth = {
   worktreePath: string;
@@ -144,8 +147,6 @@ export type WorktreeHealth = {
   ahead: number;
   /** Commits on `compareRef` not yet on HEAD. */
   behind: number;
-  /** Count of modified + untracked files (working tree and index combined). */
-  dirtyCount: number;
   /** ISO-8601 author date of the most recent commit, or null for an unborn branch. */
   lastCommitAt: string | null;
   /** Whether the current branch has a configured upstream. */
