@@ -2,6 +2,7 @@ import {
   type WorktreeListResult,
   type WorktreeInfo,
   type CreateWorktreeResult,
+  type WorktreeDeleteResult,
   validateBranchName,
 } from '@sproutgit/types';
 import { canonicalize, isPathWithin } from '@sproutgit/paths';
@@ -190,6 +191,12 @@ export async function addWorktreeForExistingBranch(
  *   `isWithinCanonical`) or it spuriously rejects legitimate deletions on
  *   platforms where the two disagree on symlinks (e.g. macOS's /var vs
  *   /private/var).
+ *
+ * @returns Enough state to undo the removal via `restoreDeletedWorktree` —
+ *   the worktree's original path, its branch (if any), and the branch's SHA
+ *   at the moment of deletion (only when `deleteBranch` actually removed the
+ *   ref; `git reflog` for a deleted branch ages out quickly, so the SHA is
+ *   captured up front rather than recovered from reflog later).
  */
 export async function deleteManagedWorktree(
   rootRepoPath: string,
@@ -197,13 +204,23 @@ export async function deleteManagedWorktree(
   deleteBranch = true,
   branchName?: string | null,
   managedWorktreesPath?: string
-): Promise<void> {
+): Promise<WorktreeDeleteResult> {
   if (managedWorktreesPath && !isWithinCanonical(worktreePath, managedWorktreesPath)) {
     throw new Error('Worktree path must stay within the managed worktrees directory.');
   }
 
-  await withWorktreeLock(rootRepoPath, async () => {
+  return withWorktreeLock(rootRepoPath, async () => {
     const git = gitForPath(rootRepoPath);
+
+    let branchSha: string | null = null;
+    if (deleteBranch && branchName) {
+      try {
+        branchSha = (await git.raw(['rev-parse', branchName])).trim();
+      } catch {
+        // Branch already gone or unresolvable — nothing to capture for undo.
+      }
+    }
+
     await git.raw(['worktree', 'remove', '--force', worktreePath]);
 
     if (deleteBranch && branchName) {
@@ -213,6 +230,54 @@ export async function deleteManagedWorktree(
         // Branch may already be gone — not fatal.
       }
     }
+
+    return { worktreePath, branch: branchName ?? null, branchSha };
+  });
+}
+
+/**
+ * Reverses a `deleteManagedWorktree` call using the `WorktreeDeleteResult` it
+ * returned: recreates the branch ref at its captured SHA (if it doesn't
+ * already exist — e.g. `deleteBranch` was false and it was never removed),
+ * then re-adds the worktree at its original path on that branch.
+ *
+ * This crosses the IPC boundary (the renderer supplies `worktreePath` and
+ * `branchSha` back verbatim), so — mirroring `deleteManagedWorktree` — a
+ * `managedWorktreesPath` is checked when supplied: restoring outside it is
+ * refused before touching git, rather than trusting the renderer to only
+ * ever echo back a path/SHA pair it actually received from a prior delete.
+ * Callers restoring an external worktree (registered outside that
+ * directory) must omit `managedWorktreesPath`, same carve-out as delete.
+ *
+ * Intentionally does not re-run create hooks — this is a direct, best-effort
+ * reversal of a prior delete, not a general "create worktree" entry point.
+ */
+export async function restoreDeletedWorktree(
+  rootRepoPath: string,
+  { worktreePath, branch, branchSha }: WorktreeDeleteResult,
+  managedWorktreesPath?: string
+): Promise<void> {
+  if (!branch) {
+    throw new Error('Cannot restore a worktree that was removed without a branch.');
+  }
+  if (managedWorktreesPath && !isWithinCanonical(worktreePath, managedWorktreesPath)) {
+    throw new Error('Worktree path must stay within the managed worktrees directory.');
+  }
+
+  await withWorktreeLock(rootRepoPath, async () => {
+    const git = gitForPath(rootRepoPath);
+
+    const branchList = await git.raw(['branch', '--list', branch]);
+    const branchExists = branchList.trim().length > 0;
+    if (!branchExists) {
+      if (!branchSha) {
+        throw new Error(`Branch "${branch}" no longer exists and no SHA was captured to recreate it.`);
+      }
+      await git.raw(['branch', branch, branchSha]);
+    }
+
+    await git.raw(['worktree', 'add', worktreePath, branch]);
+    await disableBareForWorktree(rootRepoPath, worktreePath);
   });
 }
 

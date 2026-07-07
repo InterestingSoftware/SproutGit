@@ -1,9 +1,9 @@
 import { existsSync } from 'node:fs';
 import { BrowserWindow } from 'electron';
-import { IPC } from '@sproutgit/types';
+import { IPC, type WorktreeDeleteResult } from '@sproutgit/types';
 import type { ConfigDb } from '@sproutgit/database';
 import { getGitInfo, isBareRepoPath } from '@sproutgit/git';
-import { listWorktrees } from '@sproutgit/git/worktrees';
+import { listWorktrees, restoreDeletedWorktree } from '@sproutgit/git/worktrees';
 import { getCommitGraph, countCommits, listRefs } from '@sproutgit/git/commits';
 import {
   getWorktreeStatus,
@@ -73,7 +73,14 @@ export function registerGitHandlers(configDb: ConfigDb): void {
     initiatingWorktreePath?: string | null;
     afterRemoveWorktreePath?: string | null;
   }) => {
-    await removeWorktreeWithHooks(args, () => BrowserWindow.fromWebContents(_e.sender), configDb);
+    return removeWorktreeWithHooks(args, () => BrowserWindow.fromWebContents(_e.sender), configDb);
+  });
+
+  // Reverses a WORKTREE_DELETE within the toast's undo window — see
+  // restoreDeletedWorktree's doc comment for why this is a direct restore
+  // rather than routed back through the create lifecycle/hooks.
+  handle(IPC.WORKTREE_RESTORE, async (_e, args: { rootRepoPath: string; deleted: WorktreeDeleteResult; managedWorktreesPath?: string }) => {
+    await restoreDeletedWorktree(args.rootRepoPath, args.deleted, args.managedWorktreesPath);
   });
 
   // ── commits ───────────────────────────────────────────────────────────────

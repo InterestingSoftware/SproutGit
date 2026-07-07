@@ -25,6 +25,7 @@ export const IPC = {
   // ── Worktrees ────────────────────────────────────────────────────────────
   WORKTREE_CREATE: 'worktree:create',
   WORKTREE_DELETE: 'worktree:delete',
+  WORKTREE_RESTORE: 'worktree:restore',
   WORKTREE_GET_META: 'worktree:getMeta',
   WORKTREE_SET_META: 'worktree:setMeta',
   WORKTREE_PRUNE_METADATA: 'worktree:pruneMetadata',
@@ -214,6 +215,7 @@ import type {
   WorktreePushStatus,
   RefsResult,
   FetchSummary,
+  WorktreeDeleteResult,
 } from './git.js';
 import type { WorkspaceInitResult, WorkspaceStatus, RecentWorkspace, WorktreeProvenance, NestedRepoSyncRule, ImportRepoMode, CreateWorktreeResult } from './workspace.js';
 import type {
@@ -297,7 +299,8 @@ export type IpcMap = {
   'git:setConfig':   { args: [args: { key: string; value: string }];                         result: void };
   // ── Worktrees ─────────────────────────────────────────────────────────────
   'worktree:create': { args: [args: { workspacePath: string; rootRepoPath: string; managedWorktreesPath: string; fromRef: string; newBranch: string; initiatingWorktreePath?: string | null; issueRef?: string | null; issueTitle?: string | null; orphan?: boolean }]; result: CreateWorktreeResult };
-  'worktree:delete': { args: [args: { workspacePath: string; rootRepoPath: string; managedWorktreesPath?: string; worktreePath: string; deleteBranch: boolean; branchName?: string | null; initiatingWorktreePath?: string | null; afterRemoveWorktreePath?: string | null }];                      result: void };
+  'worktree:delete': { args: [args: { workspacePath: string; rootRepoPath: string; managedWorktreesPath?: string; worktreePath: string; deleteBranch: boolean; branchName?: string | null; initiatingWorktreePath?: string | null; afterRemoveWorktreePath?: string | null }];                      result: WorktreeDeleteResult };
+  'worktree:restore': { args: [args: { rootRepoPath: string; deleted: WorktreeDeleteResult; managedWorktreesPath?: string }]; result: void };
   'worktree:getMeta':    { args: [args: { workspacePath: string; worktreePath: string }]; result: WorktreeMetaRow | null };
   'worktree:setMeta':    { args: [args: { workspacePath: string; worktreePath: string; branch?: string; sourceRef?: string; rootRepoPath?: string; issueRef?: string | null; issueTitle?: string | null }]; result: void };
   'worktree:pruneMetadata': { args: [args: { workspacePath: string; activeWorktreePaths: string[] }]; result: void };

@@ -19,7 +19,7 @@
 import type { BrowserWindow } from 'electron';
 import { canonicalize } from '@sproutgit/paths';
 import { createManagedWorktree, createFirstManagedWorktree, deleteManagedWorktree, listWorktrees } from '@sproutgit/git';
-import type { CreateWorktreeResult } from '@sproutgit/types';
+import type { CreateWorktreeResult, WorktreeDeleteResult } from '@sproutgit/types';
 import type { ConfigDb } from '@sproutgit/database';
 import { runTriggerHooks } from './ipc/hooks.js';
 import { setWorktreeMeta } from './ipc/workspace.js';
@@ -101,7 +101,7 @@ export async function removeWorktreeWithHooks(
   params: RemoveWorktreeWithHooksParams,
   getWindow: () => BrowserWindow | null,
   configDb: ConfigDb,
-): Promise<void> {
+): Promise<WorktreeDeleteResult> {
   // Validate against git's own worktree list rather than trusting the
   // caller-supplied path — only ever remove a path git itself has
   // registered against this repo. canonicalize() (realpath) on both sides
@@ -137,7 +137,7 @@ export async function removeWorktreeWithHooks(
   // external worktree lives outside managedWorktreesPath by definition, so
   // only pass it through for the path containment check when this is a
   // worktree we actually manage.
-  await deleteManagedWorktree(
+  const deleted = await deleteManagedWorktree(
     params.rootRepoPath,
     match.path,
     deleteBranch,
@@ -153,4 +153,6 @@ export async function removeWorktreeWithHooks(
       initiatingWorktreePath,
     }, win, configDb);
   }
+
+  return deleted;
 }
