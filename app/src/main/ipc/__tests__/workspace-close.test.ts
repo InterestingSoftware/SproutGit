@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { join } from 'node:path';
 import { IPC } from '@sproutgit/types';
 
 const { handleMock } = vi.hoisted(() => ({ handleMock: vi.fn() }));
@@ -46,13 +47,15 @@ describe('WORKSPACE_CLOSE', () => {
   });
 
   it('waits for idle on the bare root and on every worktree path, not just root', async () => {
-    const workspacePath = '/ws';
-    const rootPath = '/ws/.sproutgit/root';
+    const workspacePath = join('/ws');
+    const rootPath = join(workspacePath, '.sproutgit', 'root');
+    const worktreeA = join(workspacePath, '.sproutgit', 'worktrees', 'feature-a');
+    const worktreeB = join(workspacePath, '.sproutgit', 'worktrees', 'feature-b');
     listWorktreesMock.mockResolvedValue({
       repoPath: rootPath,
       worktrees: [
-        { path: '/ws/.sproutgit/worktrees/feature-a', head: 'abc', branch: 'feature-a', detached: false, isExternal: false },
-        { path: '/ws/.sproutgit/worktrees/feature-b', head: 'def', branch: 'feature-b', detached: false, isExternal: false },
+        { path: worktreeA, head: 'abc', branch: 'feature-a', detached: false, isExternal: false },
+        { path: worktreeB, head: 'def', branch: 'feature-b', detached: false, isExternal: false },
       ],
     });
 
@@ -61,35 +64,33 @@ describe('WORKSPACE_CLOSE', () => {
 
     expect(listWorktreesMock).toHaveBeenCalledWith(rootPath);
     const waitedPaths = waitForIdleRepoMock.mock.calls.map(call => call[0]);
-    expect(waitedPaths).toEqual(
-      expect.arrayContaining([
-        rootPath,
-        '/ws/.sproutgit/worktrees/feature-a',
-        '/ws/.sproutgit/worktrees/feature-b',
-      ]),
-    );
+    expect(waitedPaths).toEqual(expect.arrayContaining([rootPath, worktreeA, worktreeB]));
     expect(waitedPaths).toHaveLength(3);
   });
 
   it('still waits on root when a worktree has been deleted mid-session and listWorktrees no longer reports it', async () => {
     // Git itself is the source of truth here, not stale worktree_metadata DB
     // rows — a deleted worktree simply doesn't come back from listWorktrees.
-    listWorktreesMock.mockResolvedValue({ repoPath: '/ws/.sproutgit/root', worktrees: [] });
+    const workspacePath = join('/ws');
+    const rootPath = join(workspacePath, '.sproutgit', 'root');
+    listWorktreesMock.mockResolvedValue({ repoPath: rootPath, worktrees: [] });
 
     const close = getCloseHandler();
-    await close({}, '/ws');
+    await close({}, workspacePath);
 
     expect(waitForIdleRepoMock).toHaveBeenCalledTimes(1);
-    expect(waitForIdleRepoMock).toHaveBeenCalledWith('/ws/.sproutgit/root');
+    expect(waitForIdleRepoMock).toHaveBeenCalledWith(rootPath);
   });
 
   it('falls back to waiting on root alone when enumerating worktrees fails', async () => {
+    const workspacePath = join('/ws');
+    const rootPath = join(workspacePath, '.sproutgit', 'root');
     listWorktreesMock.mockRejectedValue(new Error('boom'));
 
     const close = getCloseHandler();
-    await expect(close({}, '/ws')).resolves.toBeUndefined();
+    await expect(close({}, workspacePath)).resolves.toBeUndefined();
 
     expect(waitForIdleRepoMock).toHaveBeenCalledTimes(1);
-    expect(waitForIdleRepoMock).toHaveBeenCalledWith('/ws/.sproutgit/root');
+    expect(waitForIdleRepoMock).toHaveBeenCalledWith(rootPath);
   });
 });
