@@ -50,6 +50,7 @@ import {
   useRefs,
   usePushStatus,
   useDeleteWorktree,
+  useRestoreWorktree,
   useWorktreeChangeCounts,
   useWorktreeHealth,
   useIssueTrackerPatterns,
@@ -191,6 +192,7 @@ function WorkspaceInner() {
 
   // ── Mutations ─────────────────────────────────────────────────────────
   const deleteWorktreeMutation = useDeleteWorktree(gitRepoPath);
+  const restoreWorktreeMutation = useRestoreWorktree(gitRepoPath);
   const { doFetch, doPull, doPush } = useRemoteOps({
     activeWorktreePath: activeWorktree?.path,
     gitRepoPath,
@@ -213,6 +215,7 @@ function WorkspaceInner() {
     workspaceStatus,
     activeWorktree,
     deleteWorktreeMutation,
+    restoreWorktreeMutation,
     toast,
     closeDeleteDialog: () => setDeleteTarget(null),
   });

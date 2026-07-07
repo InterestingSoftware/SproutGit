@@ -23,6 +23,19 @@ export type WorktreeListResult = {
   worktrees: WorktreeInfo[];
 };
 
+/**
+ * State captured from a worktree removal so it can be undone: the exact
+ * path it lived at, the branch it was on (if any), and — only when that
+ * branch's ref was actually deleted — the SHA it pointed at, since that's
+ * the one piece `git worktree remove`/`git branch -D` don't leave any other
+ * trace of.
+ */
+export type WorktreeDeleteResult = {
+  worktreePath: string;
+  branch: string | null;
+  branchSha: string | null;
+};
+
 export type RefInfo = {
   name: string;
   fullName: string;
