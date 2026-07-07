@@ -150,20 +150,27 @@ function agentScript(): string {
   `;
 }
 
-const TEST_AGENT_CONFIG = {
-  command: 'node',
-  args: ['-e', agentScript()],
-  mode: 'terminal' as const,
+const TEST_AGENT_ROSTER = {
+  agents: [{
+    id: 'e2e-test-agent',
+    name: 'node',
+    command: 'node',
+    args: ['-e', agentScript()],
+    env: {},
+    mode: 'terminal' as const,
+    acp: false,
+  }],
+  defaultAgentId: 'e2e-test-agent',
 };
 
 async function seedTestAgent(): Promise<void> {
   await browser.executeAsync(
-    (config: unknown, done: (err?: string) => void) => {
-      (window as unknown as { api: { saveAgentConfig: (c: unknown) => Promise<void> } })
-        .api.saveAgentConfig(config)
+    (roster: unknown, done: (err?: string) => void) => {
+      (window as unknown as { api: { saveAgentRoster: (r: unknown) => Promise<void> } })
+        .api.saveAgentRoster(roster)
         .then(() => done(), (e: unknown) => done(String(e)));
     },
-    TEST_AGENT_CONFIG
+    TEST_AGENT_ROSTER
   );
 }
 

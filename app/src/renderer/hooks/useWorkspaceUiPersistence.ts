@@ -5,7 +5,7 @@ import {
   type Tab,
   type TerminalLayout,
 } from "../stores/workspace-store.js";
-import type { AgentConfig, WorktreeInfo } from "@sproutgit/types";
+import type { AgentRosterEntry, WorktreeInfo } from "@sproutgit/types";
 
 /**
  * Keeps the workspace UI's transient session state (active worktree/tab,
@@ -19,7 +19,7 @@ export function useWorkspaceUiPersistence(params: {
   activeWorktree: WorktreeInfo | null;
   activeTab: Tab;
   terminalLayout: TerminalLayout;
-  agentConfig: AgentConfig | null;
+  agentConfig: AgentRosterEntry | null;
   sidebarCollapsed: boolean;
   setSidebarCollapsed: (updater: (collapsed: boolean) => boolean) => void;
 }) {
