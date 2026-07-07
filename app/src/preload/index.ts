@@ -17,6 +17,9 @@ import type {
   GitHubRepo,
   PullRequestStatus,
   PullRequestInfo,
+  CheckFailureDetail,
+  MergeMethod,
+  MergePullRequestResult,
   EditorInfo,
   GitToolInfo,
   WorkspaceInitResult,
@@ -640,6 +643,15 @@ const api = {
 
   githubCreatePr: (args: { worktreePath: string; title: string; body?: string; base: string; draft?: boolean }): Promise<PullRequestInfo> =>
     invoke(IPC.GITHUB_CREATE_PR, args),
+
+  githubGetCheckFailureDetail: (args: { worktreePath: string; checkId: string }): Promise<CheckFailureDetail | null> =>
+    invoke(IPC.GITHUB_GET_CHECK_FAILURE_DETAIL, args),
+
+  githubSetPrReady: (args: { worktreePath: string; ready: boolean }): Promise<PullRequestInfo> =>
+    invoke(IPC.GITHUB_SET_PR_READY, args),
+
+  githubMergePr: (args: { worktreePath: string; method: MergeMethod }): Promise<MergePullRequestResult> =>
+    invoke(IPC.GITHUB_MERGE_PR, args),
 
   // ── Auto-update ─────────────────────────────────────────────────────────
   checkForUpdates: (): Promise<void> =>

@@ -81,7 +81,7 @@ function SettingsPage() {
             </div>
           </div>
 
-          <GitHubSection onToast={toast} onAuthChange={setGithubAuth} />
+          <GitHubSection onToast={toast} onAuthChange={setGithubAuth} workspacePath={workspacePath} />
 
           <div className="grid gap-6 xl:grid-cols-[1.6fr_1fr]">
             <div className="flex flex-col gap-6">

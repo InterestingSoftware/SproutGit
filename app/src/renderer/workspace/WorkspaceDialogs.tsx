@@ -5,11 +5,13 @@ import { DeleteWorktreeDialog } from "./dialogs/DeleteWorktreeDialog.js";
 import { PublishDialog } from "./dialogs/PublishDialog.js";
 import { RunHookDialog } from "./dialogs/RunHookDialog.js";
 import { CreatePrDialog } from "./dialogs/CreatePrDialog.js";
+import { PrDetailsDialog } from "./dialogs/PrDetailsDialog.js";
 import type {
   RefInfo,
   WorktreeInfo,
   WorktreePushStatus,
   IssueTrackerPattern,
+  PullRequestStatus,
 } from "@sproutgit/types";
 import type { ToastFn } from "../toast-context.js";
 
@@ -38,6 +40,10 @@ type Props = {
   createPrTarget: WorktreeInfo | null;
   onCloseCreatePr: () => void;
   onPrCreated: () => void;
+
+  prDetailsTarget: WorktreeInfo | null;
+  prDetailsStatus: PullRequestStatus | null;
+  onClosePrDetails: () => void;
 
   runHookTarget: WorktreeInfo | null;
   onCloseRunHookModal: () => void;
@@ -70,6 +76,9 @@ export function WorkspaceDialogs({
   createPrTarget,
   onCloseCreatePr,
   onPrCreated,
+  prDetailsTarget,
+  prDetailsStatus,
+  onClosePrDetails,
   runHookTarget,
   onCloseRunHookModal,
   deleteTarget,
@@ -128,6 +137,15 @@ export function WorkspaceDialogs({
         onClose={onCloseCreatePr}
         onToast={(msg, v) => toast(msg, v)}
         onCreated={onPrCreated}
+      />
+
+      {/* PR details dialog (checks, draft/ready, merge) */}
+      <PrDetailsDialog
+        open={!!prDetailsTarget}
+        worktree={prDetailsTarget}
+        status={prDetailsStatus}
+        onClose={onClosePrDetails}
+        onToast={(msg, v) => toast(msg, v)}
       />
 
       {/* Run hook dialog */}

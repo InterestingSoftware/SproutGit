@@ -39,6 +39,8 @@ export type ChecksState = 'passing' | 'failing' | 'pending' | 'none';
 
 export type PullRequestInfo = {
   number: number;
+  /** GraphQL node id — required for the ready-for-review/draft mutations, which have no REST equivalent. */
+  nodeId: string;
   url: string;
   title: string;
   state: PullRequestState;
@@ -47,9 +49,22 @@ export type PullRequestInfo = {
   baseBranch: string;
 };
 
+/** One check result on a PR's head commit, from either the Checks API (GitHub Actions etc.) or the legacy commit-statuses API. */
+export type PullRequestCheck = {
+  /** `check_run:<id>` or `status:<id>` — unique within one PR's check list. */
+  id: string;
+  name: string;
+  source: 'check_run' | 'status';
+  status: 'queued' | 'in_progress' | 'completed';
+  /** e.g. success/failure/neutral/cancelled/timed_out/action_required/skipped/stale, or the legacy status's error/failure/pending/success. Null while not yet completed. */
+  conclusion: string | null;
+  detailsUrl: string | null;
+};
+
 export type PullRequestStatus = {
   pullRequest: PullRequestInfo | null;
   checksState: ChecksState;
+  checks: PullRequestCheck[];
 };
 
 export type CreatePullRequestInput = {
@@ -61,3 +76,31 @@ export type CreatePullRequestInput = {
   body?: string;
   draft?: boolean;
 };
+
+/** A single annotation (inline log excerpt) attached to a failing check run. */
+export type CheckAnnotation = {
+  path: string;
+  startLine: number;
+  endLine: number;
+  annotationLevel: string;
+  message: string;
+  title: string | null;
+};
+
+/** Failure summary/log excerpt + annotations for one check run — only available for `check_run`-sourced checks, since legacy commit statuses carry no log detail. */
+export type CheckFailureDetail = {
+  name: string;
+  summary: string | null;
+  text: string | null;
+  annotations: CheckAnnotation[];
+};
+
+export type MergeMethod = 'merge' | 'squash' | 'rebase';
+
+export type MergePullRequestResult = {
+  merged: boolean;
+  message: string;
+};
+
+/** Per-workspace policy gating agent-initiated (MCP) ready-for-review/merge actions. Enforcement lands with the MCP tool exposure (#145) — for now this is read/write plumbing only. */
+export type AgentPrPermission = 'auto' | 'ask' | 'never';

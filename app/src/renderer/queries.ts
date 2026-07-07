@@ -8,7 +8,7 @@ import { api } from './api.js';
  */
 
 import { useQuery, useQueries, useMutation, useQueryClient } from '@tanstack/react-query';
-import type { CommitEntry, RefInfo, WorktreeInfo, WorkspaceStatus, WorktreePushStatus, IssueTrackerPattern, FetchSummary, FileTreeNode, GitHubAuthStatus, PullRequestStatus } from '@sproutgit/types';
+import type { CommitEntry, RefInfo, WorktreeInfo, WorkspaceStatus, WorktreePushStatus, IssueTrackerPattern, FetchSummary, FileTreeNode, GitHubAuthStatus, PullRequestStatus, PullRequestInfo, MergeMethod, MergePullRequestResult } from '@sproutgit/types';
 
 // ── Query key factory ─────────────────────────────────────────────────────────
 
@@ -195,6 +195,24 @@ export function usePrStatuses(
     statuses[targets[i]!.path] = results[i]?.data ?? null;
   }
   return statuses;
+}
+
+/** Toggles a PR between draft and ready for review, refetching its PR status on success. */
+export function useSetPrReady(worktreePath: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (ready: boolean) => api.githubSetPrReady({ worktreePath, ready }) as Promise<PullRequestInfo>,
+    onSuccess: () => void qc.invalidateQueries({ queryKey: qk.prStatus(worktreePath) }),
+  });
+}
+
+/** Merges the PR for `worktreePath`, refetching its PR status on success. */
+export function useMergePr(worktreePath: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (method: MergeMethod) => api.githubMergePr({ worktreePath, method }) as Promise<MergePullRequestResult>,
+    onSuccess: () => void qc.invalidateQueries({ queryKey: qk.prStatus(worktreePath) }),
+  });
 }
 
 // ── Mutations ─────────────────────────────────────────────────────────────────
