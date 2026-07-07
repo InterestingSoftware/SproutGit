@@ -26,6 +26,31 @@ vi.mock('../../api.js', () => ({
   },
 }));
 
+// `@sproutgit/ui`'s barrel also re-exports MonacoEditor, whose module-scope
+// imports (monaco-editor's clipboard contribution) crash under jsdom
+// (`document.queryCommandSupported` doesn't exist there). ModelPicker's own
+// behavior is covered by its dedicated test in packages/ui — here a minimal
+// stand-in (trigger + always-rendered option buttons) is enough to exercise
+// ChatPanel's wiring without paying that import cost.
+vi.mock('@sproutgit/ui', () => ({
+  ModelPicker: (props: {
+    groups: { groupLabel: string; models: { id: string; label: string }[] }[];
+    value?: string;
+    onChange: (id: string) => void;
+  }) => {
+    const allModels = props.groups.flatMap(g => g.models);
+    const selectedLabel = allModels.find(m => m.id === props.value)?.label ?? 'Select…';
+    return (
+      <div>
+        <button type="button" data-testid="model-picker-trigger">{selectedLabel}</button>
+        {allModels.map(m => (
+          <button key={m.id} type="button" onClick={() => props.onChange(m.id)}>{m.label}</button>
+        ))}
+      </div>
+    );
+  },
+}));
+
 import { ChatPanel } from '../ChatPanel.js';
 
 afterEach(() => { cleanup(); });
@@ -260,12 +285,13 @@ describe('ChatPanel', () => {
     await user.click(screen.getByTestId('btn-chat-send'));
 
     await waitFor(() => expect(screen.getByTestId('chat-config-select-model')).toBeTruthy());
-    expect((screen.getByTestId('chat-config-select-model') as HTMLSelectElement).value).toBe('claude-opus-4-8');
+    expect(screen.getByTestId('chat-config-select-model').textContent).toContain('Opus 4.8');
 
-    await user.selectOptions(screen.getByTestId('chat-config-select-model'), 'claude-sonnet-5');
+    await user.click(screen.getByTestId('model-picker-trigger'));
+    await user.click(screen.getByText('Sonnet 5'));
 
     expect(chatSetConfigOptionMock).toHaveBeenCalledWith({ sessionId: 'session-1', configId: 'model', value: 'claude-sonnet-5' });
-    await waitFor(() => expect((screen.getByTestId('chat-config-select-model') as HTMLSelectElement).value).toBe('claude-sonnet-5'));
+    await waitFor(() => expect(screen.getByTestId('chat-config-select-model').textContent).toContain('Sonnet 5'));
   });
 
   it('shows the error banner when a result event reports failure', async () => {

@@ -154,26 +154,26 @@ async function applyPatch(worktreePath: string, patch: string, reverse: boolean)
 // ─── Internal helpers ─────────────────────────────────────────────────────────
 
 function parsePorcelainStatus(raw: string): StatusFileEntry[] {
-  const lines = raw.trim().split('\n').filter(Boolean);
-
-  // `gitForPath()` configures simple-git with `trimmed: true`, which runs a
-  // whole-string `.trim()` on git's stdout. When the very first status line
-  // legitimately starts with a space (an unstaged-only change, e.g.
-  // " M file.txt"), that leading space is indistinguishable from incidental
-  // whitespace and gets stripped too, shifting every column in that line
-  // left by one. A well-formed `--porcelain=v1` line always has a space at
-  // index 2 (right after the two status columns) — restore the loss if
-  // that invariant doesn't hold for the first line.
-  const first = lines[0];
-  if (first !== undefined && first[2] !== ' ') {
-    lines[0] = ` ${first}`;
-  }
-
-  return lines
+  return raw
+    .split('\n')
+    .filter(Boolean)
     .map(line => {
-      const indexStatus = line[0] ?? ' ';
-      const worktreeStatus = line[1] ?? ' ';
-      const filePath = line.slice(3).trim();
+      // A well-formed porcelain=v1 line is "XY path" — two status columns
+      // then a separating space at index 2. But `gitForPath()` constructs
+      // its SimpleGit client with `trimmed: true`, which trims the *entire*
+      // raw output string (not just its trailing newline) before we ever see
+      // it here. When the first-listed file is unstaged-only (index column
+      // is a literal space, e.g. " M path"), that leading space is the first
+      // character of the whole blob and gets eaten, shifting every column
+      // left by one ("M path") — misreporting it as staged and truncating
+      // its path. Detect the shift the same way simple-git's own built-in
+      // status parser does: a genuine separator lands at index 2; if it
+      // instead lands at index 1, the line lost its leading (empty) index
+      // column and needs it added back.
+      const shifted = line.charAt(2) !== ' ' && line.charAt(1) === ' ';
+      const indexStatus = shifted ? ' ' : (line[0] ?? ' ');
+      const worktreeStatus = shifted ? line.charAt(0) : (line[1] ?? ' ');
+      const filePath = (shifted ? line.slice(2) : line.slice(3)).trim();
 
       // Staged = index column is not a space or '?'
       const staged = indexStatus !== ' ' && indexStatus !== '?';

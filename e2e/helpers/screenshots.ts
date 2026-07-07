@@ -144,7 +144,7 @@ const DARK_XTERM_THEME = {
   brightWhite: '#a6adc8',
 };
 
-async function forceTheme(theme: 'light' | 'dark'): Promise<void> {
+export async function forceTheme(theme: 'light' | 'dark'): Promise<void> {
   const cssVars = theme === 'dark' ? DARK_CSS_VARS : LIGHT_CSS_VARS;
   const termBg = theme === 'dark' ? '#1e1e2e' : '#eff1f5';
   const styleContent = `:root{${cssVars}} [data-sg-terminal]{background-color:${termBg}!important}`;

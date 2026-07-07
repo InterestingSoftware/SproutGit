@@ -1,0 +1,43 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Dev Server",
+      "type": "node",
+      "request": "launch",
+      "cwd": "${workspaceFolder}",
+      "runtimeExecutable": "pnpm",
+      "runtimeArgs": [
+        "dev"
+      ],
+      "preLaunchTask": "pnpm: install",
+      "console": "integratedTerminal",
+      "presentation": {
+        "hidden": true
+      }
+    },
+    {
+      "name": "Electron Main Process",
+      "type": "node",
+      "request": "attach",
+      "port": 5858,
+      "timeout": 30000,
+      "restart": true,
+      "skipFiles": [
+        "<node_internals>/**"
+      ],
+      "presentation": {
+        "hidden": true
+      }
+    }
+  ],
+  "compounds": [
+    {
+      "name": "Launch SproutGit",
+      "configurations": [
+        "Dev Server",
+        "Electron Main Process"
+      ]
+    }
+  ]
+}

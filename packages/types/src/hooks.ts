@@ -136,3 +136,27 @@ export type HookTerminalLaunchEvent = {
   cwd: string;
   keepOpenOnCompletion: boolean;
 };
+
+/** One row of the hook-run audit log (`hook_runs` table), as read back for display/diagnosis. */
+export type HookRunRecord = {
+  id: string;
+  hookId: string;
+  hookName: string;
+  trigger: string;
+  worktreePath: string;
+  status: 'success' | 'failure' | 'skipped' | 'timeout';
+  stdoutSnippet: string | null;
+  stderrSnippet: string | null;
+  errorMessage: string | null;
+  /** ISO 8601 timestamp. */
+  ranAt: string;
+};
+
+/** Outcome of a single hook execution attempt — returned by the MCP run_hook tool (and usable anywhere else a caller needs the result rather than just fire-and-forget). */
+export type HookRunOutcome = {
+  hookId: string;
+  hookName: string;
+  /** 'not_run' covers every case where the hook never actually executed — not found, disabled, or (for repo hooks) untrusted. `errorMessage` explains which. */
+  status: 'success' | 'error' | 'timed_out' | 'not_run';
+  errorMessage: string | null;
+};

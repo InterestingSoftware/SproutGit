@@ -8,7 +8,7 @@ import { api } from './api.js';
  */
 
 import { useQuery, useQueries, useMutation, useQueryClient } from '@tanstack/react-query';
-import type { CommitEntry, RefInfo, WorktreeInfo, WorkspaceStatus, WorktreePushStatus, IssueTrackerPattern, FetchSummary, FileTreeNode } from '@sproutgit/types';
+import type { CommitEntry, RefInfo, WorktreeInfo, WorkspaceStatus, WorktreePushStatus, IssueTrackerPattern, FetchSummary, FileTreeNode, GitHubAuthStatus, PullRequestStatus, PullRequestInfo, MergeMethod, MergePullRequestResult, WorktreeDeleteResult } from '@sproutgit/types';
 
 // ── Query key factory ─────────────────────────────────────────────────────────
 
@@ -26,6 +26,8 @@ export const qk = {
     ['diffContent', repoPath, range, file, staged] as const,
   issueTrackerPatterns: (worktreePath: string) => ['issueTrackerPatterns', worktreePath] as const,
   fileTree: (worktreePath: string) => ['fileTree', worktreePath] as const,
+  githubAuthStatus: () => ['githubAuthStatus'] as const,
+  prStatus: (worktreePath: string) => ['prStatus', worktreePath] as const,
 } as const;
 
 // ── Workspace inspection ──────────────────────────────────────────────────────
@@ -149,6 +151,70 @@ export function useWorktreeChangeCounts(
   return counts;
 }
 
+// ── GitHub PR status ─────────────────────────────────────────────────────────
+
+export function useGithubAuthStatus() {
+  return useQuery({
+    queryKey: qk.githubAuthStatus(),
+    queryFn: () => api.githubAuthStatus() as Promise<GitHubAuthStatus>,
+    staleTime: 30_000,
+    retry: 0,
+  });
+}
+
+/**
+ * Fetches PR + combined check status for every non-root worktree, one query
+ * per worktree (mirrors useWorktreeChangeCounts). Gated on GitHub being
+ * connected — when it's not, no IPC calls fire and every entry is null,
+ * which the sidebar treats as "no PR info" rather than an error.
+ */
+export function usePrStatuses(
+  worktrees: WorktreeInfo[],
+  rootPath: string | undefined,
+  githubConnected: boolean,
+) {
+  // Waits for rootPath to resolve (rather than just excluding `undefined`)
+  // so the still-unknown root worktree doesn't get a wasted PR-status IPC
+  // call/refetch cycle before workspaceStatus has loaded.
+  const targets = rootPath ? worktrees.filter(w => w.path !== rootPath && !!w.path) : [];
+
+  const results = useQueries({
+    queries: targets.map(wt => ({
+      queryKey: qk.prStatus(wt.path),
+      queryFn: () => api.githubGetPrStatus(wt.path) as Promise<PullRequestStatus | null>,
+      enabled: githubConnected && !!rootPath,
+      staleTime: 30_000,
+      refetchInterval: 60_000,
+      retry: 0,
+      throwOnError: false,
+    })),
+  });
+
+  const statuses: Record<string, PullRequestStatus | null> = {};
+  for (let i = 0; i < targets.length; i++) {
+    statuses[targets[i]!.path] = results[i]?.data ?? null;
+  }
+  return statuses;
+}
+
+/** Toggles a PR between draft and ready for review, refetching its PR status on success. */
+export function useSetPrReady(worktreePath: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (ready: boolean) => api.githubSetPrReady({ worktreePath, ready }) as Promise<PullRequestInfo>,
+    onSuccess: () => void qc.invalidateQueries({ queryKey: qk.prStatus(worktreePath) }),
+  });
+}
+
+/** Merges the PR for `worktreePath`, refetching its PR status on success. */
+export function useMergePr(worktreePath: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (method: MergeMethod) => api.githubMergePr({ worktreePath, method }) as Promise<MergePullRequestResult>,
+    onSuccess: () => void qc.invalidateQueries({ queryKey: qk.prStatus(worktreePath) }),
+  });
+}
+
 // ── Mutations ─────────────────────────────────────────────────────────────────
 
 export function useFetch(worktreePath: string, gitRepoPath: string) {
@@ -208,11 +274,23 @@ export function useDeleteWorktree(gitRepoPath: string) {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (args: { workspacePath: string; rootRepoPath: string; managedWorktreesPath?: string; worktreePath: string; deleteBranch: boolean; branchName?: string | null; initiatingWorktreePath?: string | null; afterRemoveWorktreePath?: string | null }) =>
-      api.deleteWorktree(args) as Promise<void>,
+      api.deleteWorktree(args) as Promise<WorktreeDeleteResult>,
     onSuccess: (_data, args) => {
       // Remove cached status for the deleted worktree so no in-flight refetch
       // can fire against the now-missing directory and show an error toast.
       qc.removeQueries({ queryKey: qk.worktreeStatus(args.worktreePath) });
+      void qc.invalidateQueries({ queryKey: qk.worktrees(gitRepoPath) });
+      void qc.invalidateQueries({ queryKey: qk.refs(gitRepoPath) });
+    },
+  });
+}
+
+export function useRestoreWorktree(gitRepoPath: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (args: { rootRepoPath: string; deleted: WorktreeDeleteResult; managedWorktreesPath?: string }) =>
+      api.restoreWorktree(args) as Promise<void>,
+    onSuccess: () => {
       void qc.invalidateQueries({ queryKey: qk.worktrees(gitRepoPath) });
       void qc.invalidateQueries({ queryKey: qk.refs(gitRepoPath) });
     },

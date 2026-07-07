@@ -1,1 +1,11 @@
-export { TerminalManager, TerminalManagerWithMeta, type SpawnOptions, type TerminalDataCallback, type TerminalExitCallback } from './terminal-manager.js';
+export {
+  TerminalManager,
+  TerminalManagerWithMeta,
+  selectIdleAgentSessions,
+  type SpawnOptions,
+  type SessionMeta,
+  type TerminalDataCallback,
+  type TerminalExitCallback,
+  type TerminalIdleCallback,
+} from './terminal-manager.js';
+export { IdleTracker } from './idle-tracker.js';

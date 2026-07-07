@@ -2,7 +2,7 @@ import { create } from 'zustand';
 import type { WorktreeInfo } from '@sproutgit/types';
 
 export type Tab = 'graph' | 'staging' | 'terminal' | 'chat' | 'files';
-type TerminalLayout = 'tabs' | 'split' | 'grid';
+export type TerminalLayout = 'tabs' | 'split' | 'grid';
 type TerminalSession = {
   id: string;
   label: string;

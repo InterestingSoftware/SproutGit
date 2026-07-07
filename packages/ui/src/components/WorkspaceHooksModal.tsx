@@ -11,7 +11,8 @@ import type {
 import { Spinner } from './Spinner.js';
 import { Select } from './Select.js';
 import { MonacoEditor } from './MonacoEditor.js';
-import { X, Trash2, Plus, Circle, CircleDot, Clock3, TerminalSquare, ShieldAlert, GitBranch, ShieldCheck, Lock } from 'lucide-react';
+import { useContextMenu } from './ContextMenu.js';
+import { X, Trash2, Plus, Circle, CircleDot, Clock3, TerminalSquare, ShieldAlert, GitBranch, ShieldCheck, Lock, Wand2, FileText, PackageCheck, FolderSymlink } from 'lucide-react';
 
 const TRIGGER_OPTIONS: { value: WorkspaceHookTrigger; label: string }[] = [
   { value: 'before_worktree_create', label: 'Before worktree create' },
@@ -39,6 +40,169 @@ function shellFromPath(path?: string): WorkspaceHookShell {
   if (lower.includes('bash')) return 'bash';
   return 'bash';
 }
+
+const isPwsh = (shell: WorkspaceHookShell) => shell === 'pwsh' || shell === 'powershell';
+
+type HookPreset = {
+  id: string;
+  label: string;
+  description: string;
+  icon: typeof FileText;
+  timeoutSeconds: number;
+  buildScript: (shell: WorkspaceHookShell) => string;
+};
+
+/**
+ * Turnkey templates for the most common "make a fresh worktree runnable"
+ * chores (see issue #98). Picking one only pre-fills the new-hook draft —
+ * nothing is saved or trusted differently than a hand-written hook, since
+ * it's still just a local hook the user reviews/edits before it's stored in
+ * local-hooks.json like any other.
+ */
+const HOOK_PRESETS: HookPreset[] = [
+  {
+    id: 'copy-env-files',
+    label: 'Copy .env files',
+    description: 'Copies untracked config files from the worktree you branched from into the new one.',
+    icon: FileText,
+    timeoutSeconds: 30,
+    buildScript: shell => isPwsh(shell)
+      ? [
+        '# Copies untracked env files from the worktree this one was created from.',
+        '# Edit $EnvFiles below to match the files your project actually uses.',
+        '$SourceWorktree = $env:SPROUTGIT_INITIATING_WORKTREE',
+        "$EnvFiles = @('.env', '.env.local', '.env.development.local')",
+        '',
+        'if (-not $SourceWorktree -or -not (Test-Path $SourceWorktree)) {',
+        '  Write-Host "No source worktree to copy from - skipping."',
+        '  exit 0',
+        '}',
+        '',
+        'foreach ($f in $EnvFiles) {',
+        '  $src = Join-Path $SourceWorktree $f',
+        '  $dest = Join-Path $env:SPROUTGIT_WORKTREE $f',
+        '  if ((Test-Path $src -PathType Leaf) -and -not (Test-Path $dest)) {',
+        '    Copy-Item $src $dest',
+        '    Write-Host "Copied $f"',
+        '  }',
+        '}',
+        '',
+      ].join('\n')
+      : [
+        `#!/usr/bin/env ${shell === 'zsh' ? 'zsh' : 'bash'}`,
+        '# Copies untracked env files from the worktree this one was created from.',
+        '# Edit ENV_FILES below to match the files your project actually uses.',
+        'set -uo pipefail',
+        '',
+        'SOURCE_WORKTREE="$SPROUTGIT_INITIATING_WORKTREE"',
+        'ENV_FILES=(.env .env.local .env.development.local)',
+        '',
+        'if [ -z "$SOURCE_WORKTREE" ] || [ ! -d "$SOURCE_WORKTREE" ]; then',
+        '  echo "No source worktree to copy from - skipping."',
+        '  exit 0',
+        'fi',
+        '',
+        'for f in "${ENV_FILES[@]}"; do',
+        '  src="$SOURCE_WORKTREE/$f"',
+        '  dest="$SPROUTGIT_WORKTREE/$f"',
+        '  if [ -f "$src" ] && [ ! -f "$dest" ]; then',
+        '    cp "$src" "$dest"',
+        '    echo "Copied $f"',
+        '  fi',
+        'done',
+        '',
+      ].join('\n'),
+  },
+  {
+    id: 'install-dependencies',
+    label: 'Install dependencies',
+    description: 'Detects the package manager from its lockfile and installs dependencies in the new worktree.',
+    icon: PackageCheck,
+    timeoutSeconds: 600,
+    buildScript: shell => isPwsh(shell)
+      ? [
+        '# Detects the package manager from its lockfile and installs dependencies.',
+        'Set-Location $env:SPROUTGIT_WORKTREE',
+        '',
+        'if (Test-Path pnpm-lock.yaml) {',
+        '  pnpm install',
+        '} elseif (Test-Path yarn.lock) {',
+        '  yarn install',
+        '} elseif ((Test-Path bun.lockb) -or (Test-Path bun.lock)) {',
+        '  bun install',
+        '} elseif (Test-Path package-lock.json) {',
+        '  npm install',
+        '} else {',
+        '  Write-Host "No recognized lockfile found - skipping install."',
+        '}',
+        '',
+      ].join('\n')
+      : [
+        `#!/usr/bin/env ${shell === 'zsh' ? 'zsh' : 'bash'}`,
+        '# Detects the package manager from its lockfile and installs dependencies.',
+        'set -eo pipefail',
+        'cd "$SPROUTGIT_WORKTREE"',
+        '',
+        'if [ -f pnpm-lock.yaml ]; then',
+        '  pnpm install',
+        'elif [ -f yarn.lock ]; then',
+        '  yarn install',
+        'elif [ -f bun.lockb ] || [ -f bun.lock ]; then',
+        '  bun install',
+        'elif [ -f package-lock.json ]; then',
+        '  npm install',
+        'else',
+        '  echo "No recognized lockfile found - skipping install."',
+        'fi',
+        '',
+      ].join('\n'),
+  },
+  {
+    id: 'symlink-shared-cache',
+    label: 'Symlink shared cache',
+    description: 'Links a shared directory (e.g. node_modules) into the new worktree instead of reinstalling it from scratch.',
+    icon: FolderSymlink,
+    timeoutSeconds: 30,
+    buildScript: shell => isPwsh(shell)
+      ? [
+        '# Symlinks a shared cache directory into the new worktree instead of',
+        '# reinstalling it from scratch. Edit $SharedDir / $LinkName for your project.',
+        '$SharedDir = Join-Path $env:SPROUTGIT_WORKSPACE ".shared-cache\\node_modules"',
+        '$LinkName = Join-Path $env:SPROUTGIT_WORKTREE "node_modules"',
+        '',
+        'New-Item -ItemType Directory -Force -Path $SharedDir | Out-Null',
+        '',
+        'if ((Test-Path $LinkName) -and -not (Get-Item $LinkName).LinkType) {',
+        '  Write-Host "$LinkName already exists and is not a symlink - leaving it alone."',
+        '  exit 0',
+        '}',
+        '',
+        'New-Item -ItemType SymbolicLink -Path $LinkName -Target $SharedDir -Force | Out-Null',
+        'Write-Host "Linked $LinkName -> $SharedDir"',
+        '',
+      ].join('\n')
+      : [
+        `#!/usr/bin/env ${shell === 'zsh' ? 'zsh' : 'bash'}`,
+        '# Symlinks a shared cache directory into the new worktree instead of',
+        '# reinstalling it from scratch. Edit SHARED_DIR / LINK_NAME for your project.',
+        'set -euo pipefail',
+        '',
+        'SHARED_DIR="$SPROUTGIT_WORKSPACE/.shared-cache/node_modules"',
+        'LINK_NAME="$SPROUTGIT_WORKTREE/node_modules"',
+        '',
+        'mkdir -p "$SHARED_DIR"',
+        '',
+        'if [ -e "$LINK_NAME" ] && [ ! -L "$LINK_NAME" ]; then',
+        '  echo "$LINK_NAME already exists and is not a symlink - leaving it alone."',
+        '  exit 0',
+        'fi',
+        '',
+        'ln -sfn "$SHARED_DIR" "$LINK_NAME"',
+        'echo "Linked $LINK_NAME -> $SHARED_DIR"',
+        '',
+      ].join('\n'),
+  },
+];
 
 const EXECUTION_TARGET_OPTIONS: Array<{ value: HookExecutionTarget; label: string }> = [
   { value: 'trigger_worktree', label: 'Trigger worktree' },
@@ -180,6 +344,7 @@ function executionTargetLabel(target: HookExecutionTarget): string {
 }
 
 export function WorkspaceHooksModal({ open, workspacePath, worktreePath, api, onClose, defaultShell }: Props) {
+  const { open: openMenu } = useContextMenu();
   const [hooks, setHooks] = useState<WorkspaceHook[]>([]);
   const [repoFileError, setRepoFileError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -356,6 +521,37 @@ export function WorkspaceHooksModal({ open, workspacePath, worktreePath, api, on
     }
   }
 
+  /** Auto-saves the current draft, then opens the new-hook form pre-filled from a preset for review before saving. */
+  async function handleAddPreset(preset: HookPreset) {
+    setSavingDraft(true);
+    setSaveError(null);
+    try {
+      await saveDraftIfNeeded();
+      await refreshHooks().catch(() => hooks);
+      setEditing(null);
+      setViewingRepoHook(null);
+      const shell = shellFromPath(defaultShell);
+      setCreating({
+        ...defaultDraft(shell),
+        name: preset.label,
+        script: preset.buildScript(shell),
+        timeoutSeconds: preset.timeoutSeconds,
+      });
+    } catch (err) {
+      setSaveError(String(err));
+    } finally {
+      setSavingDraft(false);
+    }
+  }
+
+  function openPresetMenu(e: React.MouseEvent) {
+    openMenu(e, HOOK_PRESETS.map(preset => ({
+      label: preset.label,
+      icon: <preset.icon size={14} />,
+      onClick: () => void handleAddPreset(preset),
+    })));
+  }
+
   async function toggleHook(hook: WorkspaceHook) {
     await api.toggleHook(workspacePath, hook.id, !hook.enabled);
     const updated = await refreshHooks();
@@ -393,7 +589,11 @@ export function WorkspaceHooksModal({ open, workspacePath, worktreePath, api, on
   const sectionCard = 'rounded-lg border border-(--sg-border-subtle) bg-(--sg-surface-subtle) p-3 flex flex-col gap-2';
 
   return (
-    <div className="fixed inset-0 z-200 bg-black/45 flex items-center justify-center" onClick={() => void handleClose()}>
+    <div
+      className="fixed inset-0 z-200 bg-black/45 flex items-center justify-center"
+      onClick={() => void handleClose()}
+      data-testid="modal-workspace-hooks-backdrop"
+    >
       <div
         className="bg-(--sg-surface) border border-(--sg-border) rounded-xl shadow-[0_20px_60px_rgba(0,0,0,0.25)] flex flex-col overflow-hidden"
         style={{ minWidth: 560, maxWidth: 1100, width: '92vw', maxHeight: '88vh' }}
@@ -401,6 +601,7 @@ export function WorkspaceHooksModal({ open, workspacePath, worktreePath, api, on
         role="dialog"
         aria-modal
         aria-label="Manage hooks"
+        data-testid="modal-workspace-hooks"
       >
         <div className="px-5 py-4 border-b border-(--sg-border) shrink-0 bg-linear-to-r from-[rgba(25,172,92,0.12)] to-transparent">
           <div className="flex items-start justify-between gap-4">
@@ -411,6 +612,15 @@ export function WorkspaceHooksModal({ open, workspacePath, worktreePath, api, on
               </p>
             </div>
             <div className="flex items-center gap-2 shrink-0">
+              <button
+                className={`${secondaryBtn} sg-hook-preset-btn`}
+                disabled={savingDraft}
+                onClick={openPresetMenu}
+                data-testid="btn-add-hook-preset"
+                title="Add a preset hook (copy .env files, install dependencies, symlink a shared cache)"
+              >
+                <Wand2 size={12} /> Add preset
+              </button>
               <button
                 className={secondaryBtn}
                 disabled={savingDraft}
@@ -580,6 +790,7 @@ export function WorkspaceHooksModal({ open, workspacePath, worktreePath, api, on
                     value={activeDraft.name}
                     onChange={e => updateDraft({ name: e.target.value })}
                     placeholder="e.g. Install dependencies"
+                    data-testid="input-hook-name"
                   />
                 </div>
                 <div className="flex flex-col gap-1">

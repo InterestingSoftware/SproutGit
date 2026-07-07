@@ -6,6 +6,7 @@ export {
   createFirstManagedWorktree,
   addWorktreeForExistingBranch,
   deleteManagedWorktree,
+  restoreDeletedWorktree,
 } from './worktrees.js';
 export { getCommitGraph, countCommits, listRefs, getRecentCommitSubjects } from './commits.js';
 export {
@@ -23,6 +24,7 @@ export {
   pullWorktree,
   pushWorktreeBranch,
   getWorktreePushStatus,
+  getRemoteUrl,
 } from './remote.js';
 export { getDiffFiles, getDiffContent, getWorkingDiff, getStagedDiff, getUnstagedFileDiff } from './diff.js';
 export { initBareRepo, cloneBareRepo } from './init.js';

@@ -24,6 +24,7 @@ import type {
   HookListResult,
   HookUpsertInput,
   HookFileDefinition,
+  HookRunOutcome,
 } from '@sproutgit/types';
 import { canonicalize } from '@sproutgit/paths';
 import { openWorkspaceDb, eq, type ConfigDb } from '@sproutgit/database';
@@ -178,14 +179,33 @@ interface RunHookArgs {
   initiatingWorktreePath?: string | null;
 }
 
-async function runHook(args: RunHookArgs, win: BrowserWindow, configDb: ConfigDb): Promise<void> {
+/**
+ * Resolves `args.hookId` against the effective hook set and runs it if (and
+ * only if) it's enabled and trusted — exactly the same gate the UI applies.
+ * Returns the outcome rather than firing-and-forgetting so callers that
+ * need to report a result (the MCP run_hook tool, via runHookForMcp below)
+ * can do so without duplicating this lookup/gate logic themselves.
+ */
+async function runHook(args: RunHookArgs, win: BrowserWindow, configDb: ConfigDb): Promise<HookRunOutcome> {
   const { hooks } = getEffectiveHooks(args.workspacePath, args.worktreePath, configDb);
   const hook = hooks.find(h => h.id === args.hookId);
-  if (!hook || !hook.enabled || !hook.trusted) return;
-  await runResolvedHook(hook, args, win);
+  if (!hook) {
+    return { hookId: args.hookId, hookName: args.hookId, status: 'not_run', errorMessage: `No hook "${args.hookId}" found for this worktree.` };
+  }
+  if (!hook.enabled) {
+    return { hookId: hook.id, hookName: hook.name, status: 'not_run', errorMessage: 'Hook is disabled.' };
+  }
+  if (!hook.trusted) {
+    // Repo hooks arrive via git checkout — trust is a per-hook human
+    // decision (app/src/main/hooks-trust.ts) that MCP must never grant or
+    // bypass. This is the same refusal the Run Hook dialog hits (it only
+    // ever offers hooks it already filtered to enabled && trusted).
+    return { hookId: hook.id, hookName: hook.name, status: 'not_run', errorMessage: 'Repo hook is untrusted — trust it from the app UI before it can run. Trust cannot be granted over MCP.' };
+  }
+  return runResolvedHook(hook, args, win);
 }
 
-async function runResolvedHook(hook: WorkspaceHook, args: RunHookArgs, win: BrowserWindow): Promise<void> {
+async function runResolvedHook(hook: WorkspaceHook, args: RunHookArgs, win: BrowserWindow): Promise<HookRunOutcome> {
   const db = getWorkspaceDb(args.workspacePath);
 
   // Look up worktree metadata for branch / source ref
@@ -278,7 +298,7 @@ async function runResolvedHook(hook: WorkspaceHook, args: RunHookArgs, win: Brow
   // even when Electron's PATH doesn't include the shell's install directory.
   const shellBin = await resolveShellToPath(hookShell);
 
-  return new Promise<void>(resolve => {
+  return new Promise<HookRunOutcome>(resolve => {
     let id: string;
     try {
       id = manager.spawn({
@@ -289,6 +309,7 @@ async function runResolvedHook(hook: WorkspaceHook, args: RunHookArgs, win: Brow
       });
     } catch (spawnErr) {
       const errorMessage = spawnErr instanceof Error ? spawnErr.message : String(spawnErr);
+      const fullErrorMessage = `Failed to launch shell (${String(hookShell)}): ${errorMessage}`;
       const endEvent: HookProgressEvent = {
         trigger: args.trigger,
         hookId: hook.id,
@@ -298,10 +319,10 @@ async function runResolvedHook(hook: WorkspaceHook, args: RunHookArgs, win: Brow
         status: 'error',
         stdoutSnippet: null,
         stderrSnippet: null,
-        errorMessage: `Failed to launch shell (${String(hookShell)}): ${errorMessage}`,
+        errorMessage: fullErrorMessage,
       };
       win.webContents.send(IPC.EVENT_HOOK_PROGRESS, endEvent);
-      resolve();
+      resolve({ hookId: hook.id, hookName: hook.name, status: 'error', errorMessage: fullErrorMessage });
       return;
     }
 
@@ -346,21 +367,55 @@ async function runResolvedHook(hook: WorkspaceHook, args: RunHookArgs, win: Brow
       if (timeoutHandle) clearTimeout(timeoutHandle);
 
       const success = !timedOut && exitCode === 0;
+      const status = timedOut ? 'timed_out' : success ? 'success' : 'error';
+      const errorMessage = timedOut ? 'Hook timed out' : exitCode !== 0 ? `Exited with code ${String(exitCode)}` : null;
       const endEvent: HookProgressEvent = {
         trigger: args.trigger,
         hookId: hook.id,
         hookName: hook.name,
         keepOpenOnCompletion: hook.keepOpenOnCompletion ?? false,
         phase: 'end',
-        status: timedOut ? 'timed_out' : success ? 'success' : 'error',
+        status,
         stdoutSnippet: null,
         stderrSnippet: null,
-        errorMessage: timedOut ? 'Hook timed out' : exitCode !== 0 ? `Exited with code ${String(exitCode)}` : null,
+        errorMessage,
       };
       win.webContents.send(IPC.EVENT_HOOK_PROGRESS, endEvent);
-      resolve();
+      resolve({ hookId: hook.id, hookName: hook.name, status, errorMessage });
     });
   });
+}
+
+/**
+ * Entry point for the MCP run_hook tool (see app/src/main/mcp-bridge.ts).
+ * Looks up the hook's own trigger rather than requiring the caller to supply
+ * one — same as the Run Hook dialog, which runs a hook using `hook.trigger`
+ * — then delegates to `runHook`, so the enabled/trusted gate lives in
+ * exactly one place. A `null` window (no workspace window currently open)
+ * resolves as `not_run` rather than throwing, since hooks execute in a
+ * visible terminal tab tied to a window.
+ */
+export async function runHookForMcp(args: {
+  workspacePath: string;
+  hookId: string;
+  worktreePath: string;
+  initiatingWorktreePath?: string | null;
+}, win: BrowserWindow | null, configDb: ConfigDb): Promise<HookRunOutcome> {
+  const { hooks } = getEffectiveHooks(args.workspacePath, args.worktreePath, configDb);
+  const hook = hooks.find(h => h.id === args.hookId);
+  if (!hook) {
+    return { hookId: args.hookId, hookName: args.hookId, status: 'not_run', errorMessage: `No hook "${args.hookId}" found for this worktree.` };
+  }
+  if (!win) {
+    return { hookId: hook.id, hookName: hook.name, status: 'not_run', errorMessage: 'No open window for this workspace — hooks run in a visible terminal tab, so a workspace window must be open to run one.' };
+  }
+  return runHook({
+    workspacePath: args.workspacePath,
+    hookId: hook.id,
+    worktreePath: args.worktreePath,
+    trigger: hook.trigger,
+    initiatingWorktreePath: args.initiatingWorktreePath ?? null,
+  }, win, configDb);
 }
 
 export interface RunTriggerHooksArgs {
@@ -422,6 +477,135 @@ export async function runTriggerHooks(args: RunTriggerHooksArgs, win: BrowserWin
   }
 }
 
+// ── Local hook CRUD ──────────────────────────────────────────────────────
+// Exported standalone (not inlined in registerHookHandlers' handle()
+// callbacks) so both the renderer's IPC calls and the MCP create/update/
+// delete/toggle_local_hook tools (see app/src/main/mcp-bridge.ts) go through
+// the exact same validation instead of it being duplicated. Neither of
+// these ever touches a repo hook by design — parseHookId's source check is
+// the enforcement point.
+
+/**
+ * Validates a hook's dependsOn list against the set of local hook names that
+ * will exist once this write lands — catches a typo'd or stale reference
+ * before it hits disk, since an unknown dependsOn name makes the *entire*
+ * local-hooks.json fail to parse on the next read (parseHooksFile in
+ * hooks-file.ts), silently disabling every local hook, not just this one.
+ */
+function validateDependsOn(dependsOn: string[], validNames: Set<string>, selfName: string): void {
+  if (dependsOn.includes(selfName)) {
+    throw new Error(`Hook "${selfName}" cannot depend on itself.`);
+  }
+  for (const dep of dependsOn) {
+    if (!validNames.has(dep)) {
+      throw new Error(`Hook "${selfName}" depends on unknown local hook "${dep}".`);
+    }
+  }
+}
+
+export function createLocalHook(args: { workspacePath: string } & HookUpsertInput): void {
+  const localDefs = readLocalHookDefs(args.workspacePath);
+  if (localDefs.some(h => h.name === args.name)) {
+    throw new Error(`A local hook named "${args.name}" already exists.`);
+  }
+  validateDependsOn(args.dependsOn, new Set(localDefs.map(h => h.name)), args.name);
+  const now = Date.now();
+  localDefs.push({
+    name: args.name,
+    scope: args.scope,
+    trigger: args.trigger,
+    executionTarget: args.executionTarget,
+    shell: args.shell,
+    script: args.script,
+    enabled: args.enabled,
+    critical: args.critical,
+    switchOncePerSession: args.switchOncePerSession,
+    switchRunOnCreate: args.switchRunOnCreate,
+    switchRunOnDelete: args.switchRunOnDelete,
+    keepOpenOnCompletion: args.keepOpenOnCompletion,
+    timeoutSeconds: args.timeoutSeconds,
+    dependsOn: args.dependsOn,
+    createdAt: now,
+    updatedAt: now,
+  });
+  writeLocalHooksFile(args.workspacePath, localDefs);
+}
+
+export function updateLocalHook(args: { workspacePath: string; id: string } & Partial<HookUpsertInput>): void {
+  const parsed = parseHookId(args.id);
+  if (!parsed || parsed.source !== 'local') return; // repo hooks: edit sproutgit.hooks.json + commit instead
+  const localDefs = readLocalHookDefs(args.workspacePath);
+  const index = localDefs.findIndex(h => h.name === parsed.name);
+  if (index === -1) return;
+
+  const current = localDefs[index]!;
+  const newName = args.name ?? current.name;
+  if (newName !== current.name && localDefs.some((h, i) => i !== index && h.name === newName)) {
+    throw new Error(`A local hook named "${newName}" already exists.`);
+  }
+
+  const newDependsOn = args.dependsOn ?? current.dependsOn;
+  const validNames = new Set(localDefs.map((h, i) => i === index ? newName : h.name));
+  validateDependsOn(newDependsOn, validNames, newName);
+
+  localDefs[index] = {
+    ...current,
+    name: newName,
+    scope: args.scope ?? current.scope,
+    trigger: args.trigger ?? current.trigger,
+    executionTarget: args.executionTarget ?? current.executionTarget,
+    shell: args.shell ?? current.shell,
+    script: args.script ?? current.script,
+    enabled: args.enabled ?? current.enabled,
+    critical: args.critical ?? current.critical,
+    switchOncePerSession: args.switchOncePerSession ?? current.switchOncePerSession,
+    switchRunOnCreate: args.switchRunOnCreate ?? current.switchRunOnCreate,
+    switchRunOnDelete: args.switchRunOnDelete ?? current.switchRunOnDelete,
+    keepOpenOnCompletion: args.keepOpenOnCompletion ?? current.keepOpenOnCompletion,
+    timeoutSeconds: args.timeoutSeconds ?? current.timeoutSeconds,
+    dependsOn: args.dependsOn ?? current.dependsOn,
+    updatedAt: Date.now(),
+  };
+
+  // Rename cascade — the app fully owns this file, so keep other local
+  // hooks' dependsOn references consistent rather than letting them go stale.
+  if (newName !== current.name) {
+    for (const [i, h] of localDefs.entries()) {
+      if (i === index) continue;
+      if (h.dependsOn?.includes(current.name)) {
+        h.dependsOn = h.dependsOn.map(d => d === current.name ? newName : d);
+      }
+    }
+  }
+
+  writeLocalHooksFile(args.workspacePath, localDefs);
+}
+
+export function deleteLocalHook(args: { workspacePath: string; id: string }): void {
+  const parsed = parseHookId(args.id);
+  if (!parsed || parsed.source !== 'local') return;
+  const remaining = readLocalHookDefs(args.workspacePath).filter(h => h.name !== parsed.name);
+  for (const h of remaining) {
+    if (h.dependsOn?.includes(parsed.name)) {
+      h.dependsOn = h.dependsOn.filter(d => d !== parsed.name);
+    }
+  }
+  writeLocalHooksFile(args.workspacePath, remaining);
+}
+
+export function toggleLocalHook(args: { workspacePath: string; id: string; enabled: boolean }): void {
+  const parsed = parseHookId(args.id);
+  // Repo hooks aren't stored in a file the app writes — their `enabled`
+  // flag comes from sproutgit.hooks.json itself, so there's nothing to toggle here.
+  if (!parsed || parsed.source !== 'local') return;
+  const localDefs = readLocalHookDefs(args.workspacePath);
+  const hook = localDefs.find(h => h.name === parsed.name);
+  if (!hook) return;
+  hook.enabled = args.enabled;
+  hook.updatedAt = Date.now();
+  writeLocalHooksFile(args.workspacePath, localDefs);
+}
+
 export function registerHookHandlers(configDb: ConfigDb): void {
   handle(IPC.HOOK_RUN, async (_e, args: RunHookArgs) => {
     const win = BrowserWindow.fromWebContents(_e.sender);
@@ -433,107 +617,17 @@ export function registerHookHandlers(configDb: ConfigDb): void {
     return getEffectiveHooks(args.workspacePath, args.worktreePath, configDb);
   });
 
-  handle(IPC.HOOK_CREATE, (_e, args: { workspacePath: string } & HookUpsertInput) => {
-    const localDefs = readLocalHookDefs(args.workspacePath);
-    if (localDefs.some(h => h.name === args.name)) {
-      throw new Error(`A local hook named "${args.name}" already exists.`);
-    }
-    const now = Date.now();
-    localDefs.push({
-      name: args.name,
-      scope: args.scope,
-      trigger: args.trigger,
-      executionTarget: args.executionTarget,
-      shell: args.shell,
-      script: args.script,
-      enabled: args.enabled,
-      critical: args.critical,
-      switchOncePerSession: args.switchOncePerSession,
-      switchRunOnCreate: args.switchRunOnCreate,
-      switchRunOnDelete: args.switchRunOnDelete,
-      keepOpenOnCompletion: args.keepOpenOnCompletion,
-      timeoutSeconds: args.timeoutSeconds,
-      dependsOn: args.dependsOn,
-      createdAt: now,
-      updatedAt: now,
-    });
-    writeLocalHooksFile(args.workspacePath, localDefs);
-  });
+  handle(IPC.HOOK_CREATE, (_e, args: { workspacePath: string } & HookUpsertInput) => createLocalHook(args));
 
-  handle(IPC.HOOK_UPDATE, (_e, args: { workspacePath: string; id: string } & Partial<HookUpsertInput>) => {
-    const parsed = parseHookId(args.id);
-    if (!parsed || parsed.source !== 'local') return; // repo hooks: edit sproutgit.hooks.json + commit instead
-    const localDefs = readLocalHookDefs(args.workspacePath);
-    const index = localDefs.findIndex(h => h.name === parsed.name);
-    if (index === -1) return;
+  handle(IPC.HOOK_UPDATE, (_e, args: { workspacePath: string; id: string } & Partial<HookUpsertInput>) => updateLocalHook(args));
 
-    const current = localDefs[index]!;
-    const newName = args.name ?? current.name;
-    if (newName !== current.name && localDefs.some((h, i) => i !== index && h.name === newName)) {
-      throw new Error(`A local hook named "${newName}" already exists.`);
-    }
-
-    localDefs[index] = {
-      ...current,
-      name: newName,
-      scope: args.scope ?? current.scope,
-      trigger: args.trigger ?? current.trigger,
-      executionTarget: args.executionTarget ?? current.executionTarget,
-      shell: args.shell ?? current.shell,
-      script: args.script ?? current.script,
-      enabled: args.enabled ?? current.enabled,
-      critical: args.critical ?? current.critical,
-      switchOncePerSession: args.switchOncePerSession ?? current.switchOncePerSession,
-      switchRunOnCreate: args.switchRunOnCreate ?? current.switchRunOnCreate,
-      switchRunOnDelete: args.switchRunOnDelete ?? current.switchRunOnDelete,
-      keepOpenOnCompletion: args.keepOpenOnCompletion ?? current.keepOpenOnCompletion,
-      timeoutSeconds: args.timeoutSeconds ?? current.timeoutSeconds,
-      dependsOn: args.dependsOn ?? current.dependsOn,
-      updatedAt: Date.now(),
-    };
-
-    // Rename cascade — the app fully owns this file, so keep other local
-    // hooks' dependsOn references consistent rather than letting them go stale.
-    if (newName !== current.name) {
-      for (const [i, h] of localDefs.entries()) {
-        if (i === index) continue;
-        if (h.dependsOn?.includes(current.name)) {
-          h.dependsOn = h.dependsOn.map(d => d === current.name ? newName : d);
-        }
-      }
-    }
-
-    writeLocalHooksFile(args.workspacePath, localDefs);
-  });
-
-  handle(IPC.HOOK_DELETE, (_e, args: { workspacePath: string; id: string }) => {
-    const parsed = parseHookId(args.id);
-    if (!parsed || parsed.source !== 'local') return;
-    const remaining = readLocalHookDefs(args.workspacePath).filter(h => h.name !== parsed.name);
-    for (const h of remaining) {
-      if (h.dependsOn?.includes(parsed.name)) {
-        h.dependsOn = h.dependsOn.filter(d => d !== parsed.name);
-      }
-    }
-    writeLocalHooksFile(args.workspacePath, remaining);
-  });
+  handle(IPC.HOOK_DELETE, (_e, args: { workspacePath: string; id: string }) => deleteLocalHook(args));
 
   handle(IPC.HOOK_TOGGLE, (_e, args: {
     workspacePath: string;
     id: string;
     enabled: boolean;
-  }) => {
-    const parsed = parseHookId(args.id);
-    // Repo hooks aren't stored in a file the app writes — their `enabled`
-    // flag comes from sproutgit.hooks.json itself, so there's nothing to toggle here.
-    if (!parsed || parsed.source !== 'local') return;
-    const localDefs = readLocalHookDefs(args.workspacePath);
-    const hook = localDefs.find(h => h.name === parsed.name);
-    if (!hook) return;
-    hook.enabled = args.enabled;
-    hook.updatedAt = Date.now();
-    writeLocalHooksFile(args.workspacePath, localDefs);
-  });
+  }) => toggleLocalHook(args));
 
   handle(IPC.HOOK_TRUST, (_e, args: { worktreePath: string; hookId: string }) => {
     const parsed = parseHookId(args.hookId);

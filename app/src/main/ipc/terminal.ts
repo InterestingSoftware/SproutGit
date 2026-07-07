@@ -1,8 +1,11 @@
 import { ipcMain, BrowserWindow } from 'electron';
 import { IPC } from '@sproutgit/types';
+import type { AgentSessionStatusEvent } from '@sproutgit/types';
 import { TerminalManagerWithMeta } from '@sproutgit/terminal';
 import { handle } from './handle.js';
 import { log } from '../telemetry.js';
+import { attentionTracker } from './session-attention.js';
+import { FINISHED_ENTRY_TTL_MS } from '../attention-tracker.js';
 
 // Forward PTY output/exit events to the renderer window that created the session.
 export const sessionWindows = new Map<string, BrowserWindow>();
@@ -20,11 +23,38 @@ export const manager = new TerminalManagerWithMeta(
     if (win && !win.isDestroyed()) {
       win.webContents.send(IPC.TERMINAL_DATA, { id, data });
     }
+    // Output resuming after an inferred-idle state means the agent is
+    // working again — only flip sessions the idle heuristic actually
+    // flagged, so plain shell output doesn't spuriously touch the tracker.
+    const meta = manager.getMeta(id);
+    if (meta && meta.agentId !== null && attentionTracker.get(id)?.heuristic) {
+      attentionTracker.setWorking(id, 'terminal', meta.cwd);
+    }
   },
   (id, exitCode) => {
+    // Read before handleSessionExit() (which runs after this callback, per
+    // TerminalManagerWithMeta's exit ordering) deletes it — a session
+    // closed deliberately via close() has already had its metadata removed
+    // by the time this fires, so `meta` is undefined and no status event is
+    // sent for that case, which is the desired behaviour (no notification
+    // for a terminal the user closed on purpose).
+    const meta = manager.getMeta(id);
     const win = sessionWindows.get(id);
     if (win && !win.isDestroyed()) {
       win.webContents.send(IPC.TERMINAL_EXIT, { id });
+      if (meta && meta.agentId !== null) {
+        win.webContents.send(IPC.EVENT_AGENT_SESSION_STATUS, {
+          id,
+          cwd: meta.cwd,
+          agentName: meta.agentName,
+          reason: 'exited',
+        } satisfies AgentSessionStatusEvent);
+      }
+    }
+    if (meta && meta.agentId !== null) {
+      if (exitCode === 0) attentionTracker.setFinished(id, 'terminal', meta.cwd);
+      else attentionTracker.setFailed(id, 'terminal', meta.cwd);
+      attentionTracker.scheduleRemoval(id, FINISHED_ENTRY_TTL_MS);
     }
     const hookHandler = hookExitHandlers.get(id);
     if (hookHandler) {
@@ -32,6 +62,23 @@ export const manager = new TerminalManagerWithMeta(
       hookExitHandlers.delete(id);
     }
     sessionWindows.delete(id);
+  },
+  (id, meta) => {
+    const win = sessionWindows.get(id);
+    if (win && !win.isDestroyed()) {
+      win.webContents.send(IPC.EVENT_AGENT_SESSION_STATUS, {
+        id,
+        cwd: meta.cwd,
+        agentName: meta.agentName,
+        reason: 'idle',
+      } satisfies AgentSessionStatusEvent);
+    }
+    // Same idle signal driving the OS notification (#92) also drives the
+    // in-app attention chip/badge (#140) — a PTY agent has no protocol to
+    // signal "waiting on you" explicitly, so both features share this one
+    // output-idle heuristic (TerminalManagerWithMeta's IdleTracker) rather
+    // than running two separate idle timers.
+    attentionTracker.setIdle(id, 'terminal', meta.cwd);
   },
 );
 
@@ -91,6 +138,6 @@ export function registerTerminalHandlers(): void {
   });
 
   handle(IPC.TERMINAL_LIST, () => {
-    return manager.listSessions().map(s => ({ ...s, label: s.label }));
+    return manager.listSessions();
   });
 }

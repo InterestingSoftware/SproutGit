@@ -1,6 +1,6 @@
 import { api } from '../api.js';
 import { createRootRoute, Outlet, useNavigate } from '@tanstack/react-router';
-import { ToastContainer, ErrorModal, type ToastData, type ErrorModalData } from '@sproutgit/ui';
+import { ToastContainer, ErrorModal, type ToastData, type ToastAction, type ErrorModalData } from '@sproutgit/ui';
 import { useState, useEffect } from 'react';
 import { ToastContext, setGlobalToast } from '../toast-context.js';
 
@@ -11,9 +11,9 @@ function RootLayout() {
   const [globalError, setGlobalError] = useState<ErrorModalData | null>(null);
   const navigate = useNavigate();
 
-  function addToast(message: string, variant: ToastData['variant'] = 'info') {
+  function addToast(message: string, variant: ToastData['variant'] = 'info', action?: ToastAction) {
     const id = crypto.randomUUID();
-    setToasts(prev => [...prev, { id, message, variant }]);
+    setToasts(prev => [...prev, { id, message, variant, ...(action ? { action } : {}) }]);
   }
 
   // Wire up the module-level escape hatch so QueryCache.onError can fire toasts.

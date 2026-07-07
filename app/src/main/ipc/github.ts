@@ -2,8 +2,31 @@ import { safeStorage } from 'electron';
 import { join } from 'path';
 import { readFileSync, writeFileSync, unlinkSync, existsSync } from 'fs';
 import { IPC } from '@sproutgit/types';
-import type { DeviceCodeResponse, GitHubPollResult, GitHubAuthStatus, GitHubEmailSuggestion } from '@sproutgit/types';
-import { deviceFlowStart, deviceFlowPoll, listEmails, listRepos } from '@sproutgit/provider-github';
+import type {
+  DeviceCodeResponse,
+  GitHubPollResult,
+  GitHubAuthStatus,
+  GitHubEmailSuggestion,
+  PullRequestStatus,
+  PullRequestInfo,
+  CheckFailureDetail,
+  MergeMethod,
+  MergePullRequestResult,
+} from '@sproutgit/types';
+import {
+  deviceFlowStart,
+  deviceFlowPoll,
+  listEmails,
+  listRepos,
+  parseGithubRemoteUrl,
+  getPullRequestStatus,
+  createPullRequest,
+  findPullRequestForBranch,
+  getCheckFailureDetail,
+  setPullRequestReadyForReview,
+  mergePullRequest,
+} from '@sproutgit/provider-github';
+import { getRemoteUrl, getWorktreePushStatus } from '@sproutgit/git';
 import { handle } from './handle.js';
 
 // ── Token storage via electron.safeStorage ────────────────────────────────────
@@ -43,6 +66,21 @@ function deleteToken(userDataPath: string): void {
   if (existsSync(path)) unlinkSync(path);
 }
 
+// ── PR helpers ─────────────────────────────────────────────────────────────────
+
+/** Resolves a worktree's GitHub owner/repo (from its `origin` remote) and current branch, or null if either is unavailable. */
+async function resolveWorktreeGithubContext(
+  worktreePath: string,
+): Promise<{ owner: string; repo: string; branch: string } | null> {
+  const remoteUrl = await getRemoteUrl(worktreePath);
+  if (!remoteUrl) return null;
+  const parsed = parseGithubRemoteUrl(remoteUrl);
+  if (!parsed) return null;
+  const pushStatus = await getWorktreePushStatus(worktreePath);
+  if (!pushStatus.branch) return null;
+  return { owner: parsed.owner, repo: parsed.repo, branch: pushStatus.branch };
+}
+
 // ── IPC registration ──────────────────────────────────────────────────────────
 
 export function registerGithubHandlers(userDataPath: string): void {
@@ -78,5 +116,77 @@ export function registerGithubHandlers(userDataPath: string): void {
     const cred = getStoredGithubToken(userDataPath);
     if (!cred) return [];
     return listRepos(cred.token);
+  });
+
+  handle(IPC.GITHUB_GET_PR_STATUS, async (_e, worktreePath: string): Promise<PullRequestStatus | null> => {
+    // Best-effort: this only feeds a sidebar badge, so a transient git or
+    // network failure here should degrade to "no PR info" rather than
+    // surfacing as a query error in the UI.
+    try {
+      const cred = getStoredGithubToken(userDataPath);
+      if (!cred) return null;
+      const context = await resolveWorktreeGithubContext(worktreePath);
+      if (!context) return null;
+      return await getPullRequestStatus(context.owner, context.repo, context.branch, cred.token);
+    } catch {
+      return null;
+    }
+  });
+
+  handle(IPC.GITHUB_CREATE_PR, async (
+    _e,
+    args: { worktreePath: string; title: string; body?: string; base: string; draft?: boolean },
+  ): Promise<PullRequestInfo> => {
+    const cred = getStoredGithubToken(userDataPath);
+    if (!cred) throw new Error('Not signed in to GitHub');
+    const context = await resolveWorktreeGithubContext(args.worktreePath);
+    if (!context) throw new Error('This worktree has no GitHub remote to open a PR against');
+    return createPullRequest({
+      owner: context.owner,
+      repo: context.repo,
+      head: context.branch,
+      base: args.base,
+      title: args.title,
+      ...(args.body !== undefined ? { body: args.body } : {}),
+      ...(args.draft !== undefined ? { draft: args.draft } : {}),
+    }, cred.token);
+  });
+
+  handle(IPC.GITHUB_GET_CHECK_FAILURE_DETAIL, async (
+    _e,
+    args: { worktreePath: string; checkId: string },
+  ): Promise<CheckFailureDetail | null> => {
+    const cred = getStoredGithubToken(userDataPath);
+    if (!cred) return null;
+    const context = await resolveWorktreeGithubContext(args.worktreePath);
+    if (!context) return null;
+    return getCheckFailureDetail(context.owner, context.repo, args.checkId, cred.token);
+  });
+
+  handle(IPC.GITHUB_SET_PR_READY, async (
+    _e,
+    args: { worktreePath: string; ready: boolean },
+  ): Promise<PullRequestInfo> => {
+    const cred = getStoredGithubToken(userDataPath);
+    if (!cred) throw new Error('Not signed in to GitHub');
+    const context = await resolveWorktreeGithubContext(args.worktreePath);
+    if (!context) throw new Error('This worktree has no GitHub remote to look up a PR against');
+    const pullRequest = await findPullRequestForBranch(context.owner, context.repo, context.branch, cred.token);
+    if (!pullRequest) throw new Error('No pull request found for this branch');
+    await setPullRequestReadyForReview(pullRequest.nodeId, args.ready, cred.token);
+    return { ...pullRequest, draft: !args.ready };
+  });
+
+  handle(IPC.GITHUB_MERGE_PR, async (
+    _e,
+    args: { worktreePath: string; method: MergeMethod },
+  ): Promise<MergePullRequestResult> => {
+    const cred = getStoredGithubToken(userDataPath);
+    if (!cred) throw new Error('Not signed in to GitHub');
+    const context = await resolveWorktreeGithubContext(args.worktreePath);
+    if (!context) throw new Error('This worktree has no GitHub remote to look up a PR against');
+    const pullRequest = await findPullRequestForBranch(context.owner, context.repo, context.branch, cred.token);
+    if (!pullRequest) throw new Error('No pull request found for this branch');
+    return mergePullRequest(context.owner, context.repo, pullRequest.number, args.method, cred.token);
   });
 }

@@ -1,7 +1,7 @@
 import { createContext, useContext } from 'react';
-import type { ToastData } from '@sproutgit/ui';
+import type { ToastData, ToastAction } from '@sproutgit/ui';
 
-export type ToastFn = (message: string, variant?: ToastData['variant']) => void;
+export type ToastFn = (message: string, variant?: ToastData['variant'], action?: ToastAction) => void;
 
 export const ToastContext = createContext<ToastFn>(() => undefined);
 
@@ -14,6 +14,6 @@ export function useToast(): ToastFn {
 // eslint-disable-next-line no-underscore-dangle
 let _globalToast: ToastFn = () => undefined;
 export function setGlobalToast(fn: ToastFn) { _globalToast = fn; }
-export function globalToast(message: string, variant?: ToastData['variant']) {
-  _globalToast(message, variant);
+export function globalToast(message: string, variant?: ToastData['variant'], action?: ToastAction) {
+  _globalToast(message, variant, action);
 }

@@ -1,9 +1,38 @@
-import { describe, it, expect, afterEach } from 'vitest';
+import { describe, it, expect, vi, afterEach } from 'vitest';
 import { execSync } from 'node:child_process';
 import { mkdtempSync, rmSync, writeFileSync, realpathSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
+import { IPC } from '@sproutgit/types';
 import { startMcpServer, stopMcpServer, getMcpStatus, deriveDefaultPort } from '../mcp-bridge.js';
+
+/**
+ * Parses a Streamable HTTP response body, which the SDK may send as either
+ * plain JSON or a single SSE `data:` event depending on internal content
+ * negotiation — either way there's exactly one JSON-RPC message in it.
+ * Same helper as packages/mcp-server/src/__tests__/http-server.test.ts.
+ */
+function parseJsonRpcBody(text: string): unknown {
+  const dataLine = text.split('\n').find(line => line.startsWith('data: '));
+  return JSON.parse(dataLine ? dataLine.slice('data: '.length) : text);
+}
+
+async function callTool(baseUrl: string, token: string, id: number, name: string, args: Record<string, unknown>): Promise<unknown> {
+  await fetch(`${baseUrl}/mcp`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', accept: 'application/json, text/event-stream', authorization: `Bearer ${token}` },
+    body: JSON.stringify({
+      jsonrpc: '2.0', id: 0, method: 'initialize',
+      params: { protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: 'test', version: '0' } },
+    }),
+  });
+  const res = await fetch(`${baseUrl}/mcp`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', accept: 'application/json, text/event-stream', authorization: `Bearer ${token}` },
+    body: JSON.stringify({ jsonrpc: '2.0', id, method: 'tools/call', params: { name, arguments: args } }),
+  });
+  return parseJsonRpcBody(await res.text());
+}
 
 function initTestRepo(): string {
   const dir = realpathSync.native(mkdtempSync(join(tmpdir(), 'sg-mcp-bridge-test-')));
@@ -29,6 +58,7 @@ function paramsFor(workspacePath: string, port = 0) {
 
 /** No workspace window is open in any of these tests — hooks are simply skipped, matching production behavior when a workspace has no open window. */
 const NO_WINDOW = () => null;
+const FAKE_WINDOW = { isDestroyed: () => false, webContents: { send: vi.fn() } } as unknown as Electron.BrowserWindow;
 // None of these tests exercise the MCP create_worktree/remove_worktree tools
 // (mutatingToolsEnabled is always false), so configDb is never actually touched.
 const FAKE_CONFIG_DB = {} as Parameters<typeof startMcpServer>[2];
@@ -107,4 +137,38 @@ describe('mcp-bridge lifecycle', () => {
   it('getMcpStatus reports not running for a workspace that was never started', () => {
     expect(getMcpStatus('/never/started')).toEqual({ running: false, port: null });
   });
+
+  // Slower than the other tests in this file — a real repo init (several git
+  // subprocess spawns) plus a real HTTP server plus two sequential fetches
+  // (initialize + tools/call), which on Windows CI runners can push past the
+  // default 5000ms test timeout.
+  it('report_session_done pushes an EVENT_MCP_SESSION_DONE event to the workspace window', async () => {
+    const repo = initTestRepo();
+    repos.push(repo);
+    const params = paramsFor(repo);
+    const port = await startMcpServer(params, () => FAKE_WINDOW, FAKE_CONFIG_DB);
+
+    const send = (FAKE_WINDOW as unknown as { webContents: { send: ReturnType<typeof vi.fn> } }).webContents.send;
+    send.mockClear();
+
+    const body = await callTool(`http://127.0.0.1:${port}`, params.token, 1, 'report_session_done', {
+      worktreePath: repo,
+      summary: 'Implemented the feature',
+    }) as { result?: { isError?: boolean } };
+    expect(body.result?.isError).toBeUndefined();
+
+    expect(send).toHaveBeenCalledWith(IPC.EVENT_MCP_SESSION_DONE, { worktreePath: repo, summary: 'Implemented the feature' });
+  }, 15_000);
+
+  it('report_session_done is a no-op (does not throw) when the workspace window is not open', async () => {
+    const repo = initTestRepo();
+    repos.push(repo);
+    const params = paramsFor(repo);
+    const port = await startMcpServer(params, NO_WINDOW, FAKE_CONFIG_DB);
+
+    const body = await callTool(`http://127.0.0.1:${port}`, params.token, 1, 'report_session_done', {
+      worktreePath: repo,
+    }) as { result?: { isError?: boolean } };
+    expect(body.result?.isError).toBeUndefined();
+  }, 15_000);
 });
