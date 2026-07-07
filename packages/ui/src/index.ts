@@ -5,6 +5,9 @@ export { CommitGraph } from './components/CommitGraph.js';
 
 export { linkifyIssueRefs, matchIssueRef } from './issuetracker-linkify.js';
 
+export { CommandPalette } from './components/CommandPalette.js';
+export type { CommandPaletteItem } from './components/CommandPalette.js';
+
 export { ConfirmDialog } from './components/ConfirmDialog.js';
 
 export { ErrorModal } from './components/ErrorModal.js';
