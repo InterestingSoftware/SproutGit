@@ -34,6 +34,8 @@ import type { ConfigDb } from '@sproutgit/database';
 import { getAgentRoster, resolveRosterAgent } from '@sproutgit/database';
 import { handle } from './handle.js';
 import { log } from '../telemetry.js';
+import { attentionTracker } from './session-attention.js';
+import { FINISHED_ENTRY_TTL_MS } from '../attention-tracker.js';
 import { translateSessionUpdate, translatePermissionRequest, toChatConfigOptions, type TurnState } from './chat-acp-events.js';
 import { resolveCommandPath } from './tool-test-helpers.js';
 import { getAcpLaunchSpecForAgent } from './agents.js';
@@ -94,6 +96,7 @@ function createClientHandlers(getSession: () => ChatSession): Client {
       const session = getSession();
       const requestId = randomUUID();
       session.pendingPermissions.set(requestId, outcome => resolve({ outcome }));
+      attentionTracker.setAwaitingPermission(session.id, 'chat', session.worktreePath);
       send(sessionWindows.get(session.id), session.id, translatePermissionRequest(requestId, params));
     }),
   };
@@ -150,6 +153,9 @@ async function spawnAcpSession(agent: AgentRosterEntry, worktreePath: string, us
   child.on('exit', code => {
     const win = sessionWindows.get(session.id);
     if (win && !win.isDestroyed()) win.webContents.send(IPC.EVENT_CHAT_EXIT, { sessionId: session.id, exitCode: code ?? -1 });
+    if (code === 0 || code === null) attentionTracker.setFinished(session.id, 'chat', session.worktreePath);
+    else attentionTracker.setFailed(session.id, 'chat', session.worktreePath);
+    attentionTracker.scheduleRemoval(session.id, FINISHED_ENTRY_TTL_MS);
     sessions.delete(session.id);
     sessionWindows.delete(session.id);
   });
@@ -178,6 +184,7 @@ async function spawnAcpSession(agent: AgentRosterEntry, worktreePath: string, us
 async function runTurn(session: ChatSession, prompt: string): Promise<void> {
   session.turn = { messageId: null, messageIdSeq: session.turn.messageIdSeq };
   session.busy = true;
+  attentionTracker.setWorking(session.id, 'chat', session.worktreePath);
   const win = () => sessionWindows.get(session.id);
   try {
     const response = await session.connection.prompt({
@@ -192,6 +199,10 @@ async function runTurn(session: ChatSession, prompt: string): Promise<void> {
     send(win(), session.id, { type: 'error', message: err instanceof Error ? err.message : String(err) });
   } finally {
     session.busy = false;
+    // The child process may have already exited mid-turn (attentionTracker
+    // entry removed by the 'exit' handler) — don't resurrect a stale
+    // awaiting-input entry for a session that's already gone.
+    if (sessions.has(session.id)) attentionTracker.setAwaitingInput(session.id, 'chat', session.worktreePath);
   }
 }
 
@@ -210,6 +221,7 @@ export function registerChatHandlers(configDb: ConfigDb, userDataPath: string): 
     sessions.set(session.id, session);
     const win = BrowserWindow.fromWebContents(_e.sender);
     if (win) sessionWindows.set(session.id, win);
+    attentionTracker.setAwaitingInput(session.id, 'chat', session.worktreePath);
 
     if (args.initialPrompt) void runTurn(session, args.initialPrompt);
     return { sessionId: session.id, configOptions: session.configOptions };
@@ -239,6 +251,7 @@ export function registerChatHandlers(configDb: ConfigDb, userDataPath: string): 
     const resolve = session.pendingPermissions.get(args.requestId);
     if (!resolve) throw new Error(`No pending permission request "${args.requestId}" for this session.`);
     session.pendingPermissions.delete(args.requestId);
+    attentionTracker.setWorking(session.id, 'chat', session.worktreePath);
     resolve({ outcome: 'selected', optionId: args.optionId });
   });
 
@@ -250,6 +263,7 @@ export function registerChatHandlers(configDb: ConfigDb, userDataPath: string): 
       if (session.acpSessionId) void session.connection.cancel({ sessionId: session.acpSessionId }).catch(() => undefined);
       try { session.child.kill(); } catch { /* already exited */ }
     }
+    attentionTracker.remove(sessionId);
     sessions.delete(sessionId);
     sessionWindows.delete(sessionId);
   });

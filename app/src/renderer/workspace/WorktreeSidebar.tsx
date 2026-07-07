@@ -37,13 +37,16 @@ import {
   CircleCheck,
   CircleX,
   CircleDashed,
+  Hourglass,
 } from "lucide-react";
 import type {
   WorktreeInfo,
   WorkspaceStatus,
   PullRequestStatus,
+  SessionAttention,
 } from "@sproutgit/types";
 import type { UpdateState } from "@sproutgit/ui";
+import { hasAwaitingAttention } from "../hooks/useSessionAttention.js";
 
 type MenuItems = Parameters<ReturnType<typeof useContextMenu>["open"]>[1];
 
@@ -241,6 +244,10 @@ type Props = {
   /** Whether an AI agent command is configured (Settings → AI Agents) — gates the launch button/menu item. */
   agentConfigured: boolean;
   worktreesWithLiveAgent: Set<string>;
+  /** Live session attention state (working/awaiting-permission/awaiting-input/finished/failed), keyed by worktree path — see useSessionAttention(). */
+  attentionByWorktree: Record<string, SessionAttention[]>;
+  /** Jumps straight to the worktree's pending prompt — the chat tab's permission card, or the terminal tab, depending on the entry's kind. */
+  onJumpToAttention: (entry: SessionAttention) => void;
   /** Whether the sidebar is collapsed to a slim icon rail. */
   collapsed?: boolean;
   /** Toggles the collapsed state — wired to a toolbar button and Cmd/Ctrl+B. */
@@ -342,6 +349,8 @@ export function WorktreeSidebar({
   updateState,
   agentConfigured,
   worktreesWithLiveAgent,
+  attentionByWorktree,
+  onJumpToAttention,
   collapsed = false,
   onToggleCollapsed,
   prStatuses,
@@ -791,6 +800,23 @@ export function WorktreeSidebar({
                       >
                         <Bot size={10} />
                       </span>
+                    )}
+                    {hasAwaitingAttention(attentionByWorktree[row.wt.path]) && (
+                      <button
+                        type="button"
+                        className="sg-attention-badge flex shrink-0 items-center justify-center rounded-full border-none bg-(--sg-warning)/20 p-0.5 text-(--sg-warning) cursor-pointer"
+                        data-testid="attention-badge"
+                        title="An agent session is waiting on you"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          const entry = attentionByWorktree[row.wt.path]?.find((a) =>
+                            a.state === "awaiting-permission" || a.state === "awaiting-input",
+                          );
+                          if (entry) onJumpToAttention(entry);
+                        }}
+                      >
+                        <Hourglass size={10} />
+                      </button>
                     )}
                     <PrBadge status={prStatuses[row.wt.path]} />
                   </div>

@@ -64,19 +64,34 @@ already filled in, and paste it into that client's own config file.
 | `report_session_done` | Tells SproutGit the agent finished a session of work in a worktree, with an optional summary — shown to the user as a toast in that workspace. |
 | `create_worktree` | Creates a new managed worktree from a ref. |
 | `remove_worktree` | Removes a managed worktree, optionally deleting its branch. |
+| `list_hooks` | Lists effective [hooks](/docs/guides/writing-hooks/) (local + repo, merged) for a worktree, with source, trigger, enabled, and trusted state. |
+| `list_hook_runs` | Reads the hook-run audit log for a worktree, most recent first — useful for diagnosing why a worktree didn't get set up correctly. |
+| `create_local_hook` / `update_local_hook` / `delete_local_hook` / `toggle_local_hook` | Create, edit, delete, or enable/disable a **local** hook (`.sproutgit/local-hooks.json`, this machine only). |
+| `run_hook` | Triggers a hook run for a worktree, the same way the Run Hook dialog does, and returns the result. |
 
 `create_worktree` and `remove_worktree` go through the exact same code path
 as creating/removing a worktree from the UI — including running any
 [hooks](/docs/guides/writing-hooks/) configured for that lifecycle event.
 
 :::note
-`create_worktree` and `remove_worktree` are **currently disabled for every
-workspace, with no way to turn them on yet** — there's no permission-gate
-setting for them in the app yet, so they unconditionally refuse. Every other
-tool (`list_worktrees`, `get_workspace_info`, `get_worktree_status`,
-`get_worktree_diff`, `report_session_done`) always works once the server is
-enabled — `report_session_done` only pushes a toast, it never mutates git or
-filesystem state, so it isn't gated behind that same permission.
+`create_worktree`, `remove_worktree`, the local-hook write tools, and
+`run_hook` are **currently disabled for every workspace, with no way to turn
+them on yet** — there's no permission-gate setting for them in the app yet,
+so they unconditionally refuse. Every other tool (`list_worktrees`,
+`get_workspace_info`, `get_worktree_status`, `get_worktree_diff`,
+`report_session_done`, `list_hooks`, `list_hook_runs`) always works once the
+server is enabled — none of them mutate git, filesystem, or hook state, so
+none are gated behind that same permission.
+:::
+
+:::note
+Repo-tracked hooks (`sproutgit.hooks.json`) stay **read-only** through
+MCP — `list_hooks` shows them, but there's no tool to create, edit, or
+delete one (edit the file and commit, same as in the app). There's also no
+MCP tool to grant a repo hook trust: trusting one is always a manual
+decision you make in the app, since the hook's script arrived via `git
+checkout`. `run_hook` refuses to run a repo hook that isn't trusted yet, for
+the same reason.
 :::
 
 ![MCP server settings](../../../../assets/screenshots/mac/settings/preferences-light.png)

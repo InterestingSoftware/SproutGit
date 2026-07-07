@@ -5,7 +5,7 @@ import { useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { StagingPanel, Spinner, ContextMenuProvider } from "@sproutgit/ui";
 import { GitBranch, GitMerge, Terminal, Bot, FileCode2 } from "lucide-react";
-import type { WorktreeInfo } from "@sproutgit/types";
+import type { WorktreeInfo, TerminalInfo, SessionAttention } from "@sproutgit/types";
 import { useToast } from "../toast-context.js";
 import { useWorkspaceStore } from "../stores/workspace-store.js";
 import {
@@ -32,6 +32,7 @@ import { useScaffoldKickoff } from "../hooks/useScaffoldKickoff.js";
 import { useWorktreeSelection } from "../hooks/useWorktreeSelection.js";
 import { useCommitDiffState } from "../hooks/useCommitDiffState.js";
 import { useTerminalManager } from "../hooks/useTerminalManager.js";
+import { useSessionAttention } from "../hooks/useSessionAttention.js";
 import { useAgentSessionNotifications } from "../hooks/useAgentSessionNotifications.js";
 import { useAutoUpdateListeners } from "../hooks/useAutoUpdateListeners.js";
 import { useMcpSessionDoneListener } from "../hooks/useMcpSessionDoneListener.js";
@@ -114,6 +115,10 @@ function WorkspaceInner() {
   const worktreesWithLiveAgent = new Set(
     terminalSessions.filter((s) => s.agentId !== null).map((s) => s.cwd),
   );
+
+  // ── Agent session attention (working/awaiting-permission/awaiting-input/finished/failed) ──
+  const { bySessionId: attentionBySession, byWorktreePath: attentionByWorktree, waitingCount } =
+    useSessionAttention();
 
   // ── Server state via TanStack Query ──────────────────────────────────
   const { data: workspaceStatus } = useWorkspaceStatus(workspacePath);
@@ -224,6 +229,47 @@ function WorkspaceInner() {
     setSessionsPanelOpen(false);
   }
 
+  /** Jump-to-prompt action from an "awaiting" badge/indicator: switches to the
+   *  session's worktree (if not already active) and focuses the tab holding
+   *  the pending prompt — the chat tab's permission card for ACP sessions, or
+   *  the terminal tab for PTY agent sessions. */
+  function handleJumpToAttention(entry: SessionAttention) {
+    const wt = worktrees.find((w) => w.path === entry.worktreePath);
+    if (!wt) return;
+    if (wt.path !== activeWorktree?.path) {
+      void handleWorktreeSwitch(wt);
+    }
+    if (entry.kind === "chat") {
+      useWorkspaceStore.setState({ activeTab: "chat" });
+    } else {
+      useWorkspaceStore.setState((s) => ({
+        activeTerminalId: entry.sessionId,
+        activeTab: "terminal",
+        worktreeActiveTerminalId: {
+          ...s.worktreeActiveTerminalId,
+          [entry.worktreePath]: entry.sessionId,
+        },
+      }));
+    }
+    setSessionsPanelOpen(false);
+  }
+
+  /** Click handler for the header's "N waiting" indicator: jumps straight to
+   *  the oldest-waiting session's pending prompt (rather than just opening
+   *  the sessions panel, which doesn't list chat sessions at all). Falls back
+   *  to toggling the panel in the unlikely event `waitingCount` reached 0
+   *  between render and click. */
+  function handleJumpToNextWaiting() {
+    const awaiting = Object.values(attentionBySession)
+      .filter((entry) => entry.state === "awaiting-permission" || entry.state === "awaiting-input")
+      .sort((a, b) => a.updatedAt - b.updatedAt);
+    if (awaiting.length === 0) {
+      setSessionsPanelOpen((v) => !v);
+      return;
+    }
+    handleJumpToAttention(awaiting[0]!);
+  }
+
   useAgentSessionNotifications({ worktrees, onJump: handleJumpToSession });
 
   // ── Commit diff state ──────────────────────────────────────────────────
@@ -292,7 +338,9 @@ function WorkspaceInner() {
           loadRecentWorkspaces={loadRecentWorkspaces}
           onSwitchWorkspace={switchWorkspace}
           hasLiveAgentSession={worktreesWithLiveAgent.size > 0}
+          waitingCount={waitingCount}
           onToggleSessionsPanel={() => setSessionsPanelOpen((v) => !v)}
+          onJumpToNextWaiting={handleJumpToNextWaiting}
         />
 
         {/* ── Body: sidebar + main content ── */}
@@ -339,6 +387,8 @@ function WorkspaceInner() {
             onDeleteWorktree={(wt) => setDeleteTarget(wt)}
             agentConfigured={agentConfigured}
             worktreesWithLiveAgent={worktreesWithLiveAgent}
+            attentionByWorktree={attentionByWorktree}
+            onJumpToAttention={handleJumpToAttention}
             onLaunchAgent={(wtPath) => void terminalManager.launchAgent(wtPath, agentConfig?.id)}
             onCreatePr={(wt) => setCreatePrTarget(wt)}
           />
@@ -607,6 +657,7 @@ function WorkspaceInner() {
       <AgentSessionsPanel
         open={sessionsPanelOpen}
         worktrees={worktrees}
+        attentionBySession={attentionBySession}
         onJump={(session) => handleJumpToSession(session)}
         onClose={() => setSessionsPanelOpen(false)}
       />
