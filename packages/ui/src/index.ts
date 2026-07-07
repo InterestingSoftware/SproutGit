@@ -39,3 +39,8 @@ export type { UpdateState } from './components/UpdateBadge.js';
 export { WindowControls } from './components/WindowControls.js';
 
 export { WorkspaceHooksModal } from './components/WorkspaceHooksModal.js';
+
+export { ModelPicker, modelMetaLabel } from './components/ModelPicker.js';
+export type { ModelPickerModel, ModelPickerGroup } from './components/ModelPicker.js';
+
+export { fuzzyScore, fuzzyFilterSort } from './fuzzy.js';

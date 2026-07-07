@@ -29,14 +29,16 @@ import {
   type StopReason,
 } from '@agentclientprotocol/sdk';
 import { IPC } from '@sproutgit/types';
-import type { AgentConfig, ChatConfigOption, ChatStreamEvent } from '@sproutgit/types';
+import type { AgentRosterEntry, ChatConfigOption, ChatStreamEvent } from '@sproutgit/types';
 import type { ConfigDb } from '@sproutgit/database';
-import { getAgentConfig } from '@sproutgit/database';
+import { getAgentRoster, resolveRosterAgent } from '@sproutgit/database';
 import { handle } from './handle.js';
 import { log } from '../telemetry.js';
+import { attentionTracker } from './session-attention.js';
+import { FINISHED_ENTRY_TTL_MS } from '../attention-tracker.js';
 import { translateSessionUpdate, translatePermissionRequest, toChatConfigOptions, type TurnState } from './chat-acp-events.js';
 import { resolveCommandPath } from './tool-test-helpers.js';
-import { commandSupportsIntegratedMode, getAcpLaunchSpec } from './agents.js';
+import { getAcpLaunchSpecForAgent } from './agents.js';
 import { resolveAcpAdapterBin } from './acp-adapters.js';
 
 type ChatSession = {
@@ -94,6 +96,7 @@ function createClientHandlers(getSession: () => ChatSession): Client {
       const session = getSession();
       const requestId = randomUUID();
       session.pendingPermissions.set(requestId, outcome => resolve({ outcome }));
+      attentionTracker.setAwaitingPermission(session.id, 'chat', session.worktreePath);
       send(sessionWindows.get(session.id), session.id, translatePermissionRequest(requestId, params));
     }),
   };
@@ -105,8 +108,8 @@ function createClientHandlers(getSession: () => ChatSession): Client {
  * exiting early (bad binary, missing auth, etc.) so a startup failure
  * surfaces as a clear rejection instead of a hang.
  */
-async function spawnAcpSession(agent: AgentConfig, worktreePath: string, userDataPath: string): Promise<ChatSession> {
-  const spec = getAcpLaunchSpec(agent.command, agent.args);
+async function spawnAcpSession(agent: AgentRosterEntry, worktreePath: string, userDataPath: string): Promise<ChatSession> {
+  const spec = getAcpLaunchSpecForAgent(agent);
   if (!spec) throw new Error('The configured agent does not support Agent Client Protocol (ACP) mode.');
 
   const resolvedBin = spec.npmPackage
@@ -114,7 +117,7 @@ async function spawnAcpSession(agent: AgentConfig, worktreePath: string, userDat
     : await resolveCommandPath(spec.bin);
   if (!resolvedBin) {
     const hint = spec.npmPackage
-      ? ` Install it from Settings → AI Agent, or run: npm install -g ${spec.npmPackage}`
+      ? ` Install it from Settings → AI Agents, or run: npm install -g ${spec.npmPackage}`
       : '';
     throw new Error(`Could not find "${spec.bin}" (${spec.label}'s ACP mode) on PATH.${hint}`);
   }
@@ -125,7 +128,7 @@ async function spawnAcpSession(agent: AgentConfig, worktreePath: string, userDat
   // and rethrows any error, so no separate try/catch is needed here.
   const child = spawn(resolvedBin, spec.args, {
     cwd: worktreePath,
-    env: process.env,
+    env: { ...process.env, ...agent.env },
     stdio: ['pipe', 'pipe', 'pipe'],
   });
 
@@ -150,6 +153,9 @@ async function spawnAcpSession(agent: AgentConfig, worktreePath: string, userDat
   child.on('exit', code => {
     const win = sessionWindows.get(session.id);
     if (win && !win.isDestroyed()) win.webContents.send(IPC.EVENT_CHAT_EXIT, { sessionId: session.id, exitCode: code ?? -1 });
+    if (code === 0 || code === null) attentionTracker.setFinished(session.id, 'chat', session.worktreePath);
+    else attentionTracker.setFailed(session.id, 'chat', session.worktreePath);
+    attentionTracker.scheduleRemoval(session.id, FINISHED_ENTRY_TTL_MS);
     sessions.delete(session.id);
     sessionWindows.delete(session.id);
   });
@@ -178,6 +184,7 @@ async function spawnAcpSession(agent: AgentConfig, worktreePath: string, userDat
 async function runTurn(session: ChatSession, prompt: string): Promise<void> {
   session.turn = { messageId: null, messageIdSeq: session.turn.messageIdSeq };
   session.busy = true;
+  attentionTracker.setWorking(session.id, 'chat', session.worktreePath);
   const win = () => sessionWindows.get(session.id);
   try {
     const response = await session.connection.prompt({
@@ -192,23 +199,29 @@ async function runTurn(session: ChatSession, prompt: string): Promise<void> {
     send(win(), session.id, { type: 'error', message: err instanceof Error ? err.message : String(err) });
   } finally {
     session.busy = false;
+    // The child process may have already exited mid-turn (attentionTracker
+    // entry removed by the 'exit' handler) — don't resurrect a stale
+    // awaiting-input entry for a session that's already gone.
+    if (sessions.has(session.id)) attentionTracker.setAwaitingInput(session.id, 'chat', session.worktreePath);
   }
 }
 
 export function registerChatHandlers(configDb: ConfigDb, userDataPath: string): void {
-  handle(IPC.CHAT_START, async (_e, args: { worktreePath: string; initialPrompt?: string }) => {
-    const agent = getAgentConfig(configDb);
-    if (!commandSupportsIntegratedMode(agent.command)) {
+  handle(IPC.CHAT_START, async (_e, args: { worktreePath: string; initialPrompt?: string; agentId?: string }) => {
+    const roster = getAgentRoster(configDb);
+    const agent = resolveRosterAgent(roster, args.agentId);
+    if (!getAcpLaunchSpecForAgent(agent)) {
       throw new Error('The configured agent does not support Integrated (ACP) mode — use Terminal mode instead.');
     }
     if (agent.mode !== 'integrated') {
-      throw new Error('Integrated mode is not enabled for the configured agent. Switch to Integrated mode in Settings → AI Agent.');
+      throw new Error('Integrated mode is not enabled for the configured agent. Switch to Integrated mode in Settings → AI Agents.');
     }
 
     const session = await spawnAcpSession(agent, args.worktreePath, userDataPath);
     sessions.set(session.id, session);
     const win = BrowserWindow.fromWebContents(_e.sender);
     if (win) sessionWindows.set(session.id, win);
+    attentionTracker.setAwaitingInput(session.id, 'chat', session.worktreePath);
 
     if (args.initialPrompt) void runTurn(session, args.initialPrompt);
     return { sessionId: session.id, configOptions: session.configOptions };
@@ -238,6 +251,7 @@ export function registerChatHandlers(configDb: ConfigDb, userDataPath: string): 
     const resolve = session.pendingPermissions.get(args.requestId);
     if (!resolve) throw new Error(`No pending permission request "${args.requestId}" for this session.`);
     session.pendingPermissions.delete(args.requestId);
+    attentionTracker.setWorking(session.id, 'chat', session.worktreePath);
     resolve({ outcome: 'selected', optionId: args.optionId });
   });
 
@@ -249,6 +263,7 @@ export function registerChatHandlers(configDb: ConfigDb, userDataPath: string): 
       if (session.acpSessionId) void session.connection.cancel({ sessionId: session.acpSessionId }).catch(() => undefined);
       try { session.child.kill(); } catch { /* already exited */ }
     }
+    attentionTracker.remove(sessionId);
     sessions.delete(sessionId);
     sessionWindows.delete(sessionId);
   });

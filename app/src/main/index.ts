@@ -13,8 +13,10 @@ import { registerSystemHandlers } from './ipc/system.js';
 import { registerGithubHandlers } from './ipc/github.js';
 import { registerHookHandlers } from './ipc/hooks.js';
 import { registerAgentHandlers } from './ipc/agents.js';
+import { registerNotificationHandlers } from './ipc/notifications.js';
 import { registerChatHandlers } from './ipc/chat.js';
 import { registerCommitMessageGeneratorHandlers } from './ipc/commit-message-generator.js';
+import { registerAiProviderHandlers } from './ipc/ai-providers.js';
 import { registerProjectIdeaGeneratorHandlers } from './ipc/project-idea-generator.js';
 import { registerToolTestHandlers } from './ipc/tool-test.js';
 import { registerWatchHandlers } from './ipc/watcher.js';
@@ -23,6 +25,7 @@ import { registerUpdateHandlers, startUpdateCheck } from './ipc/update.js';
 import { registerIssueTrackerHandlers } from './ipc/issuetracker.js';
 import { registerProviderHandlers } from './ipc/providers.js';
 import { registerMcpHandlers } from './ipc/mcp.js';
+import { registerSessionAttentionHandlers } from './ipc/session-attention.js';
 import { registerGlobalErrorHandlers } from './global-error-handlers.js';
 import { stopAllMcpServers } from './mcp-bridge.js';
 import { openConfigDb } from '@sproutgit/database';
@@ -168,6 +171,11 @@ function createWindow(): BrowserWindow {
       sandbox: true,
       contextIsolation: true,
       nodeIntegration: false,
+      // Electron renderer processes don't inherit the main process's argv —
+      // additionalArguments is the documented way to forward a flag onto the
+      // renderer/preload process.argv (used by app/src/preload/index.ts to
+      // expose api.isE2E without a round-trip IPC call).
+      ...(isE2EMode && { additionalArguments: ['--sproutgit-e2e'] }),
     },
   });
 
@@ -298,10 +306,14 @@ app.whenReady().then(() => {
   if (isE2EMode) log.info('[e2e] hook handlers ok');
   registerAgentHandlers(configDb, userDataPath);
   if (isE2EMode) log.info('[e2e] agent handlers ok');
+  registerNotificationHandlers();
+  if (isE2EMode) log.info('[e2e] notification handlers ok');
   registerChatHandlers(configDb, userDataPath);
   if (isE2EMode) log.info('[e2e] chat handlers ok');
   registerCommitMessageGeneratorHandlers();
   if (isE2EMode) log.info('[e2e] commit message generator handlers ok');
+  registerAiProviderHandlers(configDb, userDataPath);
+  if (isE2EMode) log.info('[e2e] ai provider handlers ok');
   registerProjectIdeaGeneratorHandlers(configDb);
   if (isE2EMode) log.info('[e2e] project idea generator handlers ok');
   registerToolTestHandlers();
@@ -313,6 +325,7 @@ app.whenReady().then(() => {
   registerIssueTrackerHandlers();
   registerProviderHandlers(userDataPath);
   registerMcpHandlers(configDb);
+  registerSessionAttentionHandlers();
   if (isE2EMode) log.info('[e2e] issue tracker / provider / mcp handlers ok');
   // Skip update handler registration in E2E mode. On Linux CI, electron-updater
   // initialises AppImageUpdater which accesses D-Bus / libsecret and hangs for

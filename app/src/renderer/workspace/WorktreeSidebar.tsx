@@ -1,16 +1,233 @@
-import { api } from '../api.js';
-import { useToast } from '../toast-context.js';
-import { describeFetchSummary } from '../queries.js';
-import { useEffect, useState, type ReactNode } from 'react';
+import { api } from "../api.js";
+import { useToast, type ToastFn } from "../toast-context.js";
+import { describeFetchSummary } from "../queries.js";
+import { useEffect, useState, type ReactNode } from "react";
 import {
   ResizableSidebar,
   Spinner,
   useContextMenu,
   UpdateBadge,
-} from '@sproutgit/ui';
-import { GitBranch, RefreshCw, ArrowDownToLine, ArrowUpFromLine, Download, Plus, Sliders, Trash2, MoreHorizontal, FolderPen, FolderSearch, SquareTerminal, Play, Copy, CopyPlus, Bot, Link2, Rocket, PanelLeftClose, PanelLeftOpen } from 'lucide-react';
-import type { WorktreeInfo, WorkspaceStatus } from '@sproutgit/types';
-import type { UpdateState } from '@sproutgit/ui';
+} from "@sproutgit/ui";
+import {
+  GitBranch,
+  RefreshCw,
+  ArrowDownToLine,
+  ArrowUpFromLine,
+  Download,
+  Plus,
+  Sliders,
+  Trash2,
+  MoreHorizontal,
+  FolderPen,
+  FolderSearch,
+  SquareTerminal,
+  Play,
+  Copy,
+  CopyPlus,
+  Bot,
+  Link2,
+  Rocket,
+  PanelLeftClose,
+  PanelLeftOpen,
+  GitPullRequest,
+  GitPullRequestDraft,
+  GitPullRequestClosed,
+  GitPullRequestCreate,
+  GitMerge,
+  CircleCheck,
+  CircleX,
+  CircleDashed,
+  Hourglass,
+} from "lucide-react";
+import type {
+  WorktreeInfo,
+  WorkspaceStatus,
+  PullRequestStatus,
+  SessionAttention,
+} from "@sproutgit/types";
+import type { UpdateState } from "@sproutgit/ui";
+import { hasAwaitingAttention } from "../hooks/useSessionAttention.js";
+
+type MenuItems = Parameters<ReturnType<typeof useContextMenu>["open"]>[1];
+
+/** Items shared by the row's right-click menu and its "..." quick-actions menu. */
+function commonWorktreeMenuItems(
+  wt: WorktreeInfo,
+  toast: ToastFn,
+  agentItems: MenuItems,
+  prItems: MenuItems,
+  onOpenTerminal: Props["onOpenTerminal"],
+): MenuItems {
+  return [
+    {
+      label: "Open in Editor",
+      icon: <FolderPen size={14} />,
+      onClick: () =>
+        void api
+          .openInEditor(wt.path)
+          .then(() => toast("Opened in editor", "success"))
+          .catch((err: unknown) => toast(String(err), "error")),
+    },
+    {
+      label: /mac/i.test(navigator.platform)
+        ? "Reveal in Finder"
+        : "Reveal in Explorer",
+      icon: <FolderSearch size={14} />,
+      onClick: () =>
+        void api
+          .revealInFinder(wt.path)
+          .catch((err: unknown) => toast(String(err), "error")),
+    },
+    {
+      label: "Open Terminal Here",
+      icon: <SquareTerminal size={14} />,
+      onClick: () =>
+        onOpenTerminal(wt.path, wt.branch ?? wt.path.split("/").pop()),
+    },
+    ...(agentItems.length > 0 ? ["separator" as const, ...agentItems] : []),
+    ...(prItems.length > 0 ? ["separator" as const, ...prItems] : []),
+  ];
+}
+
+/** Full context menu for a right-clicked worktree row. */
+function buildRowContextMenuItems(
+  wt: WorktreeInfo,
+  toast: ToastFn,
+  agentItems: MenuItems,
+  prItems: MenuItems,
+  onOpenTerminal: Props["onOpenTerminal"],
+  onRefresh: Props["onRefresh"],
+  onOpenRunHookModal: Props["onOpenRunHookModal"],
+  onRunCreateHooks: Props["onRunCreateHooks"],
+  onDeleteWorktree: Props["onDeleteWorktree"],
+): MenuItems {
+  return [
+    ...commonWorktreeMenuItems(wt, toast, agentItems, prItems, onOpenTerminal),
+    "separator",
+    {
+      label: "Fetch",
+      icon: <RefreshCw size={14} />,
+      onClick: () =>
+        void api
+          .fetch(wt.path)
+          .then((summary) => {
+            toast(
+              describeFetchSummary(summary),
+              summary.hadNoRemotes ? "info" : "success",
+            );
+            // Nothing to refresh when there was nothing to fetch (no remotes) or
+            // nothing changed — matches useFetch's no-op check in queries.ts, avoiding
+            // a pointless refetch on every click of a no-op fetch.
+            if (
+              summary.hadNoRemotes ||
+              (summary.updatedRefCount === 0 && summary.prunedRefCount === 0)
+            )
+              return;
+            onRefresh();
+          })
+          .catch((err: unknown) =>
+            toast(`Fetch failed: ${String(err)}`, "error"),
+          ),
+    },
+    {
+      label: "Pull",
+      icon: <ArrowDownToLine size={14} />,
+      onClick: () =>
+        void api
+          .pull(wt.path)
+          .then(() => {
+            toast("Pulled", "success");
+            onRefresh();
+          })
+          .catch((err: unknown) => toast(String(err), "error")),
+    },
+    {
+      label: "Push",
+      icon: <ArrowUpFromLine size={14} />,
+      onClick: () =>
+        void api
+          .push(wt.path)
+          .then(() => {
+            toast("Pushed", "success");
+          })
+          .catch((err: unknown) => toast(String(err), "error")),
+    },
+    "separator",
+    {
+      label: "Run Hook…",
+      icon: <Play size={14} />,
+      onClick: () => onOpenRunHookModal(wt),
+    },
+    ...(wt.isExternal
+      ? [
+          {
+            label: "Run Create Hooks…",
+            icon: <Rocket size={14} />,
+            onClick: () => onRunCreateHooks(wt),
+          },
+        ]
+      : []),
+    "separator",
+    {
+      label: "Copy Branch Name",
+      icon: <Copy size={14} />,
+      onClick: () => void navigator.clipboard.writeText(wt.branch ?? ""),
+    },
+    {
+      label: "Copy Path",
+      icon: <CopyPlus size={14} />,
+      onClick: () => void navigator.clipboard.writeText(wt.path),
+    },
+    "separator",
+    {
+      label: "Remove Worktree",
+      icon: <Trash2 size={14} />,
+      danger: true,
+      onClick: () => onDeleteWorktree(wt),
+    },
+  ];
+}
+
+/** Compact "..." quick-actions menu — same as the row context menu minus Fetch/Pull/Push and Remove (those have dedicated buttons). */
+function buildQuickActionsMenuItems(
+  wt: WorktreeInfo,
+  toast: ToastFn,
+  agentItems: MenuItems,
+  prItems: MenuItems,
+  onOpenTerminal: Props["onOpenTerminal"],
+  onOpenRunHookModal: Props["onOpenRunHookModal"],
+  onRunCreateHooks: Props["onRunCreateHooks"],
+): MenuItems {
+  return [
+    ...commonWorktreeMenuItems(wt, toast, agentItems, prItems, onOpenTerminal),
+    "separator",
+    {
+      label: "Run Hook…",
+      icon: <Play size={14} />,
+      onClick: () => onOpenRunHookModal(wt),
+    },
+    ...(wt.isExternal
+      ? [
+          {
+            label: "Run Create Hooks…",
+            icon: <Rocket size={14} />,
+            onClick: () => onRunCreateHooks(wt),
+          },
+        ]
+      : []),
+    "separator",
+    {
+      label: "Copy Branch Name",
+      icon: <Copy size={14} />,
+      onClick: () => void navigator.clipboard.writeText(wt.branch ?? ""),
+    },
+    {
+      label: "Copy Path",
+      icon: <CopyPlus size={14} />,
+      onClick: () => void navigator.clipboard.writeText(wt.path),
+    },
+  ];
+}
 
 type Props = {
   workspacePath: string;
@@ -24,13 +241,21 @@ type Props = {
   creatingWorktree: boolean;
   pendingCreationBranch: string | null;
   updateState: UpdateState;
-  /** Whether an AI agent command is configured (Settings → AI Agent) — gates the launch button/menu item. */
+  /** Whether an AI agent command is configured (Settings → AI Agents) — gates the launch button/menu item. */
   agentConfigured: boolean;
   worktreesWithLiveAgent: Set<string>;
+  /** Live session attention state (working/awaiting-permission/awaiting-input/finished/failed), keyed by worktree path — see useSessionAttention(). */
+  attentionByWorktree: Record<string, SessionAttention[]>;
+  /** Jumps straight to the worktree's pending prompt — the chat tab's permission card, or the terminal tab, depending on the entry's kind. */
+  onJumpToAttention: (entry: SessionAttention) => void;
   /** Whether the sidebar is collapsed to a slim icon rail. */
   collapsed?: boolean;
   /** Toggles the collapsed state — wired to a toolbar button and Cmd/Ctrl+B. */
   onToggleCollapsed?: () => void;
+  /** PR + combined check status per worktree path. Missing/null entries render no PR badge — this is also what "not connected to GitHub" degrades to. */
+  prStatuses: Record<string, PullRequestStatus | null>;
+  /** Gates the "Create PR" action — hidden (not errored) when GitHub isn't connected. */
+  githubConnected: boolean;
   onWorktreeSwitch: (wt: WorktreeInfo) => void;
   onFetch: () => void;
   onPull: () => void;
@@ -43,26 +268,73 @@ type Props = {
   onRunCreateHooks: (wt: WorktreeInfo) => void;
   onDeleteWorktree: (wt: WorktreeInfo) => void;
   onLaunchAgent: (worktreePath: string) => void;
+  onCreatePr: (wt: WorktreeInfo) => void;
+  onOpenPrDetails: (wt: WorktreeInfo) => void;
 };
 
-const iconBtn = 'inline-flex items-center justify-center p-1.5 bg-transparent border-none cursor-pointer text-(--sg-text-faint) rounded-[4px] transition-colors hover:text-(--sg-text) hover:bg-(--sg-surface-raised) disabled:opacity-40 disabled:cursor-not-allowed';
+const iconBtn =
+  "inline-flex items-center justify-center p-1.5 bg-transparent border-none cursor-pointer text-(--sg-text-faint) rounded-[4px] transition-colors hover:text-(--sg-text) hover:bg-(--sg-surface-raised) disabled:opacity-40 disabled:cursor-not-allowed";
 
 function isPersistentBranch(branch: string | null) {
-  return /^(main|master|develop|release\/.+)$/.test(branch ?? '');
+  return /^(main|master|develop|release\/.+)$/.test(branch ?? "");
 }
 
 function tildify(p: string, home: string) {
-  if (home && p.startsWith(home)) return '~' + p.slice(home.length);
+  if (home && p.startsWith(home)) return "~" + p.slice(home.length);
   return p;
+}
+
+/** Small pill showing a worktree's PR number/state + combined check state. Renders nothing when there's no PR (including the unauthenticated/degraded case). Clicking opens the PR details dialog (checks list, draft/ready, merge) rather than navigating away to GitHub. */
+function PrBadge({ status, onOpenDetails }: { status: PullRequestStatus | null | undefined; onOpenDetails: () => void }) {
+  const pr = status?.pullRequest;
+  if (!pr) return null;
+
+  const stateIcon = pr.draft
+    ? <GitPullRequestDraft size={11} />
+    : pr.state === 'merged'
+      ? <GitMerge size={11} />
+      : pr.state === 'closed'
+        ? <GitPullRequestClosed size={11} />
+        : <GitPullRequest size={11} />;
+  const stateColor = pr.draft
+    ? 'text-(--sg-text-faint)'
+    : pr.state === 'merged'
+      ? 'text-(--sg-accent)'
+      : pr.state === 'closed'
+        ? 'text-(--sg-danger)'
+        : 'text-(--sg-primary)';
+
+  const checksState = status?.checksState;
+  const checksIcon = checksState === 'passing'
+    ? <CircleCheck size={10} className="text-(--sg-primary)" />
+    : checksState === 'failing'
+      ? <CircleX size={10} className="text-(--sg-danger)" />
+      : checksState === 'pending'
+        ? <CircleDashed size={10} className="text-(--sg-warning)" />
+        : null;
+
+  return (
+    <button
+      type="button"
+      className={`sg-pr-badge inline-flex shrink-0 items-center gap-0.5 rounded-full border border-(--sg-border) px-1.5 py-0 text-[9px] leading-4 cursor-pointer bg-transparent hover:bg-(--sg-surface-raised) ${stateColor}`}
+      data-testid="pr-badge"
+      title={`#${pr.number} ${pr.title}${checksState && checksState !== 'none' ? ` — checks ${checksState}` : ''}`}
+      onClick={e => { e.stopPropagation(); onOpenDetails(); }}
+    >
+      {stateIcon}
+      <span>#{pr.number}</span>
+      {checksIcon}
+    </button>
+  );
 }
 
 type InventoryRow = {
   wt: WorktreeInfo;
-  typeLabel: 'Managed' | 'Persistent' | 'External';
-  section: 'managed' | 'persistent' | 'external';
+  typeLabel: "Managed" | "Persistent" | "External";
+  section: "managed" | "persistent" | "external";
 };
 
-const PENDING_PATH = '__PENDING__';
+const PENDING_PATH = "__PENDING__";
 
 export function WorktreeSidebar({
   workspacePath,
@@ -78,8 +350,12 @@ export function WorktreeSidebar({
   updateState,
   agentConfigured,
   worktreesWithLiveAgent,
+  attentionByWorktree,
+  onJumpToAttention,
   collapsed = false,
   onToggleCollapsed,
+  prStatuses,
+  githubConnected,
   onWorktreeSwitch,
   onFetch,
   onPull,
@@ -92,40 +368,95 @@ export function WorktreeSidebar({
   onRunCreateHooks,
   onDeleteWorktree,
   onLaunchAgent,
+  onCreatePr,
+  onOpenPrDetails,
 }: Props) {
   const toast = useToast();
   const contextMenu = useContextMenu();
-  const [homeDir, setHomeDir] = useState('');
+  const [homeDir, setHomeDir] = useState("");
 
   useEffect(() => {
-    api.getHomeDir().then(setHomeDir).catch(() => {/* ignore */});
+    api
+      .getHomeDir()
+      .then(setHomeDir)
+      .catch(() => {
+        /* ignore */
+      });
   }, []);
 
   function agentMenuItems(worktreePath: string) {
     if (!agentConfigured) return [];
-    return [{
-      label: 'Launch AI Agent',
-      icon: <Bot size={14} />,
-      onClick: () => onLaunchAgent(worktreePath),
-    }];
+    return [
+      {
+        label: "Launch AI Agent",
+        icon: <Bot size={14} />,
+        onClick: () => onLaunchAgent(worktreePath),
+      },
+    ];
   }
 
-  const rootPath = workspaceStatus?.rootPath ?? '';
-  const nonRootWorktrees = worktrees.filter(wt => wt.path !== rootPath);
-  const underManaged = nonRootWorktrees.filter(wt => !wt.isExternal);
-  const persistentWorktrees = underManaged.filter(wt => isPersistentBranch(wt.branch));
-  const taskWorktrees = underManaged.filter(wt => !isPersistentBranch(wt.branch));
-  const externalWorktrees = nonRootWorktrees.filter(wt => wt.isExternal);
+  function prMenuItems(wt: WorktreeInfo) {
+    if (!githubConnected) return [];
+    const pr = prStatuses[wt.path]?.pullRequest;
+    if (pr) {
+      return [
+        {
+          label: "View PR",
+          icon: <GitPullRequest size={14} />,
+          onClick: () => void api.openUrl(pr.url),
+        },
+      ];
+    }
+    return [
+      {
+        label: "Create PR…",
+        icon: <GitPullRequestCreate size={14} />,
+        onClick: () => onCreatePr(wt),
+      },
+    ];
+  }
+
+  const rootPath = workspaceStatus?.rootPath ?? "";
+  const nonRootWorktrees = worktrees.filter((wt) => wt.path !== rootPath);
+  const underManaged = nonRootWorktrees.filter((wt) => !wt.isExternal);
+  const persistentWorktrees = underManaged.filter((wt) =>
+    isPersistentBranch(wt.branch),
+  );
+  const taskWorktrees = underManaged.filter(
+    (wt) => !isPersistentBranch(wt.branch),
+  );
+  const externalWorktrees = nonRootWorktrees.filter((wt) => wt.isExternal);
 
   // Flat sorted inventory — managed → persistent → external, alpha within section
   const inventoryRows: InventoryRow[] = [];
-  if (creatingWorktree && pendingCreationBranch && !taskWorktrees.some(wt => wt.branch === pendingCreationBranch)) {
-    inventoryRows.push({ wt: { path: PENDING_PATH, branch: pendingCreationBranch, head: null, detached: false, isExternal: false }, typeLabel: 'Managed', section: 'managed' });
+  if (
+    creatingWorktree &&
+    pendingCreationBranch &&
+    !taskWorktrees.some((wt) => wt.branch === pendingCreationBranch)
+  ) {
+    inventoryRows.push({
+      wt: {
+        path: PENDING_PATH,
+        branch: pendingCreationBranch,
+        head: null,
+        detached: false,
+        isExternal: false,
+      },
+      typeLabel: "Managed",
+      section: "managed",
+    });
   }
-  for (const wt of taskWorktrees) inventoryRows.push({ wt, typeLabel: 'Managed', section: 'managed' });
-  for (const wt of persistentWorktrees) inventoryRows.push({ wt, typeLabel: 'Persistent', section: 'persistent' });
-  for (const wt of externalWorktrees) inventoryRows.push({ wt, typeLabel: 'External', section: 'external' });
-  const sectionRank: Record<string, number> = { managed: 0, persistent: 1, external: 2 };
+  for (const wt of taskWorktrees)
+    inventoryRows.push({ wt, typeLabel: "Managed", section: "managed" });
+  for (const wt of persistentWorktrees)
+    inventoryRows.push({ wt, typeLabel: "Persistent", section: "persistent" });
+  for (const wt of externalWorktrees)
+    inventoryRows.push({ wt, typeLabel: "External", section: "external" });
+  const sectionRank: Record<string, number> = {
+    managed: 0,
+    persistent: 1,
+    external: 2,
+  };
   inventoryRows.sort((a, b) => {
     const s = sectionRank[a.section]! - sectionRank[b.section]!;
     if (s !== 0) return s;
@@ -134,8 +465,12 @@ export function WorktreeSidebar({
 
   // Show the active worktree summary only when the active worktree is not the root
   const activeIsRoot = !activeWorktree || activeWorktree.path === rootPath;
-  const activeIsPersistent = activeWorktree ? isPersistentBranch(activeWorktree.branch) : false;
-  const activeDirty = activeWorktree ? (worktreeChangeCounts[activeWorktree.path] ?? 0) : 0;
+  const activeIsPersistent = activeWorktree
+    ? isPersistentBranch(activeWorktree.branch)
+    : false;
+  const activeDirty = activeWorktree
+    ? (worktreeChangeCounts[activeWorktree.path] ?? 0)
+    : 0;
 
   // Slim icon rail shown when the sidebar is collapsed — keeps worktree
   // switching and re-expanding available without taking up horizontal space.
@@ -160,27 +495,35 @@ export function WorktreeSidebar({
         <Plus size={14} />
       </button>
       <div className="min-h-0 flex-1 overflow-y-auto flex flex-col items-center gap-1 pt-1">
-        {inventoryRows.filter(row => row.wt.path !== PENDING_PATH).map(row => {
-          const isActive = activeWorktree?.path === row.wt.path;
-          const label = row.wt.branch ?? (row.wt.detached ? 'detached' : row.wt.path.split('/').pop()) ?? row.wt.path;
-          const changeCount = worktreeChangeCounts[row.wt.path] ?? 0;
-          return (
-            <button
-              key={row.wt.path}
-              className={`relative flex h-7 w-7 shrink-0 items-center justify-center rounded-md border-none cursor-pointer transition-colors ${isActive ? 'bg-(--sg-primary)/15 text-(--sg-primary)' : 'bg-transparent text-(--sg-text-faint) hover:bg-(--sg-surface-raised) hover:text-(--sg-text)'}`}
-              title={label}
-              aria-label={`Switch to ${label}`}
-              data-testid="worktree-rail-item"
-              data-path={row.wt.path}
-              onClick={() => onWorktreeSwitch(row.wt)}
-            >
-              <GitBranch size={14} />
-              {changeCount > 0 && (
-                <span className="absolute top-0.5 right-0.5 h-1.5 w-1.5 rounded-full bg-(--sg-warning)" aria-hidden="true" />
-              )}
-            </button>
-          );
-        })}
+        {inventoryRows
+          .filter((row) => row.wt.path !== PENDING_PATH)
+          .map((row) => {
+            const isActive = activeWorktree?.path === row.wt.path;
+            const label =
+              row.wt.branch ??
+              (row.wt.detached ? "detached" : row.wt.path.split("/").pop()) ??
+              row.wt.path;
+            const changeCount = worktreeChangeCounts[row.wt.path] ?? 0;
+            return (
+              <button
+                key={row.wt.path}
+                className={`relative flex h-7 w-7 shrink-0 items-center justify-center rounded-md border-none cursor-pointer transition-colors ${isActive ? "bg-(--sg-primary)/15 text-(--sg-primary)" : "bg-transparent text-(--sg-text-faint) hover:bg-(--sg-surface-raised) hover:text-(--sg-text)"}`}
+                title={label}
+                aria-label={`Switch to ${label}`}
+                data-testid="worktree-rail-item"
+                data-path={row.wt.path}
+                onClick={() => onWorktreeSwitch(row.wt)}
+              >
+                <GitBranch size={14} />
+                {changeCount > 0 && (
+                  <span
+                    className="absolute top-0.5 right-0.5 h-1.5 w-1.5 rounded-full bg-(--sg-warning)"
+                    aria-hidden="true"
+                  />
+                )}
+              </button>
+            );
+          })}
       </div>
     </div>
   );
@@ -223,19 +566,43 @@ export function WorktreeSidebar({
             <span>New</span>
           </button>
           <div className="mx-1 h-4 w-px bg-(--sg-border)" />
-          <button className={iconBtn} title="Workspace hooks" onClick={onOpenHooksModal}>
+          <button
+            className={iconBtn}
+            title="Workspace hooks"
+            onClick={onOpenHooksModal}
+            data-testid="btn-open-hooks-modal"
+          >
+
             <Sliders size={15} />
           </button>
           <button className={iconBtn} title="Refresh" onClick={onRefresh}>
             <RefreshCw size={14} />
           </button>
-          <button className={iconBtn} title="Fetch" onClick={onFetch} disabled={fetching || !activeWorktree} data-testid="btn-fetch-active-worktree">
+          <button
+            className={iconBtn}
+            title="Fetch"
+            onClick={onFetch}
+            disabled={fetching || !activeWorktree}
+            data-testid="btn-fetch-active-worktree"
+          >
             {fetching ? <Spinner size="sm" /> : <Download size={14} />}
           </button>
-          <button className={iconBtn} title="Pull" onClick={onPull} disabled={pulling || !activeWorktree} data-testid="btn-pull-active-worktree">
+          <button
+            className={iconBtn}
+            title="Pull"
+            onClick={onPull}
+            disabled={pulling || !activeWorktree}
+            data-testid="btn-pull-active-worktree"
+          >
             {pulling ? <Spinner size="sm" /> : <ArrowDownToLine size={14} />}
           </button>
-          <button className={iconBtn} title="Push" onClick={onPush} disabled={pushing || !activeWorktree} data-testid="btn-push-active-worktree">
+          <button
+            className={iconBtn}
+            title="Push"
+            onClick={onPush}
+            disabled={pushing || !activeWorktree}
+            data-testid="btn-push-active-worktree"
+          >
             {pushing ? <Spinner size="sm" /> : <ArrowUpFromLine size={14} />}
           </button>
         </div>
@@ -244,7 +611,10 @@ export function WorktreeSidebar({
         {activeWorktree && !activeIsRoot && (
           <div className="relative shrink-0 border-b border-(--sg-border-subtle) bg-linear-to-b from-[color-mix(in_srgb,var(--sg-primary)_8%,transparent)] to-transparent px-3 py-2.5">
             {/* Left accent rail */}
-            <span aria-hidden="true" className="absolute top-2.5 bottom-2.5 left-0 w-0.75 rounded-r-full bg-(--sg-primary)" />
+            <span
+              aria-hidden="true"
+              className="absolute top-2.5 bottom-2.5 left-0 w-0.75 rounded-r-full bg-(--sg-primary)"
+            />
             <div className="flex items-center gap-1.5">
               <span className="flex items-center gap-1 text-[9px] font-semibold uppercase tracking-[0.12em] text-(--sg-primary)">
                 <span className="relative flex h-1.5 w-1.5">
@@ -254,40 +624,68 @@ export function WorktreeSidebar({
                 Active
               </span>
               <span className="text-[9px] font-medium uppercase tracking-wider text-(--sg-text-faint)">
-                · {activeIsPersistent ? 'Persistent' : 'Managed'}
+                · {activeIsPersistent ? "Persistent" : "Managed"}
               </span>
-              <span className={`ml-auto text-[9px] font-medium ${activeDirty > 0 ? 'text-(--sg-warning)' : 'text-(--sg-text-faint)'}`}>
-                {activeDirty > 0 ? `${activeDirty} change${activeDirty === 1 ? '' : 's'}` : 'Clean'}
+              <span
+                className={`ml-auto text-[9px] font-medium ${activeDirty > 0 ? "text-(--sg-warning)" : "text-(--sg-text-faint)"}`}
+              >
+                {activeDirty > 0
+                  ? `${activeDirty} change${activeDirty === 1 ? "" : "s"}`
+                  : "Clean"}
               </span>
             </div>
             <div className="mt-1.5 flex items-center gap-1.5">
               <GitBranch size={14} className="shrink-0 text-(--sg-primary)" />
-              <p className="truncate font-mono text-[13px] font-semibold text-(--sg-text)" title={activeWorktree.branch ?? ''}>
-                {activeWorktree.branch ?? 'detached HEAD'}
+              <p
+                className="truncate font-mono text-[13px] font-semibold text-(--sg-text)"
+                title={activeWorktree.branch ?? ""}
+              >
+                {activeWorktree.branch ?? "detached HEAD"}
               </p>
             </div>
-            <p className="mt-0.5 truncate pl-5 text-[10px] text-(--sg-text-dim)" title={activeWorktree.path}>
+            <p
+              className="mt-0.5 truncate pl-5 text-[10px] text-(--sg-text-dim)"
+              title={activeWorktree.path}
+            >
               {tildify(activeWorktree.path, homeDir)}
             </p>
           </div>
         )}
 
         {/* Worktree list */}
-        <div className="min-h-0 flex-1 overflow-y-auto" role="radiogroup" aria-label="Worktrees">
+        <div
+          className="min-h-0 flex-1 overflow-y-auto"
+          role="radiogroup"
+          aria-label="Worktrees"
+        >
           {inventoryRows.length === 0 && !creatingWorktree && (
-            <div className="m-3 rounded-lg border border-dashed border-(--sg-border) p-4 flex flex-col items-center gap-3 text-center">
+            <div className="m-3 rounded-lg border border-dashed border-(--sg-border) p-4 flex flex-col items-center gap-3 text-center" data-testid="worktree-empty-state">
               <div className="w-9 h-9 rounded-full bg-(--sg-surface-raised) flex items-center justify-center">
                 <GitBranch size={18} className="text-(--sg-primary)" />
               </div>
               <div>
-                <p className="text-xs font-semibold text-(--sg-text) m-0">No worktrees yet</p>
-                <p className="text-[11px] text-(--sg-text-faint) mt-1 m-0 leading-relaxed">
-                  Create a worktree for each branch you want to work on in parallel.
+                <p className="text-xs font-semibold text-(--sg-text) m-0">
+                  No worktrees yet
                 </p>
+                <p className="text-[11px] text-(--sg-text-faint) mt-1 m-0 leading-relaxed">
+                  A worktree is its own isolated working copy of one branch — nothing to stash or switch away from when you juggle several at once.
+                </p>
+              </div>
+              <div className="w-full flex flex-col gap-1.5 text-left">
+                <div className="flex items-center gap-2 text-[11px] text-(--sg-text-dim)">
+                  <span className="flex items-center justify-center w-4 h-4 rounded-full bg-(--sg-primary)/15 text-(--sg-primary) text-[9px] font-bold shrink-0">1</span>
+                  Create a worktree for the branch you want to work on
+                </div>
+                <div className="flex items-center gap-2 text-[11px] text-(--sg-text-dim)">
+                  <span className="flex items-center justify-center w-4 h-4 rounded-full bg-(--sg-primary)/15 text-(--sg-primary) text-[9px] font-bold shrink-0">2</span>
+                  <Bot size={12} className="text-(--sg-text-faint) shrink-0" />
+                  Launch an AI agent right inside it
+                </div>
               </div>
               <button
                 className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-(--sg-primary) text-white text-xs font-medium hover:bg-(--sg-primary-hover) transition-colors cursor-pointer border-none"
                 onClick={onNewWorktree}
+                data-testid="btn-create-first-worktree"
               >
                 <Plus size={12} /> Create first worktree
               </button>
@@ -302,71 +700,69 @@ export function WorktreeSidebar({
             return (
               <div
                 key={row.wt.path}
-                className={`sg-worktree-btn group flex items-center gap-2 px-3 py-2 transition-colors ${isPending ? 'cursor-not-allowed opacity-60' : 'cursor-pointer hover:bg-(--sg-surface-raised)'} ${idx > 0 ? 'border-t border-(--sg-border-subtle)' : ''}`}
-                data-testid={isPending ? 'worktree-item-pending' : row.wt.isExternal ? 'worktree-item-external' : 'worktree-item'}
-                data-branch={row.wt.branch ?? ''}
+                className={`sg-worktree-btn group flex items-center gap-2 px-3 py-2 transition-colors ${isPending ? "cursor-not-allowed opacity-60" : "cursor-pointer hover:bg-(--sg-surface-raised)"} ${idx > 0 ? "border-t border-(--sg-border-subtle)" : ""}`}
+                data-testid={
+                  isPending
+                    ? "worktree-item-pending"
+                    : row.wt.isExternal
+                      ? "worktree-item-external"
+                      : "worktree-item"
+                }
+                data-branch={row.wt.branch ?? ""}
                 data-path={row.wt.path}
-                data-active={isActive ? 'true' : 'false'}
+                data-active={isActive ? "true" : "false"}
                 role="radio"
                 aria-checked={isActive}
                 tabIndex={isActive ? 0 : -1}
-                onClick={() => { if (!isPending) onWorktreeSwitch(row.wt); }}
-                onKeyDown={e => { if (e.key === 'Enter' && !isPending) onWorktreeSwitch(row.wt); }}
-                onContextMenu={e => {
+                onClick={() => {
+                  if (!isPending) onWorktreeSwitch(row.wt);
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && !isPending) onWorktreeSwitch(row.wt);
+                }}
+                onContextMenu={(e) => {
                   if (isPending) return;
-                  contextMenu.open(e, [
-                    {
-                      label: 'Open in Editor',
-                      icon: <FolderPen size={14} />,
-                      onClick: () => void api.openInEditor(row.wt.path)
-                        .then(() => toast('Opened in editor', 'success'))
-                        .catch((err: unknown) => toast(String(err), 'error')),
-                    },
-                    {
-                      label: /mac/i.test(navigator.platform) ? 'Reveal in Finder' : 'Reveal in Explorer',
-                      icon: <FolderSearch size={14} />,
-                      onClick: () => void api.revealInFinder(row.wt.path)
-                        .catch((err: unknown) => toast(String(err), 'error')),
-                    },
-                    {
-                      label: 'Open Terminal Here',
-                      icon: <SquareTerminal size={14} />,
-                      onClick: () => onOpenTerminal(row.wt.path, row.wt.branch ?? row.wt.path.split('/').pop()),
-                    },
-                    ...(agentMenuItems(row.wt.path).length > 0 ? ['separator' as const, ...agentMenuItems(row.wt.path)] : []),
-                    'separator',
-                    { label: 'Fetch', icon: <RefreshCw size={14} />, onClick: () => void api.fetch(row.wt.path).then((summary) => {
-                      toast(describeFetchSummary(summary), summary.hadNoRemotes ? 'info' : 'success');
-                      // Nothing to refresh when there was nothing to fetch (no remotes) or
-                      // nothing changed — matches useFetch's no-op check in queries.ts, avoiding
-                      // a pointless refetch on every click of a no-op fetch.
-                      if (summary.hadNoRemotes || (summary.updatedRefCount === 0 && summary.prunedRefCount === 0)) return;
-                      onRefresh();
-                    }).catch((err: unknown) => toast(`Fetch failed: ${String(err)}`, 'error')) },
-                    { label: 'Pull', icon: <ArrowDownToLine size={14} />, onClick: () => void api.pull(row.wt.path).then(() => { toast('Pulled', 'success'); onRefresh(); }).catch((err: unknown) => toast(String(err), 'error')) },
-                    { label: 'Push', icon: <ArrowUpFromLine size={14} />, onClick: () => void api.push(row.wt.path).then(() => { toast('Pushed', 'success'); }).catch((err: unknown) => toast(String(err), 'error')) },
-                    'separator',
-                    { label: 'Run Hook…', icon: <Play size={14} />, onClick: () => onOpenRunHookModal(row.wt) },
-                    ...(row.wt.isExternal
-                      ? [{ label: 'Run Create Hooks…', icon: <Rocket size={14} />, onClick: () => onRunCreateHooks(row.wt) }]
-                      : []),
-                    'separator',
-                    { label: 'Copy Branch Name', icon: <Copy size={14} />, onClick: () => void navigator.clipboard.writeText(row.wt.branch ?? '') },
-                    { label: 'Copy Path', icon: <CopyPlus size={14} />, onClick: () => void navigator.clipboard.writeText(row.wt.path) },
-                    'separator',
-                    { label: 'Remove Worktree', icon: <Trash2 size={14} />, danger: true, onClick: () => onDeleteWorktree(row.wt) },
-                  ]);
+                  contextMenu.open(
+                    e,
+                    buildRowContextMenuItems(
+                      row.wt,
+                      toast,
+                      agentMenuItems(row.wt.path),
+                      prMenuItems(row.wt),
+                      onOpenTerminal,
+                      onRefresh,
+                      onOpenRunHookModal,
+                      onRunCreateHooks,
+                      onDeleteWorktree,
+                    ),
+                  );
                 }}
               >
                 {/* Faux radio indicator */}
                 <span
                   aria-hidden="true"
-                  className={`relative mt-0.5 flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded-full border transition-colors ${isRowBusy ? 'border-transparent' : isActive ? 'border-(--sg-primary)' : 'border-(--sg-border) group-hover:border-(--sg-primary)/60'}`}
+                  className={`relative mt-0.5 flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded-full border transition-colors ${isRowBusy ? "border-transparent" : isActive ? "border-(--sg-primary)" : "border-(--sg-border) group-hover:border-(--sg-primary)/60"}`}
                 >
                   {isRowBusy ? (
-                    <svg className="h-3.5 w-3.5 text-(--sg-primary) animate-spin" fill="none" viewBox="0 0 24 24">
-                      <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" opacity="0.2" />
-                      <path d="M12 2a10 10 0 0 1 10 10" stroke="currentColor" strokeWidth="3" strokeLinecap="round" />
+                    <svg
+                      className="h-3.5 w-3.5 text-(--sg-primary) animate-spin"
+                      fill="none"
+                      viewBox="0 0 24 24"
+                    >
+                      <circle
+                        cx="12"
+                        cy="12"
+                        r="10"
+                        stroke="currentColor"
+                        strokeWidth="3"
+                        opacity="0.2"
+                      />
+                      <path
+                        d="M12 2a10 10 0 0 1 10 10"
+                        stroke="currentColor"
+                        strokeWidth="3"
+                        strokeLinecap="round"
+                      />
                     </svg>
                   ) : isActive ? (
                     <span className="h-1.5 w-1.5 rounded-full bg-(--sg-primary)" />
@@ -376,10 +772,19 @@ export function WorktreeSidebar({
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-1.5">
                     {row.wt.isExternal && (
-                      <Link2 size={11} className="shrink-0 text-(--sg-text-faint)" aria-hidden="true" />
+                      <Link2
+                        size={11}
+                        className="shrink-0 text-(--sg-text-faint)"
+                        aria-hidden="true"
+                      />
                     )}
-                    <p className={`sg-worktree-label truncate text-xs font-semibold ${isActive ? 'text-(--sg-primary)' : 'text-(--sg-text)'}`}>
-                      {row.wt.branch ?? (row.wt.detached ? 'detached' : row.wt.path.split('/').pop())}
+                    <p
+                      className={`sg-worktree-label truncate text-xs font-semibold ${isActive ? "text-(--sg-primary)" : "text-(--sg-text)"}`}
+                    >
+                      {row.wt.branch ??
+                        (row.wt.detached
+                          ? "detached"
+                          : row.wt.path.split("/").pop())}
                     </p>
                     <span className="shrink-0 rounded-full border border-(--sg-border) px-1.5 py-0 text-[9px] leading-4 text-(--sg-text-dim)">
                       {row.typeLabel}
@@ -398,18 +803,41 @@ export function WorktreeSidebar({
                         <Bot size={10} />
                       </span>
                     )}
+                    {hasAwaitingAttention(attentionByWorktree[row.wt.path]) && (
+                      <button
+                        type="button"
+                        className="sg-attention-badge flex shrink-0 items-center justify-center rounded-full border-none bg-(--sg-warning)/20 p-0.5 text-(--sg-warning) cursor-pointer"
+                        data-testid="attention-badge"
+                        title="An agent session is waiting on you"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          const entry = attentionByWorktree[row.wt.path]?.find((a) =>
+                            a.state === "awaiting-permission" || a.state === "awaiting-input",
+                          );
+                          if (entry) onJumpToAttention(entry);
+                        }}
+                      >
+                        <Hourglass size={10} />
+                      </button>
+                    )}
+                    <PrBadge status={prStatuses[row.wt.path]} onOpenDetails={() => onOpenPrDetails(row.wt)} />
                   </div>
                   <p className="truncate text-[10px] text-(--sg-text-dim)">
-                    {isPending ? '' : tildify(row.wt.path, homeDir)}
+                    {isPending ? "" : tildify(row.wt.path, homeDir)}
                   </p>
                 </div>
 
                 {/* Action buttons (shown on hover / when active) */}
-                <div className={`flex shrink-0 items-center gap-0.5 transition-opacity ${isRowBusy ? 'pointer-events-none opacity-0' : 'opacity-0 group-hover:opacity-100'} ${isActive && !isRowBusy ? 'opacity-100' : ''}`}>
+                <div
+                  className={`flex shrink-0 items-center gap-0.5 transition-opacity ${isRowBusy ? "pointer-events-none opacity-0" : "opacity-0 group-hover:opacity-100"} ${isActive && !isRowBusy ? "opacity-100" : ""}`}
+                >
                   {agentConfigured && (
                     <button
                       type="button"
-                      onClick={e => { e.stopPropagation(); onLaunchAgent(row.wt.path); }}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onLaunchAgent(row.wt.path);
+                      }}
                       className="sg-launch-agent-btn rounded p-1 text-(--sg-text-dim) hover:bg-(--sg-surface) hover:text-(--sg-primary) border-none cursor-pointer bg-transparent"
                       title="Launch AI Agent"
                       aria-label="Launch AI Agent"
@@ -418,24 +846,34 @@ export function WorktreeSidebar({
                       <Bot size={13} />
                     </button>
                   )}
+                  {githubConnected && !prStatuses[row.wt.path]?.pullRequest && (
+                    <button
+                      type="button"
+                      onClick={e => { e.stopPropagation(); onCreatePr(row.wt); }}
+                      className="sg-create-pr-btn rounded p-1 text-(--sg-text-dim) hover:bg-(--sg-surface) hover:text-(--sg-primary) border-none cursor-pointer bg-transparent"
+                      title="Create PR"
+                      aria-label="Create PR"
+                      data-testid="btn-create-pr"
+                    >
+                      <GitPullRequestCreate size={13} />
+                    </button>
+                  )}
                   <button
                     type="button"
-                    onClick={e => {
+                    onClick={(e) => {
                       e.stopPropagation();
-                      contextMenu.open(e, [
-                        { label: 'Open in Editor', icon: <FolderPen size={14} />, onClick: () => void api.openInEditor(row.wt.path).then(() => toast('Opened in editor', 'success')).catch((err: unknown) => toast(String(err), 'error')) },
-                        { label: /mac/i.test(navigator.platform) ? 'Reveal in Finder' : 'Reveal in Explorer', icon: <FolderSearch size={14} />, onClick: () => void api.revealInFinder(row.wt.path).catch((err: unknown) => toast(String(err), 'error')) },
-                        { label: 'Open Terminal Here', icon: <SquareTerminal size={14} />, onClick: () => onOpenTerminal(row.wt.path, row.wt.branch ?? row.wt.path.split('/').pop()) },
-                        ...(agentMenuItems(row.wt.path).length > 0 ? ['separator' as const, ...agentMenuItems(row.wt.path)] : []),
-                        'separator',
-                        { label: 'Run Hook…', icon: <Play size={14} />, onClick: () => onOpenRunHookModal(row.wt) },
-                        ...(row.wt.isExternal
-                          ? [{ label: 'Run Create Hooks…', icon: <Rocket size={14} />, onClick: () => onRunCreateHooks(row.wt) }]
-                          : []),
-                        'separator',
-                        { label: 'Copy Branch Name', icon: <Copy size={14} />, onClick: () => void navigator.clipboard.writeText(row.wt.branch ?? '') },
-                        { label: 'Copy Path', icon: <CopyPlus size={14} />, onClick: () => void navigator.clipboard.writeText(row.wt.path) },
-                      ]);
+                      contextMenu.open(
+                        e,
+                        buildQuickActionsMenuItems(
+                          row.wt,
+                          toast,
+                          agentMenuItems(row.wt.path),
+                          prMenuItems(row.wt),
+                          onOpenTerminal,
+                          onOpenRunHookModal,
+                          onRunCreateHooks,
+                        ),
+                      );
                     }}
                     className="rounded p-1 text-(--sg-text-dim) hover:bg-(--sg-surface) hover:text-(--sg-text) border-none cursor-pointer bg-transparent"
                     title="Worktree actions"
@@ -445,7 +883,10 @@ export function WorktreeSidebar({
                   </button>
                   <button
                     type="button"
-                    onClick={e => { e.stopPropagation(); onDeleteWorktree(row.wt); }}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onDeleteWorktree(row.wt);
+                    }}
                     className="rounded p-1 text-(--sg-text-dim) hover:bg-(--sg-surface) hover:text-(--sg-danger) border-none cursor-pointer bg-transparent"
                     title="Delete worktree"
                     aria-label="Delete worktree"
@@ -460,14 +901,15 @@ export function WorktreeSidebar({
         </div>
 
         {/* Update badge */}
-        {updateState.status !== 'idle' && updateState.status !== 'up-to-date' && (
-          <div className="px-3 py-2 shrink-0">
-            <UpdateBadge
-              state={updateState}
-              onInstall={() => void api.installUpdate()}
-            />
-          </div>
-        )}
+        {updateState.status !== "idle" &&
+          updateState.status !== "up-to-date" && (
+            <div className="px-3 py-2 shrink-0">
+              <UpdateBadge
+                state={updateState}
+                onInstall={() => void api.installUpdate()}
+              />
+            </div>
+          )}
       </div>
     </ResizableSidebar>
   );

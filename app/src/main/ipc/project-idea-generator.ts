@@ -1,8 +1,8 @@
 /**
  * New-project-from-idea generator.
  *
- * Runs the user's configured AI agent (the single command/args from
- * Settings → AI Agent — see @sproutgit/types AgentConfig) once, non-
+ * Runs the user's default configured AI agent (see @sproutgit/types
+ * AgentRoster/AgentRosterEntry, Settings → AI Agents) once, non-
  * interactively, to turn a free-form pitch into a project name, tech stack,
  * and one-line description. Spawned with `execFile` (never a shell), same
  * as the commit-message generator.
@@ -25,7 +25,7 @@ import { execFile } from 'node:child_process';
 import { IPC, ACP_PRESET_TOKENS } from '@sproutgit/types';
 import type { ProjectIdeaGenerateResult } from '@sproutgit/types';
 import type { ConfigDb } from '@sproutgit/database';
-import { getAgentConfig } from '@sproutgit/database';
+import { getAgentRoster, resolveRosterAgent } from '@sproutgit/database';
 import { handle } from './handle.js';
 import { log } from '../telemetry.js';
 import { splitCommand } from './tool-test-helpers.js';
@@ -84,9 +84,9 @@ export function registerProjectIdeaGeneratorHandlers(configDb: ConfigDb): void {
     const pitch = args.pitch.trim();
     if (!pitch) return { error: 'Describe your project idea first.' };
 
-    const agent = getAgentConfig(configDb);
+    const agent = resolveRosterAgent(getAgentRoster(configDb));
     if (!agent.command.trim()) {
-      return { error: 'No AI agent configured. Set one in Settings → AI Agent.' };
+      return { error: 'No AI agent configured. Set one in Settings → AI Agents.' };
     }
 
     const { bin, args: leadingArgs } = splitCommand(agent.command);
@@ -98,7 +98,7 @@ export function registerProjectIdeaGeneratorHandlers(configDb: ConfigDb): void {
         child = execFile(
           bin,
           invocation.args,
-          { timeout: GENERATE_TIMEOUT_MS, maxBuffer: 10 * 1024 * 1024 },
+          { timeout: GENERATE_TIMEOUT_MS, maxBuffer: 10 * 1024 * 1024, env: { ...process.env, ...agent.env } },
           (error, stdout, stderr) => {
             if (error) {
               log.error('[projectIdea:generate] generator failed', error, stderr);

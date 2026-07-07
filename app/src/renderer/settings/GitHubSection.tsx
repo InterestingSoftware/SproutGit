@@ -1,19 +1,54 @@
 import { Link2 } from 'lucide-react';
 import { api } from '../api.js';
 import { useState, useEffect } from 'react';
-import type { DeviceCodeResponse, GitHubAuthStatus } from '@sproutgit/types';
+import type { DeviceCodeResponse, GitHubAuthStatus, AgentPrPermission } from '@sproutgit/types';
 import { Spinner, type ToastData } from '@sproutgit/ui';
 
 interface Props {
   onToast: (msg: string, variant?: ToastData['variant']) => void;
   onAuthChange: (auth: GitHubAuthStatus | null) => void;
+  workspacePath: string;
 }
 
-export function GitHubSection({ onToast, onAuthChange }: Props) {
+/** Key in the workspace DB's generic UI-state store (see `workspaceState` schema / `WORKSPACE_GET_STATE`/`SET_STATE`). */
+const AGENT_PR_PERMISSION_KEY = 'github.agentPrPermission';
+const DEFAULT_AGENT_PR_PERMISSION: AgentPrPermission = 'ask';
+
+function isAgentPrPermission(value: string): value is AgentPrPermission {
+  return value === 'auto' || value === 'ask' || value === 'never';
+}
+
+export function GitHubSection({ onToast, onAuthChange, workspacePath }: Props) {
   const [githubAuth, setGithubAuth] = useState<GitHubAuthStatus | null>(null);
   const [deviceCode, setDeviceCode] = useState<DeviceCodeResponse | null>(null);
   const [authPolling, setAuthPolling] = useState(false);
   const [authStarting, setAuthStarting] = useState(false);
+  const [agentPrPermission, setAgentPrPermission] = useState<AgentPrPermission>(DEFAULT_AGENT_PR_PERMISSION);
+  const [savingPermission, setSavingPermission] = useState(false);
+
+  useEffect(() => {
+    if (!workspacePath) return;
+    void api.getWorkspaceState(workspacePath, AGENT_PR_PERMISSION_KEY)
+      .then((saved) => {
+        setAgentPrPermission(saved && isAgentPrPermission(saved) ? saved : DEFAULT_AGENT_PR_PERMISSION);
+      })
+      .catch(() => setAgentPrPermission(DEFAULT_AGENT_PR_PERMISSION));
+  }, [workspacePath]);
+
+  async function handlePermissionChange(next: AgentPrPermission) {
+    const previous = agentPrPermission;
+    setAgentPrPermission(next);
+    if (!workspacePath) return;
+    setSavingPermission(true);
+    try {
+      await api.setWorkspaceState(workspacePath, AGENT_PR_PERMISSION_KEY, next);
+    } catch (err) {
+      setAgentPrPermission(previous);
+      onToast(String(err), 'error');
+    } finally {
+      setSavingPermission(false);
+    }
+  }
 
   useEffect(() => {
     void api.githubAuthStatus()
@@ -94,14 +129,38 @@ export function GitHubSection({ onToast, onAuthChange }: Props) {
           <Spinner size="sm" /> Checking connection...
         </div>
       ) : githubAuth.authenticated ? (
-        <div className="flex items-center justify-between rounded border border-(--sg-border) bg-(--sg-surface-raised) px-3 py-2.5">
-          <p className="text-xs text-(--sg-text)">{githubAuth.username}</p>
-          <button
-            className="rounded border border-(--sg-border) px-3 py-1.5 text-xs text-(--sg-text-dim) hover:border-(--sg-danger) hover:text-(--sg-danger)"
-            onClick={() => void handleGithubLogout()}
-          >
-            Sign out
-          </button>
+        <div className="flex flex-col gap-3">
+          <div className="flex items-center justify-between rounded border border-(--sg-border) bg-(--sg-surface-raised) px-3 py-2.5">
+            <p className="text-xs text-(--sg-text)">{githubAuth.username}</p>
+            <button
+              className="rounded border border-(--sg-border) px-3 py-1.5 text-xs text-(--sg-text-dim) hover:border-(--sg-danger) hover:text-(--sg-danger)"
+              onClick={() => void handleGithubLogout()}
+            >
+              Sign out
+            </button>
+          </div>
+
+          {workspacePath && (
+            <div className="flex items-center justify-between rounded border border-(--sg-border) px-3 py-2.5">
+              <div>
+                <p className="text-xs text-(--sg-text)">Agent-initiated ready-for-review / merge</p>
+                <p className="mt-0.5 text-[11px] text-(--sg-text-faint)">
+                  Governs this workspace only. Applies once an agent can call these actions itself (tracked separately) — human use of the PR panel is unaffected.
+                </p>
+              </div>
+              <select
+                className="rounded border border-(--sg-input-border) bg-(--sg-input-bg) px-2.5 py-1.5 text-xs text-(--sg-text)"
+                value={agentPrPermission}
+                disabled={savingPermission}
+                onChange={(e) => void handlePermissionChange(e.target.value as AgentPrPermission)}
+                data-testid="select-agent-pr-permission"
+              >
+                <option value="auto">Auto</option>
+                <option value="ask">Ask</option>
+                <option value="never">Never</option>
+              </select>
+            </div>
+          )}
         </div>
       ) : deviceCode ? (
         <div className="space-y-2.5">

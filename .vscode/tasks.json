@@ -1,0 +1,56 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "pnpm: install",
+      "type": "shell",
+      "command": "pnpm install",
+      "problemMatcher": [],
+      "group": {
+        "kind": "build",
+        "isDefault": true
+      },
+      "detail": "Install monorepo dependencies"
+    },
+    {
+      "label": "pnpm: dev",
+      "type": "shell",
+      "command": "pnpm dev",
+      "problemMatcher": [],
+      "group": "none",
+      "detail": "Run project in development mode via Turborepo"
+    },
+    {
+      "label": "pnpm: typecheck",
+      "type": "shell",
+      "command": "pnpm typecheck",
+      "problemMatcher": [],
+      "group": "none",
+      "detail": "Typecheck all monorepo workspaces"
+    },
+    {
+      "label": "pnpm: lint",
+      "type": "shell",
+      "command": "pnpm lint",
+      "problemMatcher": [],
+      "group": "none",
+      "detail": "Lint all code with oxlint"
+    },
+    {
+      "label": "pnpm: test",
+      "type": "shell",
+      "command": "pnpm test",
+      "problemMatcher": [],
+      "group": "none",
+      "detail": "Run unit tests"
+    },
+    {
+      "label": "pnpm: test:e2e",
+      "type": "shell",
+      "command": "pnpm test:e2e",
+      "problemMatcher": [],
+      "group": "none",
+      "detail": "Run WebdriverIO E2E tests"
+    }
+  ]
+}

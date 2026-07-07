@@ -11,20 +11,29 @@ import { gotoHash, goHome, createTestRepo, closeAndCleanup, monitorErrors, waitF
  * assert on; each test explicitly kills its sessions afterwards (see
  * afterEach below) instead of relying on a fixed sleep duration.
  */
-const TEST_AGENT_CONFIG = {
-  command: 'node',
-  args: ['-e', "console.log('AGENT=' + process.env.SPROUTGIT_AGENT); setInterval(() => {}, 1000);"],
-  mode: 'terminal' as const,
+const TEST_AGENT_ID = 'e2e-test-agent';
+
+const TEST_AGENT_ROSTER = {
+  agents: [{
+    id: TEST_AGENT_ID,
+    name: 'E2E Test Agent',
+    command: 'node',
+    args: ['-e', "console.log('AGENT=' + process.env.SPROUTGIT_AGENT); setInterval(() => {}, 1000);"],
+    env: {},
+    mode: 'terminal' as const,
+    acp: false,
+  }],
+  defaultAgentId: TEST_AGENT_ID,
 };
 
 async function seedTestAgent(): Promise<void> {
   await browser.executeAsync(
-    (config: unknown, done: (err?: string) => void) => {
-      (window as unknown as { api: { saveAgentConfig: (c: unknown) => Promise<void> } })
-        .api.saveAgentConfig(config)
+    (roster: unknown, done: (err?: string) => void) => {
+      (window as unknown as { api: { saveAgentRoster: (r: unknown) => Promise<void> } })
+        .api.saveAgentRoster(roster)
         .then(() => done(), (e: unknown) => done(String(e)));
     },
-    TEST_AGENT_CONFIG
+    TEST_AGENT_ROSTER
   );
 }
 
@@ -91,7 +100,7 @@ describe('agent launch workflow', () => {
       }
       return lines.join('\n');
     });
-    expect(rendered).toContain('AGENT=agent');
+    expect(rendered).toContain(`AGENT=${TEST_AGENT_ID}`);
 
     await assertNoErrors();
   });
@@ -133,7 +142,7 @@ describe('agent settings', () => {
     await $('[data-testid="agent-row-btn-edit"]').click();
 
     // Terminal mode is the only option for a command not recognized as ACP-capable.
-    await expect($('[data-testid="btn-agent-mode-integrated"]')).toBeDisabled();
+    await expect($('[data-testid="agent-row-btn-mode-integrated"]')).toBeDisabled();
 
     await assertNoErrors();
   });
@@ -169,7 +178,7 @@ describe('agent settings', () => {
     await $('[data-testid="agent-row-btn-save"]').click();
     await waitForToast('success');
 
-    await expect($('[data-testid="btn-agent-mode-integrated"]')).not.toBeDisabled();
+    await expect($('[data-testid="agent-row-btn-mode-integrated"]')).not.toBeDisabled();
 
     // Gemini CLI is a different ACP preset (native --acp flag rather than a
     // separate adapter binary like Claude's) — proves this isn't gated to
@@ -179,7 +188,7 @@ describe('agent settings', () => {
     await $('[data-testid="agent-row-btn-save"]').click();
     await waitForToast('success');
 
-    await expect($('[data-testid="btn-agent-mode-integrated"]')).not.toBeDisabled();
+    await expect($('[data-testid="agent-row-btn-mode-integrated"]')).not.toBeDisabled();
 
     await assertNoErrors();
   });

@@ -25,14 +25,7 @@ export function gitForPath(cwd: string): SimpleGit {
     baseDir: cwd,
     binary: 'git',
     maxConcurrentProcesses: 6,
-    // Not `true`: simple-git's `trimmed` option trims the *entire* raw
-    // output blob, including the first line's leading character(s) — for
-    // `git status --porcelain`, a clean index (` M path`) legitimately
-    // starts with a space, so a whole-blob trim silently eats it and shifts
-    // every fixed-column parse in parsePorcelainStatus() off by one.
-    // Callers that need trimming already do it themselves (trailing-only,
-    // see diff.ts/staging.ts), so this is off globally.
-    trimmed: false,
+    trimmed: true,
     timeout: { block: 60_000 },
   });
 

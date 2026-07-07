@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { Bot, User, Wrench, Send, Loader2, ShieldQuestion, SlidersHorizontal } from 'lucide-react';
+import { ModelPicker, type ModelPickerGroup } from '@sproutgit/ui';
 import { api } from '../api.js';
 import type { ChatConfigOption, ChatMessage, ChatPermissionRequest, ChatStreamEvent, ChatToolUse } from '@sproutgit/types';
 
@@ -300,16 +301,51 @@ function PermissionRequestCard({ request, onRespond }: { request: ChatPermission
 }
 
 /**
+ * Groups an agent's flat `values` list into `ModelPickerGroup`s using each
+ * value's own `group` label (ACP `SessionConfigSelectGroup`, flattened onto
+ * `ChatConfigOptionValue.group`); ungrouped values fall into one catch-all
+ * group named after the option itself.
+ */
+function buildModelGroups(option: Extract<ChatConfigOption, { kind: 'select' }>): ModelPickerGroup[] {
+  const groupsByLabel = new Map<string, ModelPickerGroup>();
+  for (const v of option.values) {
+    const groupLabel = v.group ?? option.name;
+    let group = groupsByLabel.get(groupLabel);
+    if (!group) {
+      group = { groupId: groupLabel, groupLabel, models: [] };
+      groupsByLabel.set(groupLabel, group);
+    }
+    group.models.push({ id: v.id, label: v.name, ...(v.description ? { description: v.description } : {}) });
+  }
+  return [...groupsByLabel.values()];
+}
+
+/**
  * Agent-exposed session settings (ACP `session/set_config_option`) — model
- * choice is the main example (category `"model"`), but this renders any
- * select/boolean option generically since agents can expose others too.
+ * choice is the main example (category `"model"`), rendered with the shared
+ * searchable `ModelPicker` (agent-provided options only: for ACP agents the
+ * agent itself owns its model list, this doesn't mix in the AI provider
+ * registry from Settings). Other select/boolean options agents can expose
+ * still render as a plain dropdown/toggle.
  */
 function ConfigOptionsBar({ options, onChange }: { options: ChatConfigOption[]; onChange: (configId: string, value: string | boolean) => void }) {
   return (
     <div className="mb-2 flex flex-wrap items-center gap-2" data-testid="chat-config-options">
       <SlidersHorizontal size={11} className="text-(--sg-text-faint)" />
       {options.map(option => (
-        option.kind === 'select' ? (
+        option.kind === 'select' && option.category === 'model' ? (
+          <label key={option.id} className="flex items-center gap-1 text-[11px] text-(--sg-text-dim)" title={option.description}>
+            {option.name}:
+            <div className="w-48" data-testid={`chat-config-select-${option.id}`}>
+              <ModelPicker
+                groups={buildModelGroups(option)}
+                value={option.currentValue}
+                onChange={value => onChange(option.id, value)}
+                className="text-[11px]"
+              />
+            </div>
+          </label>
+        ) : option.kind === 'select' ? (
           <label key={option.id} className="flex items-center gap-1 text-[11px] text-(--sg-text-dim)" title={option.description}>
             {option.name}:
             <select

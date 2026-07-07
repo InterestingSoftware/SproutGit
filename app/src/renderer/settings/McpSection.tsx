@@ -96,7 +96,7 @@ export function McpSection({ onToast, workspacePath }: Props) {
           <Plug size={15} /> MCP Server
         </h2>
         <p className="mt-1 text-xs text-(--sg-text-faint)">
-          Expose this workspace to MCP-capable agents (list/create worktrees, check status) over a token-protected local HTTP endpoint.
+          Expose this workspace to MCP-capable agents (list/create worktrees, check status and diffs, report a session done) over a token-protected local HTTP endpoint.
         </p>
       </div>
 
