@@ -250,6 +250,22 @@ function WorkspaceInner() {
     setSessionsPanelOpen(false);
   }
 
+  /** Click handler for the header's "N waiting" indicator: jumps straight to
+   *  the oldest-waiting session's pending prompt (rather than just opening
+   *  the sessions panel, which doesn't list chat sessions at all). Falls back
+   *  to toggling the panel in the unlikely event `waitingCount` reached 0
+   *  between render and click. */
+  function handleJumpToNextWaiting() {
+    const awaiting = Object.values(attentionBySession)
+      .filter((entry) => entry.state === "awaiting-permission" || entry.state === "awaiting-input")
+      .sort((a, b) => a.updatedAt - b.updatedAt);
+    if (awaiting.length === 0) {
+      setSessionsPanelOpen((v) => !v);
+      return;
+    }
+    handleJumpToAttention(awaiting[0]!);
+  }
+
   // ── Commit diff state ──────────────────────────────────────────────────
   const {
     selectedCommits,
@@ -318,6 +334,7 @@ function WorkspaceInner() {
           hasLiveAgentSession={worktreesWithLiveAgent.size > 0}
           waitingCount={waitingCount}
           onToggleSessionsPanel={() => setSessionsPanelOpen((v) => !v)}
+          onJumpToNextWaiting={handleJumpToNextWaiting}
         />
 
         {/* ── Body: sidebar + main content ── */}

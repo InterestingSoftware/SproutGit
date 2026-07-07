@@ -1,5 +1,5 @@
-import { describe, it, expect } from 'vitest';
-import { AttentionTracker, PtyIdleHeuristic, PTY_IDLE_THRESHOLD_MS } from '../attention-tracker.js';
+import { describe, it, expect, vi } from 'vitest';
+import { AttentionTracker, PtyIdleHeuristic, PTY_IDLE_THRESHOLD_MS, FINISHED_ENTRY_TTL_MS } from '../attention-tracker.js';
 
 describe('AttentionTracker', () => {
   it('starts a session in the requested state and notifies change listeners', () => {
@@ -48,6 +48,49 @@ describe('AttentionTracker', () => {
     tracker.setWorking('s2', 'terminal', '/wt/b');
     tracker.setFailed('s2', 'terminal', '/wt/b');
     expect(tracker.get('s2')?.state).toBe('failed');
+  });
+
+  it('scheduleRemoval() keeps the entry visible until the delay elapses, then removes it', () => {
+    vi.useFakeTimers();
+    try {
+      const tracker = new AttentionTracker();
+      const removed: string[] = [];
+      tracker.onRemove(id => removed.push(id));
+
+      tracker.setFinished('s1', 'terminal', '/wt/a');
+      tracker.scheduleRemoval('s1', 5000);
+      expect(tracker.get('s1')?.state).toBe('finished');
+      expect(removed).toEqual([]);
+
+      vi.advanceTimersByTime(4999);
+      expect(tracker.get('s1')).toBeDefined();
+
+      vi.advanceTimersByTime(2);
+      expect(tracker.get('s1')).toBeUndefined();
+      expect(removed).toEqual(['s1']);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('an explicit remove() before the scheduled delay cancels the pending timer', () => {
+    vi.useFakeTimers();
+    try {
+      const tracker = new AttentionTracker();
+      const removed: string[] = [];
+      tracker.onRemove(id => removed.push(id));
+
+      tracker.setFinished('s1', 'terminal', '/wt/a');
+      tracker.scheduleRemoval('s1', 5000);
+      tracker.remove('s1');
+      expect(removed).toEqual(['s1']);
+
+      vi.advanceTimersByTime(10000);
+      // The scheduled timer must not fire a second (spurious) removal.
+      expect(removed).toEqual(['s1']);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('remove() is a no-op (does not notify) for an unknown session id', () => {
@@ -135,19 +178,30 @@ describe('PtyIdleHeuristic', () => {
     expect(changes).toEqual([]);
   });
 
-  it('finish() marks the session finished/failed by exit success and stops watching it', () => {
-    const { tracker, heuristic } = setup();
-    heuristic.start('t1', '/wt/a');
-    heuristic.finish('t1', true);
-    // finish() removes the tracked entry after emitting the terminal state —
-    // callers relying on a live snapshot (e.g. session:attentionList) will no
-    // longer see it, matching the existing terminal:list behavior where a
-    // session disappears once its process exits.
-    expect(tracker.get('t1')).toBeUndefined();
+  it('finish() marks the session finished/failed by exit success, keeping it visible briefly before pruning it', () => {
+    vi.useFakeTimers();
+    try {
+      const { tracker, heuristic } = setup();
+      heuristic.start('t1', '/wt/a');
+      heuristic.finish('t1', true);
+      // The entry stays visible right after finish() — so a live UI (or a
+      // session:attentionList snapshot taken in this window) can actually
+      // render the "Finished" chip instead of the row vanishing before it's
+      // ever seen, since the owning terminal session's own metadata is
+      // deleted immediately on exit.
+      expect(tracker.get('t1')?.state).toBe('finished');
 
-    heuristic.start('t2', '/wt/b');
-    heuristic.finish('t2', false);
-    expect(tracker.get('t2')).toBeUndefined();
+      vi.advanceTimersByTime(FINISHED_ENTRY_TTL_MS + 1);
+      expect(tracker.get('t1')).toBeUndefined();
+
+      heuristic.start('t2', '/wt/b');
+      heuristic.finish('t2', false);
+      expect(tracker.get('t2')?.state).toBe('failed');
+      vi.advanceTimersByTime(FINISHED_ENTRY_TTL_MS + 1);
+      expect(tracker.get('t2')).toBeUndefined();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('sweep()/noteOutput()/finish() are no-ops for a session id that was never start()ed', () => {

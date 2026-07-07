@@ -15,6 +15,7 @@ export class AttentionTracker {
   private entries = new Map<string, SessionAttention>();
   private changeListeners = new Set<ChangeListener>();
   private removeListeners = new Set<RemoveListener>();
+  private removalTimers = new Map<string, ReturnType<typeof setTimeout>>();
 
   onChange(listener: ChangeListener): () => void {
     this.changeListeners.add(listener);
@@ -58,8 +59,29 @@ export class AttentionTracker {
   }
 
   remove(sessionId: string): void {
+    const timer = this.removalTimers.get(sessionId);
+    if (timer) {
+      clearTimeout(timer);
+      this.removalTimers.delete(sessionId);
+    }
     if (!this.entries.delete(sessionId)) return;
     for (const listener of this.removeListeners) listener(sessionId);
+  }
+
+  /**
+   * Removes the session after `delayMs` instead of immediately — used after
+   * `setFinished`/`setFailed` so the UI has a chance to actually render the
+   * terminal state before the entry disappears. Without this, a session
+   * whose process just exited would vanish from `list()` in the same tick it
+   * was marked finished/failed, since the owning terminal/chat session map
+   * is cleaned up immediately on exit.
+   */
+  scheduleRemoval(sessionId: string, delayMs: number): void {
+    const existing = this.removalTimers.get(sessionId);
+    if (existing) clearTimeout(existing);
+    const timer = setTimeout(() => this.remove(sessionId), delayMs);
+    timer.unref?.();
+    this.removalTimers.set(sessionId, timer);
   }
 
   get(sessionId: string): SessionAttention | undefined {
@@ -76,6 +98,9 @@ export const PTY_IDLE_THRESHOLD_MS = 20_000;
 
 /** How often `sweep()` should be called by the caller's interval timer. */
 export const PTY_IDLE_CHECK_INTERVAL_MS = 5_000;
+
+/** How long a finished/failed session stays visible in `list()`/events after its process exits, before being pruned. */
+export const FINISHED_ENTRY_TTL_MS = 5_000;
 
 /**
  * Best-effort output-idle heuristic for PTY agent sessions, which — unlike
@@ -116,7 +141,7 @@ export class PtyIdleHeuristic {
     if (success) this.tracker.setFinished(sessionId, 'terminal', session.worktreePath);
     else this.tracker.setFailed(sessionId, 'terminal', session.worktreePath);
     this.sessions.delete(sessionId);
-    this.tracker.remove(sessionId);
+    this.tracker.scheduleRemoval(sessionId, FINISHED_ENTRY_TTL_MS);
   }
 
   /** Sweeps every watched session, flagging any silent past `PTY_IDLE_THRESHOLD_MS` as idle. Intended to be called on an interval. */

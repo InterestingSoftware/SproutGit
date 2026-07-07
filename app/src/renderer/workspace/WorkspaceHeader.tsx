@@ -29,6 +29,8 @@ type Props = {
   /** Number of tracked sessions currently in an "awaiting" state (awaiting-permission or awaiting-input) — see useSessionAttention(). */
   waitingCount: number;
   onToggleSessionsPanel: () => void;
+  /** Jumps straight to the oldest-waiting session's pending prompt; falls back to opening the sessions panel if `waitingCount` somehow drops to 0 between render and click. */
+  onJumpToNextWaiting: () => void;
 };
 
 /** Last path segment, tolerating both '/' (macOS/Linux) and '\' (Windows) separators. */
@@ -48,6 +50,7 @@ export function WorkspaceHeader({
   hasLiveAgentSession,
   waitingCount,
   onToggleSessionsPanel,
+  onJumpToNextWaiting,
 }: Props) {
   const navigate = useNavigate();
   const contextMenu = useContextMenu();
@@ -124,8 +127,8 @@ export function WorkspaceHeader({
         {waitingCount > 0 && (
           <button
             className="inline-flex items-center gap-1 rounded-full bg-(--sg-warning)/15 px-2 py-0.5 text-[11px] font-semibold text-(--sg-warning) border-none cursor-pointer hover:bg-(--sg-warning)/25"
-            title={`${waitingCount} agent session${waitingCount === 1 ? "" : "s"} waiting on you`}
-            onClick={onToggleSessionsPanel}
+            title={`${waitingCount} agent session${waitingCount === 1 ? "" : "s"} waiting on you — jump to the oldest one`}
+            onClick={onJumpToNextWaiting}
             data-testid="waiting-sessions-indicator"
           >
             {waitingCount} waiting

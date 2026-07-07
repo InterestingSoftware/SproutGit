@@ -35,6 +35,7 @@ import { getAgentConfig } from '@sproutgit/database';
 import { handle } from './handle.js';
 import { log } from '../telemetry.js';
 import { attentionTracker } from './session-attention.js';
+import { FINISHED_ENTRY_TTL_MS } from '../attention-tracker.js';
 import { translateSessionUpdate, translatePermissionRequest, toChatConfigOptions, type TurnState } from './chat-acp-events.js';
 import { resolveCommandPath } from './tool-test-helpers.js';
 import { commandSupportsIntegratedMode, getAcpLaunchSpec } from './agents.js';
@@ -154,7 +155,7 @@ async function spawnAcpSession(agent: AgentConfig, worktreePath: string, userDat
     if (win && !win.isDestroyed()) win.webContents.send(IPC.EVENT_CHAT_EXIT, { sessionId: session.id, exitCode: code ?? -1 });
     if (code === 0 || code === null) attentionTracker.setFinished(session.id, 'chat', session.worktreePath);
     else attentionTracker.setFailed(session.id, 'chat', session.worktreePath);
-    attentionTracker.remove(session.id);
+    attentionTracker.scheduleRemoval(session.id, FINISHED_ENTRY_TTL_MS);
     sessions.delete(session.id);
     sessionWindows.delete(session.id);
   });
