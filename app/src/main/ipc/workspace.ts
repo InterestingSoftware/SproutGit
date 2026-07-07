@@ -8,7 +8,7 @@ import { recentWorkspaces } from '@sproutgit/database/schema/config';
 import { log } from '../telemetry.js';
 import { stopWatchingPath } from './watcher.js';
 import { stopMcpServer } from '../mcp-bridge.js';
-import { waitForIdleRepo } from '@sproutgit/git';
+import { waitForIdleRepo, listWorktrees } from '@sproutgit/git';
 import {
   worktreeMetadata,
   hookRuns,
@@ -174,11 +174,40 @@ export function registerWorkspaceHandlers(configDb: ConfigDb): void {
     const gitRepoPath = join(workspacePath, '.sproutgit', 'root');
 
     // Background queries (issue tracker patterns, push status, change-count
-    // polling, ...) aren't cancelled just because the component that started
-    // them unmounted — wait for any git command already in flight against
-    // this repo to settle, so its process doesn't still hold a file handle
-    // on root the moment after this call returns.
-    await waitForIdleRepo(gitRepoPath);
+    // polling, worktree health checks, ...) aren't cancelled just because the
+    // component that started them unmounted — wait for any git command
+    // already in flight to settle, so its process doesn't still hold a file
+    // handle on the workspace the moment after this call returns. Those
+    // queries run against individual *worktree* paths, not just the bare
+    // root, so every worktree needs the same wait, not only root.
+    //
+    // Enumerate worktrees via git itself (listWorktrees) rather than the
+    // worktree_metadata DB table: a worktree deleted mid-session (via the app
+    // or externally) can leave a stale DB row pointing at a path that's
+    // already gone, but git's own registration is authoritative for what
+    // might still have a query in flight against it.
+    //
+    // listWorktrees() issues its own git command via gitForPath(), which
+    // allows up to 60s before timing out — far longer than the ~5s bound
+    // waitForIdleRepo() below is meant to keep close within. Cap enumeration
+    // separately and fall back to waiting on root alone if it doesn't come
+    // back in time; that underlying `git worktree list` call is still
+    // tracked under root's own canonicalized key, so the root wait below
+    // still accounts for it settling.
+    let worktreePaths: string[] = [];
+    try {
+      const { worktrees } = await Promise.race([
+        listWorktrees(gitRepoPath),
+        new Promise<never>((_resolve, reject) => {
+          setTimeout(() => reject(new Error('Timed out enumerating worktrees')), 5_000);
+        }),
+      ]);
+      worktreePaths = worktrees.map(w => w.path);
+    } catch (error) {
+      log.warn('[workspace] close: failed to enumerate worktrees before waiting for idle repo', error);
+    }
+
+    await Promise.all([gitRepoPath, ...worktreePaths].map(path => waitForIdleRepo(path)));
 
     // Release the MCP socket server too — same reasoning as the watcher
     // below: an open listener on a socket file inside .sproutgit/ would

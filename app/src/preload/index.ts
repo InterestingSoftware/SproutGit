@@ -18,6 +18,9 @@ import type {
   GitHubRepo,
   PullRequestStatus,
   PullRequestInfo,
+  CheckFailureDetail,
+  MergeMethod,
+  MergePullRequestResult,
   EditorInfo,
   GitToolInfo,
   WorkspaceInitResult,
@@ -37,7 +40,8 @@ import type {
   RecentWorkspace,
   CreateWorktreeResult,
   WorktreeSwitchHookSource,
-  AgentConfig,
+  AgentRoster,
+  AgentTestInput,
   AgentTerminalLaunchEvent,
   AcpAdapterStatus,
   AcpAdapterInstallEvent,
@@ -58,6 +62,9 @@ import type {
   McpSessionDoneEvent,
   GlobalErrorEvent,
   ProjectIdeaGenerateResult,
+  AiProviderConfig,
+  AiProviderStatus,
+  AiProviderCatalog,
   SessionAttention,
   AgentSessionStatusEvent,
   ShowAgentNotificationArgs,
@@ -399,23 +406,24 @@ const api = {
   },
 
   // ── Coding agents ─────────────────────────────────────────────────────────
-  getAgentConfig: (): Promise<AgentConfig> =>
-    invoke(IPC.AGENT_GET),
+  getAgentRoster: (): Promise<AgentRoster> =>
+    invoke(IPC.AGENT_ROSTER_GET),
 
-  saveAgentConfig: (config: AgentConfig): Promise<void> =>
-    invoke(IPC.AGENT_SAVE, config),
+  saveAgentRoster: (roster: AgentRoster): Promise<void> =>
+    invoke(IPC.AGENT_ROSTER_SAVE, roster),
 
   launchAgent: (args: {
     workspacePath: string;
     worktreePath: string;
+    agentId?: string;
   }): Promise<string> =>
     invoke(IPC.AGENT_LAUNCH, args),
 
-  testAgent: (): Promise<ToolTestResult> =>
-    invoke(IPC.AGENT_TEST),
+  testAgent: (agent: AgentTestInput): Promise<ToolTestResult> =>
+    invoke(IPC.AGENT_TEST, agent),
 
-  getAcpAdapterStatus: (): Promise<AcpAdapterStatus | null> =>
-    invoke(IPC.AGENT_ACP_ADAPTER_STATUS),
+  getAcpAdapterStatus: (agentId: string): Promise<AcpAdapterStatus | null> =>
+    invoke(IPC.AGENT_ACP_ADAPTER_STATUS, agentId),
 
   installAcpAdapter: (npmPackage: string): Promise<void> =>
     invoke(IPC.AGENT_ACP_ADAPTER_INSTALL, npmPackage),
@@ -439,7 +447,7 @@ const api = {
   },
 
   // ── Chat (Integrated agent mode) ─────────────────────────────────────────
-  chatStart: (args: { worktreePath: string; initialPrompt?: string }): Promise<{ sessionId: string; configOptions: ChatConfigOption[] }> =>
+  chatStart: (args: { worktreePath: string; initialPrompt?: string; agentId?: string }): Promise<{ sessionId: string; configOptions: ChatConfigOption[] }> =>
     invoke(IPC.CHAT_START, args),
 
   chatSend: (args: { sessionId: string; prompt: string }): Promise<void> =>
@@ -640,6 +648,15 @@ const api = {
   githubCreatePr: (args: { worktreePath: string; title: string; body?: string; base: string; draft?: boolean }): Promise<PullRequestInfo> =>
     invoke(IPC.GITHUB_CREATE_PR, args),
 
+  githubGetCheckFailureDetail: (args: { worktreePath: string; checkId: string }): Promise<CheckFailureDetail | null> =>
+    invoke(IPC.GITHUB_GET_CHECK_FAILURE_DETAIL, args),
+
+  githubSetPrReady: (args: { worktreePath: string; ready: boolean }): Promise<PullRequestInfo> =>
+    invoke(IPC.GITHUB_SET_PR_READY, args),
+
+  githubMergePr: (args: { worktreePath: string; method: MergeMethod }): Promise<MergePullRequestResult> =>
+    invoke(IPC.GITHUB_MERGE_PR, args),
+
   // ── Auto-update ─────────────────────────────────────────────────────────
   checkForUpdates: (): Promise<void> =>
     invoke(IPC.UPDATE_CHECK),
@@ -731,6 +748,28 @@ const api = {
 
   mcpGetManualSnippet: (workspacePath: string, client?: McpClientId): Promise<string> =>
     invoke(IPC.MCP_GET_MANUAL_SNIPPET, client ? { workspacePath, client } : { workspacePath }),
+
+  // ── AI provider registry ──────────────────────────────────────────────────
+  listAiProviders: (): Promise<AiProviderStatus[]> =>
+    invoke(IPC.AI_PROVIDER_LIST),
+
+  upsertAiProvider: (config: AiProviderConfig, apiKey?: string): Promise<AiProviderStatus> =>
+    invoke(IPC.AI_PROVIDER_UPSERT, apiKey !== undefined ? { config, apiKey } : { config }),
+
+  deleteAiProvider: (providerId: string): Promise<void> =>
+    invoke(IPC.AI_PROVIDER_DELETE, providerId),
+
+  clearAiProviderApiKey: (providerId: string): Promise<AiProviderStatus | null> =>
+    invoke(IPC.AI_PROVIDER_CLEAR_API_KEY, providerId),
+
+  getAiProviderCatalog: (providerId: string): Promise<AiProviderCatalog> =>
+    invoke(IPC.AI_PROVIDER_GET_CATALOG, providerId),
+
+  refreshAiProviderCatalog: (providerId: string): Promise<AiProviderCatalog> =>
+    invoke(IPC.AI_PROVIDER_REFRESH_CATALOG, providerId),
+
+  listAllAiProviderCatalogs: (): Promise<AiProviderCatalog[]> =>
+    invoke(IPC.AI_PROVIDER_LIST_ALL_CATALOGS),
 
   // ── Global error reporting ────────────────────────────────────────────────
   onGlobalError: (callback: (event: GlobalErrorEvent) => void) => {

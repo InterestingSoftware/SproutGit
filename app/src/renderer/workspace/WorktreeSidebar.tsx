@@ -247,7 +247,7 @@ type Props = {
   creatingWorktree: boolean;
   pendingCreationBranch: string | null;
   updateState: UpdateState;
-  /** Whether an AI agent command is configured (Settings → AI Agent) — gates the launch button/menu item. */
+  /** Whether an AI agent command is configured (Settings → AI Agents) — gates the launch button/menu item. */
   agentConfigured: boolean;
   worktreesWithLiveAgent: Set<string>;
   /** Live session attention state (working/awaiting-permission/awaiting-input/finished/failed), keyed by worktree path — see useSessionAttention(). */
@@ -275,6 +275,7 @@ type Props = {
   onDeleteWorktree: (wt: WorktreeInfo) => void;
   onLaunchAgent: (worktreePath: string) => void;
   onCreatePr: (wt: WorktreeInfo) => void;
+  onOpenPrDetails: (wt: WorktreeInfo) => void;
 };
 
 const iconBtn =
@@ -309,8 +310,8 @@ function formatRelativeDate(iso: string): string {
   }
 }
 
-/** Small pill showing a worktree's PR number/state + combined check state. Renders nothing when there's no PR (including the unauthenticated/degraded case). */
-function PrBadge({ status }: { status: PullRequestStatus | null | undefined }) {
+/** Small pill showing a worktree's PR number/state + combined check state. Renders nothing when there's no PR (including the unauthenticated/degraded case). Clicking opens the PR details dialog (checks list, draft/ready, merge) rather than navigating away to GitHub. */
+function PrBadge({ status, onOpenDetails }: { status: PullRequestStatus | null | undefined; onOpenDetails: () => void }) {
   const pr = status?.pullRequest;
   if (!pr) return null;
 
@@ -344,7 +345,7 @@ function PrBadge({ status }: { status: PullRequestStatus | null | undefined }) {
       className={`sg-pr-badge inline-flex shrink-0 items-center gap-0.5 rounded-full border border-(--sg-border) px-1.5 py-0 text-[9px] leading-4 cursor-pointer bg-transparent hover:bg-(--sg-surface-raised) ${stateColor}`}
       data-testid="pr-badge"
       title={`#${pr.number} ${pr.title}${checksState && checksState !== 'none' ? ` — checks ${checksState}` : ''}`}
-      onClick={e => { e.stopPropagation(); void api.openUrl(pr.url); }}
+      onClick={e => { e.stopPropagation(); onOpenDetails(); }}
     >
       {stateIcon}
       <span>#{pr.number}</span>
@@ -395,6 +396,7 @@ export function WorktreeSidebar({
   onDeleteWorktree,
   onLaunchAgent,
   onCreatePr,
+  onOpenPrDetails,
 }: Props) {
   const toast = useToast();
   const contextMenu = useContextMenu();
@@ -867,7 +869,7 @@ export function WorktreeSidebar({
                         <Hourglass size={10} />
                       </button>
                     )}
-                    <PrBadge status={prStatuses[row.wt.path]} />
+                    <PrBadge status={prStatuses[row.wt.path]} onOpenDetails={() => onOpenPrDetails(row.wt)} />
                   </div>
                   <div className="flex items-center gap-1.5">
                     <p className="min-w-0 flex-1 truncate text-[10px] text-(--sg-text-dim)">
