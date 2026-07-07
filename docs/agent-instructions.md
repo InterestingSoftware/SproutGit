@@ -230,6 +230,26 @@ differentiation: which file a hook was read from, not a bolted-on DB flag.
 
 ---
 
+## MCP server (agent-facing tools)
+
+Each open workspace can run its own MCP HTTP server (`@sproutgit/mcp-server`, bridged in `app/src/main/mcp-bridge.ts`; enabled/disabled per workspace via `app/src/main/ipc/mcp.ts`) so an external coding agent can act on that workspace directly instead of only through the UI. Tools are defined in `packages/mcp-server/src/tools.ts` and registered against a per-workspace `McpServerContext` (`packages/mcp-server/src/context.ts`) whose functions are implemented in the main process and injected in `mcp-bridge.ts` — the same pattern for every tool: the MCP layer never touches `@sproutgit/git`/hooks/DB code directly, it calls back into the exact functions the app's own IPC handlers and UI dialogs use, so an agent-driven action behaves identically to a user-driven one.
+
+**Worktrees:**
+- `list_worktrees`, `get_workspace_info`, `get_worktree_status` — read-only, always available.
+- `create_worktree`, `remove_worktree` — mutating, gated by `context.mutatingToolsEnabled()`.
+
+**Hooks:**
+- `list_hooks` — effective hooks (local + repo merged) for a worktree, with source/trigger/enabled/trusted state (`getEffectiveHooks`). Read-only, always available.
+- `list_hook_runs` — the hook-run audit log for a worktree, most recent first, for diagnosing a broken worktree. Read-only, always available.
+- `create_local_hook`/`update_local_hook`/`delete_local_hook`/`toggle_local_hook` — local hooks only (`.sproutgit/local-hooks.json`); delegate to the same `createLocalHook`/`updateLocalHook`/`deleteLocalHook`/`toggleLocalHook` functions the `HOOK_CREATE`/`UPDATE`/`DELETE`/`TOGGLE` IPC handlers use (`app/src/main/ipc/hooks.ts`), including `dependsOn` validation. Repo hooks (`sproutgit.hooks.json`) stay read-only through MCP, same as the app's own UI. Mutating, gated by `context.mutatingToolsEnabled()`.
+- `run_hook` — triggers a hook run for a worktree through the same execution path as the Run Hook dialog (`runHookForMcp` → `runHook` in `app/src/main/ipc/hooks.ts`) and returns the outcome (`success`/`error`/`timed_out`/`not_run`). Mutating, gated by `context.mutatingToolsEnabled()`.
+
+**Mutating-tools gate:** `context.mutatingToolsEnabled()` currently always returns `false` — there's no Settings UI yet to enable mutating tools per workspace (tracked separately; the gate exists so enabling them later is a one-line change, not new tool logic). This applies uniformly to worktree writes and all hook writes/runs.
+
+**Hard security boundary — no trust tool:** repo hooks arrive via `git checkout`, so trusting one is an explicit human decision the user makes in the app UI (`app/src/main/hooks-trust.ts`: `isHookTrusted`/`trustHook`). Neither function is reachable from `McpServerContext` or any MCP tool, in any form — there is no `trust_hook` tool, and `run_hook` refuses (`status: 'not_run'`) rather than executing an untrusted repo hook. Do not add a way to grant or bypass hook trust through MCP.
+
+---
+
 ## Security rules
 
 - **`nodeIntegration: false`** and **`contextIsolation: true`** always. Do not change these.

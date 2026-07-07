@@ -59,6 +59,16 @@ describe('mcp tool handlers', () => {
       createWorktree: args => createManagedWorktree(repoPath, managedWorktreesPath, args.fromRef, args.newBranch),
       removeWorktree: async args => { await deleteManagedWorktree(repoPath, args.worktreePath, args.deleteBranch, args.branchName ?? null); },
       reportSessionDone: reportSessionDoneMock,
+      // Hooks are covered in their own describe block below with a
+      // purpose-built in-memory context — these throw so a hook test that
+      // forgets to override one fails loudly instead of silently no-op-ing.
+      listHooks: () => { throw new Error('not implemented in this context'); },
+      listHookRuns: () => { throw new Error('not implemented in this context'); },
+      createLocalHook: () => { throw new Error('not implemented in this context'); },
+      updateLocalHook: () => { throw new Error('not implemented in this context'); },
+      deleteLocalHook: () => { throw new Error('not implemented in this context'); },
+      toggleLocalHook: () => { throw new Error('not implemented in this context'); },
+      runHook: () => { throw new Error('not implemented in this context'); },
     };
   });
 
