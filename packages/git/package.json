@@ -15,7 +15,8 @@
     "./init": "./src/init.ts",
     "./diff": "./src/diff.ts",
     "./stash": "./src/stash.ts",
-    "./cherry-pick": "./src/cherry-pick.ts"
+    "./cherry-pick": "./src/cherry-pick.ts",
+    "./conflicts": "./src/conflicts.ts"
   },
   "scripts": {
     "typecheck": "tsgo --noEmit",

@@ -35,5 +35,6 @@ export {
 export { isBareRepoPath } from './bare.js';
 export { createStash, listStashes, applyStash, popStash, dropStash } from './stash.js';
 export { cherryPickCommit, CherryPickConflictError } from './cherry-pick.js';
+export { getConflictFileContent } from './conflicts.js';
 export { readIssueTrackerFile } from './issuetracker.js';
 export { waitForIdleRepo } from './pending-ops.js';

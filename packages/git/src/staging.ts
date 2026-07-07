@@ -8,10 +8,17 @@ import { gitForPath } from './client.js';
 /**
  * Returns the working-tree + index status for a worktree.
  * Uses `--porcelain=v1` for stable machine-readable output.
+ *
+ * `--branch` forces a `## ...` header as the first line even though it's
+ * discarded below — `gitForPath` runs with `trimmed: true`, which trims the
+ * *entire* raw response as one string, not per line. Without a guaranteed
+ * non-whitespace-leading first line, a lone unstaged-only entry like
+ * " M file.txt" would have its leading space eaten, shifting every column
+ * and silently miscategorizing it as staged.
  */
 export async function getWorktreeStatus(worktreePath: string): Promise<WorktreeStatusResult> {
   const git = gitForPath(worktreePath);
-  const raw = await git.raw(['status', '--porcelain=v1', '-u', '--no-renames']);
+  const raw = await git.raw(['status', '--porcelain=v1', '--branch', '-u', '--no-renames']);
   const files = parsePorcelainStatus(raw);
   return { worktreePath, files };
 }
@@ -95,10 +102,18 @@ export async function resetWorktreeBranch(
 
 // ─── Internal helpers ─────────────────────────────────────────────────────────
 
+/**
+ * `git status --porcelain=v1` XY codes for an unmerged path — i.e. an active
+ * merge/rebase/cherry-pick conflict on that file. See `git help status`.
+ */
+const CONFLICT_STATUS_CODES = new Set(['DD', 'AU', 'UD', 'UA', 'DU', 'AA', 'UU']);
+
 function parsePorcelainStatus(raw: string): StatusFileEntry[] {
+  // The `##` branch header (see getWorktreeStatus) and the empty trailing
+  // element left by the final newline are both discarded here.
   return raw
     .split('\n')
-    .filter(Boolean)
+    .filter(line => line.length > 0 && !line.startsWith('##'))
     .map(line => {
       // A well-formed porcelain=v1 line is "XY path" — two status columns
       // then a separating space at index 2. But `gitForPath()` constructs
@@ -115,7 +130,11 @@ function parsePorcelainStatus(raw: string): StatusFileEntry[] {
       const shifted = line.charAt(2) !== ' ' && line.charAt(1) === ' ';
       const indexStatus = shifted ? ' ' : (line[0] ?? ' ');
       const worktreeStatus = shifted ? line.charAt(0) : (line[1] ?? ' ');
-      const filePath = (shifted ? line.slice(2) : line.slice(3)).trim();
+      // Not `.trim()` — porcelain=v1 already has a fixed "XY " prefix, so the
+      // rest of the line is the path verbatim. Trimming would silently
+      // corrupt a real filename that begins/ends with whitespace; only a
+      // trailing `\r` (CRLF checkouts) needs stripping.
+      const filePath = (shifted ? line.slice(2) : line.slice(3)).replace(/\r$/, '');
 
       // Staged = index column is not a space or '?'
       const staged = indexStatus !== ' ' && indexStatus !== '?';
@@ -128,6 +147,7 @@ function parsePorcelainStatus(raw: string): StatusFileEntry[] {
         status,
         indexStatus,
         workTreeStatus: worktreeStatus,
+        conflicted: CONFLICT_STATUS_CODES.has(`${indexStatus}${worktreeStatus}`),
       } satisfies StatusFileEntry;
     });
 }

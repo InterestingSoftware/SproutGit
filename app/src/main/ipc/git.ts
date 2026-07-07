@@ -17,6 +17,7 @@ import { fetchWorktree, pullWorktree, pushWorktreeBranch, getWorktreePushStatus 
 import { getDiffFiles, getDiffContent, getWorkingDiff } from '@sproutgit/git/diff';
 import { createStash, listStashes, applyStash, popStash, dropStash } from '@sproutgit/git/stash';
 import { cherryPickCommit } from '@sproutgit/git/cherry-pick';
+import { getConflictFileContent } from '@sproutgit/git/conflicts';
 import { handle } from './handle.js';
 import { createWorktreeWithHooks, removeWorktreeWithHooks } from '../worktree-lifecycle.js';
 
@@ -224,5 +225,11 @@ export function registerGitHandlers(configDb: ConfigDb): void {
   handle(IPC.GIT_CHERRY_PICK, async (_e, args: { worktreePath: string; sha: string }) => {
     assertWorkingTreePath(args.worktreePath);
     return cherryPickCommit(args.worktreePath, args.sha);
+  });
+
+  // ── conflicts ─────────────────────────────────────────────────────────────
+  handle(IPC.GIT_CONFLICT_CONTENT, async (_e, args: { worktreePath: string; relativePath: string }) => {
+    assertWorkingTreePath(args.worktreePath);
+    return getConflictFileContent(args.worktreePath, args.relativePath);
   });
 }
