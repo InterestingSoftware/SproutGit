@@ -1,0 +1,128 @@
+---
+const EPIC_URL = 'https://github.com/InterestingSoftware/SproutGit/issues/134';
+
+const pillars = [
+  {
+    icon: `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="10" rx="2"/><circle cx="12" cy="5" r="2"/><path d="M12 7v4"/><line x1="8" y1="16" x2="8" y2="16"/><line x1="16" y1="16" x2="16" y2="16"/></svg>`,
+    title: 'Any agent',
+    desc: 'Launch Claude Code, Codex CLI, Gemini CLI, Cursor, or Kiro in any worktree — as a terminal session or an integrated chat. Custom commands welcome; a roster of ad-hoc ACP agents is on the way.',
+  },
+  {
+    icon: `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>`,
+    title: 'Any model',
+    desc: 'No built-in subscription, no lock-in. Bring your own tools today; a provider registry — Anthropic, OpenAI, Google, OpenRouter, or any OpenAI-compatible endpoint — is on the roadmap.',
+  },
+  {
+    icon: `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="4"/><line x1="12" y1="2" x2="12" y2="8"/><line x1="12" y1="16" x2="12" y2="22"/><line x1="2" y1="12" x2="8" y2="12"/><line x1="16" y1="12" x2="22" y2="12"/></svg>`,
+    title: 'Every session visible',
+    desc: 'Live badges show which worktrees have agents working. A mission-control overlay lists every running session across the workspace, with one-click jump to any terminal.',
+  },
+  {
+    icon: `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 3H5a2 2 0 0 0-2 2v4"/><path d="M15 3h4a2 2 0 0 1 2 2v4"/><path d="M9 21H5a2 2 0 0 1-2-2v-4"/><path d="M15 21h4a2 2 0 0 0 2-2v-4"/><circle cx="12" cy="12" r="2.5"/></svg>`,
+    title: 'MCP built in',
+    desc: 'Every workspace runs its own MCP server, so agents get real tools — worktrees, hooks, status — instead of guessing at shell commands. One-click config for popular agent CLIs.',
+  },
+];
+
+const flow = [
+  { step: '01', title: 'Plan', desc: 'Hand a big task to a strong model in its own orchestration worktree — it reads your steering docs and breaks the work down.' },
+  { step: '02', title: 'Fan out', desc: 'Each subtask gets a fresh worktree and a worker agent. Parallel by default — no collisions, no stashing.' },
+  { step: '03', title: 'Review', desc: 'Workers finish; you review each small diff against the integration branch. Blocked sessions surface instead of stalling silently.' },
+  { step: '04', title: 'Ship', desc: 'The integrated stream of work goes up as one roll-up PR. Checks, comments, and merge — without leaving the app.' },
+];
+---
+
+<section id="ai" style="padding: 6rem 2rem; position: relative; overflow: hidden;">
+  <div style="max-width: 1200px; margin: 0 auto;">
+
+    <!-- Section header -->
+    <div data-animate style="text-align: center; margin-bottom: 3.5rem;">
+      <p style="font-size:0.75rem;font-weight:600;letter-spacing:0.1em;text-transform:uppercase;color:var(--sg-primary);margin:0 0 0.75rem;">
+        Built for the way software is made now
+      </p>
+      <h2 style="font-size:clamp(1.9rem,4vw,2.8rem);font-weight:700;letter-spacing:-0.03em;color:var(--sg-text);margin:0 0 1rem;">
+        Agent-native.<br>
+        <span style="color:var(--sg-primary);">Not agent-flavored.</span>
+      </h2>
+      <p style="max-width:560px;margin:0 auto;color:var(--sg-text-dim);font-size:1.05rem;line-height:1.7;">
+        Most tools bolt a chatbot onto yesterday's workflow. SproutGit starts from the
+        thing agents actually need — an isolated place to work — and builds the whole
+        desktop around supervising many of them at once.
+      </p>
+    </div>
+
+    <!-- Pillars -->
+    <div style="
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+      gap: 1.25rem;
+    " data-stagger>
+      {pillars.map(p => (
+        <div class="feature-card" data-animate>
+          <span style="
+            display:inline-flex;align-items:center;justify-content:center;
+            width:38px;height:38px;border-radius:9px;margin-bottom:0.875rem;
+            background:color-mix(in srgb, var(--sg-primary) 12%, transparent);
+            color:var(--sg-primary);
+          " set:html={p.icon} />
+          <h3 style="font-size:0.95rem;font-weight:700;color:var(--sg-text);margin:0 0 0.5rem;letter-spacing:-0.01em;">
+            {p.title}
+          </h3>
+          <p style="font-size:0.85rem;color:var(--sg-text-dim);margin:0;line-height:1.65;">
+            {p.desc}
+          </p>
+        </div>
+      ))}
+    </div>
+
+    <!-- The loop: where this is going -->
+    <div data-animate style="
+      margin-top: 3.5rem;
+      border: 1px solid color-mix(in srgb, var(--sg-primary) 20%, var(--sg-border-subtle));
+      border-radius: 16px;
+      padding: 2.25rem 2rem;
+      background: color-mix(in srgb, var(--sg-primary) 4%, var(--sg-surface));
+    ">
+      <div style="display:flex;align-items:baseline;justify-content:space-between;gap:1rem;flex-wrap:wrap;margin-bottom:1.75rem;">
+        <h3 style="font-size:1.15rem;font-weight:700;color:var(--sg-text);margin:0;letter-spacing:-0.01em;">
+          The loop we're building toward
+        </h3>
+        <a href={EPIC_URL} target="_blank" rel="noopener noreferrer"
+           style="font-size:0.8rem;font-weight:600;color:var(--sg-primary);text-decoration:none;">
+          Follow the roadmap on GitHub →
+        </a>
+      </div>
+
+      <div class="agent-flow-grid" style="display:grid;grid-template-columns:repeat(4,1fr);gap:1.5rem;">
+        {flow.map(f => (
+          <div>
+            <div style="font-family:monospace;font-size:0.75rem;font-weight:700;color:var(--sg-primary);margin-bottom:0.5rem;">
+              {f.step}
+            </div>
+            <div style="font-size:0.9rem;font-weight:700;color:var(--sg-text);margin-bottom:0.35rem;">
+              {f.title}
+            </div>
+            <p style="font-size:0.8rem;color:var(--sg-text-dim);margin:0;line-height:1.6;">
+              {f.desc}
+            </p>
+          </div>
+        ))}
+      </div>
+
+      <p style="margin:1.75rem 0 0;font-size:0.8rem;color:var(--sg-text-faint);line-height:1.6;">
+        Launching agents in isolated worktrees, integrated chat, session tracking, hooks, and the
+        MCP server ship today. Orchestration, fan-out, and in-app PR review are in active development —
+        in the open, where you can watch (or help).
+      </p>
+    </div>
+  </div>
+</section>
+
+<style>
+  @media (max-width: 900px) {
+    .agent-flow-grid { grid-template-columns: repeat(2, 1fr) !important; }
+  }
+  @media (max-width: 520px) {
+    .agent-flow-grid { grid-template-columns: 1fr !important; }
+  }
+</style>
