@@ -93,4 +93,27 @@ describe('WORKSPACE_CLOSE', () => {
     expect(waitForIdleRepoMock).toHaveBeenCalledTimes(1);
     expect(waitForIdleRepoMock).toHaveBeenCalledWith(rootPath);
   });
+
+  it('falls back to waiting on root alone when enumerating worktrees hangs past its own bound', async () => {
+    // listWorktrees() issues a real git command with up to a 60s timeout of
+    // its own — much longer than the ~5s this handler should ever block for.
+    // A worktree list call that never settles must not stall close.
+    vi.useFakeTimers();
+    try {
+      const workspacePath = join('/ws');
+      const rootPath = join(workspacePath, '.sproutgit', 'root');
+      listWorktreesMock.mockReturnValue(new Promise(() => {})); // never settles
+
+      const close = getCloseHandler();
+      const closePromise = close({}, workspacePath);
+
+      await vi.advanceTimersByTimeAsync(5_000);
+      await closePromise;
+
+      expect(waitForIdleRepoMock).toHaveBeenCalledTimes(1);
+      expect(waitForIdleRepoMock).toHaveBeenCalledWith(rootPath);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });

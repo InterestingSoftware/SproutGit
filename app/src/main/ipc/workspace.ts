@@ -168,9 +168,22 @@ export function registerWorkspaceHandlers(configDb: ConfigDb): void {
     // or externally) can leave a stale DB row pointing at a path that's
     // already gone, but git's own registration is authoritative for what
     // might still have a query in flight against it.
+    //
+    // listWorktrees() issues its own git command via gitForPath(), which
+    // allows up to 60s before timing out — far longer than the ~5s bound
+    // waitForIdleRepo() below is meant to keep close within. Cap enumeration
+    // separately and fall back to waiting on root alone if it doesn't come
+    // back in time; that underlying `git worktree list` call is still
+    // tracked under root's own canonicalized key, so the root wait below
+    // still accounts for it settling.
     let worktreePaths: string[] = [];
     try {
-      const { worktrees } = await listWorktrees(gitRepoPath);
+      const { worktrees } = await Promise.race([
+        listWorktrees(gitRepoPath),
+        new Promise<never>((_resolve, reject) => {
+          setTimeout(() => reject(new Error('Timed out enumerating worktrees')), 5_000);
+        }),
+      ]);
       worktreePaths = worktrees.map(w => w.path);
     } catch (error) {
       log.warn('[workspace] close: failed to enumerate worktrees before waiting for idle repo', error);
