@@ -88,9 +88,10 @@ export function Toast({ toast, onDismiss }: ToastProps) {
       <div className="flex items-center gap-0.5 shrink-0">
         {toast.action && (
           <button
+            type="button"
             className="sg-toast-undo inline-flex items-center px-2 py-1 rounded-[6px] border-none cursor-pointer text-xs font-medium text-(--sg-primary) hover:bg-(--sg-surface-raised) transition-colors"
             onClick={() => {
-              toast.action!.onClick();
+              toast.action?.onClick();
               onDismiss(toast.id);
             }}
             data-testid="toast-undo"

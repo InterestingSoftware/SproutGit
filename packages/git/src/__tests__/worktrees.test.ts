@@ -94,7 +94,7 @@ describe('deleteManagedWorktree undo capture and restoreDeletedWorktree', { time
     expect(existsSync(worktreePath)).toBe(false);
     expect(execSync('git branch --list to-undo', { cwd: rootDir }).toString().trim()).toBe('');
 
-    await restoreDeletedWorktree(rootDir, deleted);
+    await restoreDeletedWorktree(rootDir, deleted, worktreesDir);
 
     expect(execSync('git rev-parse to-undo', { cwd: rootDir }).toString().trim()).toBe(expectedSha);
     expect(existsSync(join(worktreePath, 'change.txt'))).toBe(true);
@@ -134,5 +134,23 @@ describe('deleteManagedWorktree undo capture and restoreDeletedWorktree', { time
     await expect(
       restoreDeletedWorktree(rootDir, { worktreePath: join(rootDir, '..', 'gone'), branch: 'never-existed', branchSha: null })
     ).rejects.toThrow('Branch "never-existed" no longer exists and no SHA was captured to recreate it.');
+  });
+
+  it('rejects a restore whose worktreePath falls outside a supplied managedWorktreesPath, without touching git', async () => {
+    // Guards against a renderer echoing back a forged/stale WorktreeDeleteResult
+    // over IPC — restoring to an arbitrary filesystem path must be refused
+    // just like deleteManagedWorktree refuses to delete one.
+    const rootDir = tempDir('sg-worktree-undo-outside-');
+    createNonBareRepo(rootDir);
+    const worktreesDir = join(tempDir('sg-worktree-undo-outside-managed-'), 'worktrees');
+    mkdirSync(worktreesDir, { recursive: true });
+    const outsidePath = join(tempDir('sg-worktree-undo-outside-target-'), 'evil');
+    execSync('git branch attacker-branch', { cwd: rootDir, stdio: 'ignore' });
+
+    await expect(
+      restoreDeletedWorktree(rootDir, { worktreePath: outsidePath, branch: 'attacker-branch', branchSha: null }, worktreesDir)
+    ).rejects.toThrow('Worktree path must stay within the managed worktrees directory.');
+
+    expect(existsSync(outsidePath)).toBe(false);
   });
 });

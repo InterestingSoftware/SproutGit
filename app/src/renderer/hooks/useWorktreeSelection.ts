@@ -259,7 +259,18 @@ export function useWorktreeSelection(params: {
               label: "Undo",
               onClick: () => {
                 restoreWorktreeMutation.mutate(
-                  { rootRepoPath: gitRepoPath, deleted },
+                  {
+                    rootRepoPath: gitRepoPath,
+                    deleted,
+                    // Omitted for external worktrees, same carve-out as
+                    // delete — they live outside managedWorktreesPath by
+                    // definition, so the containment check doesn't apply.
+                    ...(wt.isExternal
+                      ? {}
+                      : workspaceStatus?.worktreesPath
+                        ? { managedWorktreesPath: workspaceStatus.worktreesPath }
+                        : {}),
+                  },
                   {
                     onSuccess: () => toast("Worktree restored", "success"),
                     onError: (err: unknown) =>

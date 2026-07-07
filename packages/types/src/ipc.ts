@@ -300,7 +300,7 @@ export type IpcMap = {
   // ── Worktrees ─────────────────────────────────────────────────────────────
   'worktree:create': { args: [args: { workspacePath: string; rootRepoPath: string; managedWorktreesPath: string; fromRef: string; newBranch: string; initiatingWorktreePath?: string | null; issueRef?: string | null; issueTitle?: string | null; orphan?: boolean }]; result: CreateWorktreeResult };
   'worktree:delete': { args: [args: { workspacePath: string; rootRepoPath: string; managedWorktreesPath?: string; worktreePath: string; deleteBranch: boolean; branchName?: string | null; initiatingWorktreePath?: string | null; afterRemoveWorktreePath?: string | null }];                      result: WorktreeDeleteResult };
-  'worktree:restore': { args: [args: { rootRepoPath: string; deleted: WorktreeDeleteResult }]; result: void };
+  'worktree:restore': { args: [args: { rootRepoPath: string; deleted: WorktreeDeleteResult; managedWorktreesPath?: string }]; result: void };
   'worktree:getMeta':    { args: [args: { workspacePath: string; worktreePath: string }]; result: WorktreeMetaRow | null };
   'worktree:setMeta':    { args: [args: { workspacePath: string; worktreePath: string; branch?: string; sourceRef?: string; rootRepoPath?: string; issueRef?: string | null; issueTitle?: string | null }]; result: void };
   'worktree:pruneMetadata': { args: [args: { workspacePath: string; activeWorktreePaths: string[] }]; result: void };

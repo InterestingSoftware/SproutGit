@@ -288,7 +288,7 @@ export function useDeleteWorktree(gitRepoPath: string) {
 export function useRestoreWorktree(gitRepoPath: string) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (args: { rootRepoPath: string; deleted: WorktreeDeleteResult }) =>
+    mutationFn: (args: { rootRepoPath: string; deleted: WorktreeDeleteResult; managedWorktreesPath?: string }) =>
       api.restoreWorktree(args) as Promise<void>,
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: qk.worktrees(gitRepoPath) });

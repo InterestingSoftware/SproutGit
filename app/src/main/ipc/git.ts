@@ -79,8 +79,8 @@ export function registerGitHandlers(configDb: ConfigDb): void {
   // Reverses a WORKTREE_DELETE within the toast's undo window — see
   // restoreDeletedWorktree's doc comment for why this is a direct restore
   // rather than routed back through the create lifecycle/hooks.
-  handle(IPC.WORKTREE_RESTORE, async (_e, args: { rootRepoPath: string; deleted: WorktreeDeleteResult }) => {
-    await restoreDeletedWorktree(args.rootRepoPath, args.deleted);
+  handle(IPC.WORKTREE_RESTORE, async (_e, args: { rootRepoPath: string; deleted: WorktreeDeleteResult; managedWorktreesPath?: string }) => {
+    await restoreDeletedWorktree(args.rootRepoPath, args.deleted, args.managedWorktreesPath);
   });
 
   // ── commits ───────────────────────────────────────────────────────────────

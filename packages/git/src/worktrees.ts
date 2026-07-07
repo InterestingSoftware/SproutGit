@@ -241,17 +241,27 @@ export async function deleteManagedWorktree(
  * already exist — e.g. `deleteBranch` was false and it was never removed),
  * then re-adds the worktree at its original path on that branch.
  *
- * Intentionally does not re-run create hooks or re-validate path containment
- * against `managedWorktreesPath` — this is a direct, best-effort reversal of
- * a delete this same process just performed, not a general "create worktree"
- * entry point.
+ * This crosses the IPC boundary (the renderer supplies `worktreePath` and
+ * `branchSha` back verbatim), so — mirroring `deleteManagedWorktree` — a
+ * `managedWorktreesPath` is checked when supplied: restoring outside it is
+ * refused before touching git, rather than trusting the renderer to only
+ * ever echo back a path/SHA pair it actually received from a prior delete.
+ * Callers restoring an external worktree (registered outside that
+ * directory) must omit `managedWorktreesPath`, same carve-out as delete.
+ *
+ * Intentionally does not re-run create hooks — this is a direct, best-effort
+ * reversal of a prior delete, not a general "create worktree" entry point.
  */
 export async function restoreDeletedWorktree(
   rootRepoPath: string,
-  { worktreePath, branch, branchSha }: WorktreeDeleteResult
+  { worktreePath, branch, branchSha }: WorktreeDeleteResult,
+  managedWorktreesPath?: string
 ): Promise<void> {
   if (!branch) {
     throw new Error('Cannot restore a worktree that was removed without a branch.');
+  }
+  if (managedWorktreesPath && !isWithinCanonical(worktreePath, managedWorktreesPath)) {
+    throw new Error('Worktree path must stay within the managed worktrees directory.');
   }
 
   await withWorktreeLock(rootRepoPath, async () => {

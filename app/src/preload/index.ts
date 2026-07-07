@@ -137,7 +137,7 @@ const api = {
   }): Promise<WorktreeDeleteResult> =>
     invoke(IPC.WORKTREE_DELETE, args),
 
-  restoreWorktree: (args: { rootRepoPath: string; deleted: WorktreeDeleteResult }): Promise<void> =>
+  restoreWorktree: (args: { rootRepoPath: string; deleted: WorktreeDeleteResult; managedWorktreesPath?: string }): Promise<void> =>
     invoke(IPC.WORKTREE_RESTORE, args),
 
   pruneWorktreeMetadata: (args: { workspacePath: string; activeWorktreePaths: string[] }): Promise<void> =>
