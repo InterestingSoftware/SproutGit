@@ -13,6 +13,7 @@ import { registerSystemHandlers } from './ipc/system.js';
 import { registerGithubHandlers } from './ipc/github.js';
 import { registerHookHandlers } from './ipc/hooks.js';
 import { registerAgentHandlers } from './ipc/agents.js';
+import { registerNotificationHandlers } from './ipc/notifications.js';
 import { registerChatHandlers } from './ipc/chat.js';
 import { registerCommitMessageGeneratorHandlers } from './ipc/commit-message-generator.js';
 import { registerProjectIdeaGeneratorHandlers } from './ipc/project-idea-generator.js';
@@ -168,6 +169,11 @@ function createWindow(): BrowserWindow {
       sandbox: true,
       contextIsolation: true,
       nodeIntegration: false,
+      // Electron renderer processes don't inherit the main process's argv —
+      // additionalArguments is the documented way to forward a flag onto the
+      // renderer/preload process.argv (used by app/src/preload/index.ts to
+      // expose api.isE2E without a round-trip IPC call).
+      ...(isE2EMode && { additionalArguments: ['--sproutgit-e2e'] }),
     },
   });
 
@@ -298,6 +304,8 @@ app.whenReady().then(() => {
   if (isE2EMode) log.info('[e2e] hook handlers ok');
   registerAgentHandlers(configDb, userDataPath);
   if (isE2EMode) log.info('[e2e] agent handlers ok');
+  registerNotificationHandlers();
+  if (isE2EMode) log.info('[e2e] notification handlers ok');
   registerChatHandlers(configDb, userDataPath);
   if (isE2EMode) log.info('[e2e] chat handlers ok');
   registerCommitMessageGeneratorHandlers();

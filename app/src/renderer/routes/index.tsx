@@ -2,13 +2,15 @@ import { api } from '../api.js';
 import { createRoute, useNavigate } from '@tanstack/react-router';
 import { rootRoute } from './__root.js';
 import { useState, useEffect, useRef } from 'react';
-import { AppWindow, ArrowRight, Clock, Download, FolderInput, FolderOpen, Play, Settings, Sparkles, X, AlertTriangle } from 'lucide-react';
+import { AppWindow, ArrowRight, Clock, Download, FolderInput, FolderOpen, HelpCircle, Play, Settings, Sparkles, X, AlertTriangle } from 'lucide-react';
 import { Spinner, WindowControls, UpdateBadge, Autocomplete, ResizableSidebar } from '@sproutgit/ui';
 import type { UpdateState } from '@sproutgit/ui';
+import type { Driver } from 'driver.js';
 import type { AgentRoster, GitHubRepo, GitInfo, GitHubAuthStatus, GitOpProgressEvent, RecentWorkspace } from '@sproutgit/types';
 import { useToast } from '../toast-context.js';
 import { reportError } from '../error-reporting.js';
 import { setPendingScaffold } from '../pending-scaffold.js';
+import { startHomeTour, HOME_TOUR_SETTING_KEY } from '../onboarding/homeTour.js';
 import logoSvgUrl from '../logo.svg?inline';
 
 // Shared Tailwind class strings
@@ -76,6 +78,11 @@ function HomeView() {
   const [gitNotInstalled, setGitNotInstalled] = useState(false);
   const [updateState, setUpdateState] = useState<UpdateState>({ status: 'idle' });
 
+  // First-run walkthrough — see onboarding/homeTour.ts
+  const [recentsLoaded, setRecentsLoaded] = useState(false);
+  const [tourSeen, setTourSeen] = useState<boolean | null>(null);
+  const tourRef = useRef<Driver | null>(null);
+
   // GitHub repos for clone autocomplete
   const [githubRepos, setGithubRepos] = useState<GitHubRepo[]>([]);
 
@@ -134,7 +141,11 @@ function HomeView() {
     void api.listRecentWorkspaces().then((ws: RecentWorkspace[]) => {
       const sorted = [...ws].sort((a, b) => new Date(b.lastOpenedAt).getTime() - new Date(a.lastOpenedAt).getTime());
       setRecents(sorted);
-    }).catch(() => undefined);
+    }).catch(() => undefined).finally(() => setRecentsLoaded(true));
+
+    void api.getSetting(HOME_TOUR_SETTING_KEY)
+      .then(v => setTourSeen(!!v))
+      .catch(() => setTourSeen(true)); // fail closed — don't nag if we can't tell
 
     void api.getSetting(PROJECTS_FOLDER_SETTING).then(async (v: string | null) => {
       if (v) {
@@ -180,6 +191,45 @@ function HomeView() {
     });
     return () => { offChecking(); offAvailable(); offNotAvailable(); offDownloading(); offReady(); offError(); };
   }, []);
+
+  // Auto-launch the first-run walkthrough once we know there's nothing to
+  // interrupt: git is present, recents have loaded (so we're not showing it
+  // to a returning user for the split second before their list appears),
+  // and it hasn't been seen before. Skipped entirely in E2E — WebdriverIO
+  // reuses one long-lived session across every spec file, and several specs
+  // click home-screen buttons directly; an unrelated auto-tour stealing that
+  // first click would make the whole suite's outcome depend on spec order.
+  // The manual "Replay walkthrough" button still works in E2E for dedicated
+  // coverage of the tour itself.
+  useEffect(() => {
+    if (api.isE2E) return;
+    if (!gitChecked || gitNotInstalled) return;
+    if (!recentsLoaded || tourSeen !== false) return;
+    if (recents.length > 0) return;
+    tourRef.current?.destroy();
+    tourRef.current = startHomeTour(() => {
+      setTourSeen(true);
+      void api.setSetting(HOME_TOUR_SETTING_KEY, '1').catch(() => undefined);
+    });
+  }, [gitChecked, gitNotInstalled, recentsLoaded, tourSeen, recents.length]);
+
+  // Unconditional, mount-once cleanup: driver.js appends the popover/overlay
+  // straight to document.body, outside React's tree — if the user clicks
+  // through to a workspace without ever dismissing the tour (the highlighted
+  // step's own action buttons stay clickable), it would otherwise survive
+  // the route change. Deliberately its own effect, not the guarded one
+  // above — that effect's cleanup only fires on its OWN re-run, and once
+  // tourSeen flips true it re-runs into an early return with no cleanup,
+  // silently dropping the destroy call this needs to guarantee on unmount.
+  useEffect(() => () => tourRef.current?.destroy(), []);
+
+  function replayTour() {
+    tourRef.current?.destroy();
+    tourRef.current = startHomeTour(() => {
+      setTourSeen(true);
+      void api.setSetting(HOME_TOUR_SETTING_KEY, '1').catch(() => undefined);
+    });
+  }
 
   useEffect(() => {
     if (!cloneFolderManual) setCloneFolderName(repoNameFromUrl(cloneUrl));
@@ -437,6 +487,9 @@ function HomeView() {
         <div className="flex items-center h-full pr-2 gap-1" style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}
         >
           <UpdateBadge state={updateState} onInstall={() => void api.installUpdate()} />
+          <button className={iconBtn} title="Replay walkthrough" data-testid="btn-replay-tour" onClick={replayTour}>
+            <HelpCircle size={15} />
+          </button>
           <button className={iconBtn} title="New Window" onClick={() => void api.openNewWindow()}>
             <AppWindow size={15} />
           </button>
@@ -456,7 +509,7 @@ function HomeView() {
               <span>Start</span>
             </div>
 
-            <div className="flex flex-col gap-0.5 p-2">
+            <div className="flex flex-col gap-0.5 p-2" data-testid="home-start-actions">
               {!!defaultAgent?.command.trim() && (
                 <button className={actionBtn} data-testid="btn-new-from-idea" onClick={() => { resetIdeaState(); setShowIdea(true); }}>
                   <span className={actionIcon}><Sparkles size={14} strokeWidth={2} /></span>
@@ -493,7 +546,7 @@ function HomeView() {
         </ResizableSidebar>
 
         {/* Main */}
-        <main className="flex-1 min-w-0 flex flex-col bg-(--sg-bg)">
+        <main className="flex-1 min-w-0 flex flex-col bg-(--sg-bg)" data-testid="recent-projects-panel">
           <div className={`${sectionHeader} bg-(--sg-surface)`}>
             <Clock size={11} strokeWidth={2.5} style={{ color: 'var(--sg-primary)' }} />
             <span>Recent projects</span>

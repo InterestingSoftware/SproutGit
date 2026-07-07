@@ -15,6 +15,8 @@ import type {
   GitHubAuthStatus,
   GitHubEmailSuggestion,
   GitHubRepo,
+  PullRequestStatus,
+  PullRequestInfo,
   EditorInfo,
   GitToolInfo,
   WorkspaceInitResult,
@@ -53,8 +55,12 @@ import type {
   McpClientId,
   McpServerStatus,
   McpConfigWriteResult,
+  McpSessionDoneEvent,
   GlobalErrorEvent,
   ProjectIdeaGenerateResult,
+  AgentSessionStatusEvent,
+  ShowAgentNotificationArgs,
+  NotificationClickedEvent,
 } from '@sproutgit/types';
 
 /**
@@ -76,6 +82,13 @@ function invoke<K extends keyof IpcMap>(
  * to Node.js or the Electron internals.
  */
 const api = {
+  // ── Environment ───────────────────────────────────────────────────────────
+  // Static (not IPC) — preload has direct Node access even under context
+  // isolation, so this reads argv locally instead of round-tripping to main.
+  // Lets renderer-only behavior (e.g. the onboarding tour) opt out of
+  // WebdriverIO's shared, long-lived session without a dedicated IPC channel.
+  isE2E: process.argv.includes('--sproutgit-e2e'),
+
   // ── Git info ──────────────────────────────────────────────────────────────
   gitInfo: (): Promise<GitInfo> =>
     invoke(IPC.GIT_INFO),
@@ -216,6 +229,22 @@ const api = {
     };
     ipcRenderer.on(IPC.TERMINAL_EXIT, handler);
     return () => ipcRenderer.off(IPC.TERMINAL_EXIT, handler);
+  },
+
+  onAgentSessionStatus: (callback: (event: AgentSessionStatusEvent) => void) => {
+    const handler = (_e: Electron.IpcRendererEvent, payload: AgentSessionStatusEvent) => callback(payload);
+    ipcRenderer.on(IPC.EVENT_AGENT_SESSION_STATUS, handler);
+    return () => ipcRenderer.off(IPC.EVENT_AGENT_SESSION_STATUS, handler);
+  },
+
+  // ── Notifications ─────────────────────────────────────────────────────────
+  showAgentSessionNotification: (args: ShowAgentNotificationArgs): Promise<void> =>
+    invoke(IPC.NOTIFICATION_SHOW, args),
+
+  onNotificationClicked: (callback: (event: NotificationClickedEvent) => void) => {
+    const handler = (_e: Electron.IpcRendererEvent, payload: NotificationClickedEvent) => callback(payload);
+    ipcRenderer.on(IPC.EVENT_NOTIFICATION_CLICKED, handler);
+    return () => ipcRenderer.off(IPC.EVENT_NOTIFICATION_CLICKED, handler);
   },
 
   // ── Workspace / recent ────────────────────────────────────────────────────
@@ -400,6 +429,12 @@ const api = {
     return () => ipcRenderer.off(IPC.EVENT_AGENT_TERMINAL_LAUNCH, handler);
   },
 
+  onMcpSessionDone: (callback: (event: McpSessionDoneEvent) => void) => {
+    const handler = (_e: Electron.IpcRendererEvent, payload: McpSessionDoneEvent) => callback(payload);
+    ipcRenderer.on(IPC.EVENT_MCP_SESSION_DONE, handler);
+    return () => ipcRenderer.off(IPC.EVENT_MCP_SESSION_DONE, handler);
+  },
+
   // ── Chat (Integrated agent mode) ─────────────────────────────────────────
   chatStart: (args: { worktreePath: string; initialPrompt?: string; agentId?: string }): Promise<{ sessionId: string; configOptions: ChatConfigOption[] }> =>
     invoke(IPC.CHAT_START, args),
@@ -579,6 +614,12 @@ const api = {
 
   githubListRepos: (): Promise<GitHubRepo[]> =>
     invoke(IPC.GITHUB_LIST_REPOS),
+
+  githubGetPrStatus: (worktreePath: string): Promise<PullRequestStatus | null> =>
+    invoke(IPC.GITHUB_GET_PR_STATUS, worktreePath),
+
+  githubCreatePr: (args: { worktreePath: string; title: string; body?: string; base: string; draft?: boolean }): Promise<PullRequestInfo> =>
+    invoke(IPC.GITHUB_CREATE_PR, args),
 
   // ── Auto-update ─────────────────────────────────────────────────────────
   checkForUpdates: (): Promise<void> =>

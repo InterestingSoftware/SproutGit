@@ -13,6 +13,7 @@ import { ShellSection } from '../settings/ShellSection.js';
 import { AppSection } from '../settings/AppSection.js';
 import { AISection } from '../settings/AISection.js';
 import { McpSection } from '../settings/McpSection.js';
+import { NotificationsSection } from '../settings/NotificationsSection.js';
 
 // ── Route definition ──────────────────────────────────────────────────────────
 
@@ -91,6 +92,7 @@ function SettingsPage() {
 
             <div className="flex flex-col gap-6">
               <ShellSection onToast={toast} />
+              <NotificationsSection onToast={toast} />
               <AppSection />
             </div>
           </div>
