@@ -192,6 +192,7 @@ type Props = {
   onCreateWorktree?: (fromRef: string) => void;
   onCheckout?: (targetRef: string) => void;
   onReset?: (targetRef: string, mode: 'soft' | 'mixed' | 'hard') => void;
+  onCherryPick?: (sha: string) => void;
   onSelect?: (commits: CommitEntry[]) => void;
   hasMore?: boolean;
   loadingMore?: boolean;
@@ -212,6 +213,7 @@ export function CommitGraph({
   onCreateWorktree,
   onCheckout,
   onReset,
+  onCherryPick,
   onSelect,
   hasMore = false,
   loadingMore = false,
@@ -380,6 +382,9 @@ export function CommitGraph({
     }
     if (onCheckout) {
       items.push({ label: 'Checkout this commit', action: () => onCheckout(row.hash) });
+    }
+    if (onCherryPick) {
+      items.push({ label: 'Cherry-pick this commit', action: () => onCherryPick(row.hash) });
     }
     if (onReset) {
       items.push({ separator: true });
@@ -584,6 +589,7 @@ export function CommitGraph({
           />
           <div
             className="context-menu"
+            data-testid="context-menu"
             style={{ position: 'fixed', left: contextMenu.x, top: contextMenu.y, zIndex: 100 }}
           >
             {contextMenu.items.map((item, i) =>

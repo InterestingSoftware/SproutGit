@@ -14,7 +14,9 @@
     "./config": "./src/config.ts",
     "./init": "./src/init.ts",
     "./diff": "./src/diff.ts",
-    "./health": "./src/health.ts"
+    "./health": "./src/health.ts",
+    "./stash": "./src/stash.ts",
+    "./cherry-pick": "./src/cherry-pick.ts"
   },
   "scripts": {
     "typecheck": "tsgo --noEmit",

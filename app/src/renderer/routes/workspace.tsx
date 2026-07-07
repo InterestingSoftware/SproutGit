@@ -1,10 +1,16 @@
 import { api } from "../api.js";
-import { createRoute, useSearch } from "@tanstack/react-router";
+import { createRoute, useNavigate, useSearch } from "@tanstack/react-router";
 import { rootRoute } from "./__root.js";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { StagingPanel, Spinner, ContextMenuProvider } from "@sproutgit/ui";
-import { GitBranch, GitMerge, Terminal, Bot, FileCode2 } from "lucide-react";
+import {
+  StagingPanel,
+  Spinner,
+  ContextMenuProvider,
+  CommandPalette,
+  type CommandPaletteItem,
+} from "@sproutgit/ui";
+import { GitBranch, GitMerge, Terminal, Bot, FileCode2, Plus, Trash2, Settings, FolderOpen, RefreshCw, ArrowDownToLine, ArrowUpToLine, SlidersHorizontal, AppWindow } from "lucide-react";
 import type { WorktreeInfo, TerminalInfo, SessionAttention } from "@sproutgit/types";
 import { useToast } from "../toast-context.js";
 import { useWorkspaceStore } from "../stores/workspace-store.js";
@@ -74,6 +80,7 @@ function WorkspaceView() {
 }
 
 function WorkspaceInner() {
+  const navigate = useNavigate();
   const toast = useToast();
   const qc = useQueryClient();
   const { path: workspacePath } = useSearch({ from: workspaceRoute.id });
@@ -184,6 +191,7 @@ function WorkspaceInner() {
   const [deleteTarget, setDeleteTarget] = useState<WorktreeInfo | null>(null);
   const [showNewWorktree, setShowNewWorktree] = useState(false);
   const [sessionsPanelOpen, setSessionsPanelOpen] = useState(false);
+  const [showCommandPalette, setShowCommandPalette] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(
     () => sessionStorage.getItem("sg_sidebar_collapsed") === "1",
   );
@@ -328,6 +336,31 @@ function WorkspaceInner() {
     setSidebarCollapsed,
   });
 
+  // ── Cmd/Ctrl+K opens the command palette ────────────────────────────────
+  // Unlike Cmd/Ctrl+B (useWorkspaceUiPersistence), this intentionally does
+  // NOT bail out while an input/textarea has focus — command palettes
+  // conventionally open from anywhere (VS Code, Linear, etc). It does bail
+  // if another modal is already open, to avoid stacking overlays.
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if (!(e.metaKey || e.ctrlKey) || e.key.toLowerCase() !== "k") return;
+      if (e.defaultPrevented) return;
+      if (
+        showNewWorktree ||
+        showPublishModal ||
+        !!runHookTarget ||
+        !!deleteTarget ||
+        !!createPrTarget ||
+        hooksModalOpen ||
+        sessionsPanelOpen
+      ) return;
+      e.preventDefault();
+      setShowCommandPalette((v) => !v);
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [showNewWorktree, showPublishModal, runHookTarget, deleteTarget, createPrTarget, hooksModalOpen, sessionsPanelOpen]);
+
   // ── Style helpers ─────────────────────────────────────────────────────
 
   function tabCls(active: boolean, disabled: boolean = false) {
@@ -339,6 +372,158 @@ function WorkspaceInner() {
           : "text-(--sg-text-faint) border-transparent hover:text-(--sg-text) cursor-pointer"
     }`;
   }
+
+  // ── Command palette (Cmd/Ctrl+K) ─────────────────────────────────────────
+
+  const commandItems: CommandPaletteItem[] = [
+    ...worktrees.filter((wt) => wt.path !== rootP).flatMap((wt): CommandPaletteItem[] => {
+      const label = wt.branch ?? wt.path;
+      const items: CommandPaletteItem[] = [{
+        id: `worktree-switch:${wt.path}`,
+        label: `Switch to ${label}`,
+        group: 'Worktrees',
+        keywords: wt.path,
+        icon: <GitBranch size={14} />,
+        onSelect: () => void handleWorktreeSwitch(wt),
+      }];
+      if (agentConfigured) {
+        items.push({
+          id: `worktree-agent:${wt.path}`,
+          label: `Launch Agent in ${label}`,
+          group: 'Worktrees',
+          keywords: wt.path,
+          icon: <Bot size={14} />,
+          onSelect: () => void terminalManager.launchAgent(wt.path, agentConfig?.id),
+        });
+      }
+      items.push({
+        id: `worktree-delete:${wt.path}`,
+        label: `Delete Worktree: ${label}`,
+        group: 'Worktrees',
+        keywords: wt.path,
+        icon: <Trash2 size={14} />,
+        onSelect: () => setDeleteTarget(wt),
+      });
+      return items;
+    }),
+    {
+      id: 'worktree-create',
+      label: 'Create Worktree…',
+      group: 'Worktrees',
+      icon: <Plus size={14} />,
+      onSelect: () => setShowNewWorktree(true),
+    },
+    {
+      id: 'nav-graph',
+      label: 'Go to Graph',
+      group: 'Navigate',
+      icon: <GitBranch size={14} />,
+      onSelect: () => useWorkspaceStore.setState({ activeTab: 'graph' }),
+    },
+    ...(activeWorktree ? [{
+      id: 'nav-changes',
+      label: 'Go to Changes',
+      group: 'Navigate',
+      icon: <GitMerge size={14} />,
+      onSelect: () => useWorkspaceStore.setState({ activeTab: 'staging' }),
+    }] : []),
+    ...(activeWorktree ? [{
+      id: 'nav-terminal',
+      label: 'Go to Terminal',
+      group: 'Navigate',
+      icon: <Terminal size={14} />,
+      onSelect: () => {
+        if (terminalManager.visibleSessions.length === 0) void terminalManager.openTerminal(activeWorktree.path);
+        else useWorkspaceStore.setState({ activeTab: 'terminal' });
+      },
+    }] : []),
+    ...(activeWorktree && agentConfig?.mode === 'integrated' ? [{
+      id: 'nav-chat',
+      label: 'Go to Chat',
+      group: 'Navigate',
+      icon: <Bot size={14} />,
+      onSelect: () => useWorkspaceStore.setState({ activeTab: 'chat' }),
+    }] : []),
+    ...(activeWorktree ? [{
+      id: 'nav-files',
+      label: 'Go to Files',
+      group: 'Navigate',
+      icon: <FileCode2 size={14} />,
+      onSelect: () => useWorkspaceStore.setState({ activeTab: 'files' }),
+    }] : []),
+    {
+      id: 'nav-settings',
+      label: 'Open Settings',
+      group: 'Navigate',
+      icon: <Settings size={14} />,
+      onSelect: () => void navigate({ to: '/settings', search: { workspace: workspacePath } }),
+    },
+    {
+      id: 'nav-projects',
+      label: 'Back to Projects',
+      group: 'Navigate',
+      icon: <FolderOpen size={14} />,
+      onSelect: () => void navigate({ to: '/' }),
+    },
+    {
+      id: 'nav-agent-sessions',
+      label: 'Agent Sessions',
+      group: 'Navigate',
+      icon: <Bot size={14} />,
+      onSelect: () => setSessionsPanelOpen((v) => !v),
+    },
+    ...(activeWorktree ? [
+      {
+        id: 'git-fetch',
+        label: 'Fetch',
+        group: 'Git',
+        icon: <RefreshCw size={14} />,
+        onSelect: () => void doFetch(),
+      },
+      {
+        id: 'git-pull',
+        label: 'Pull',
+        group: 'Git',
+        icon: <ArrowDownToLine size={14} />,
+        onSelect: () => void doPull(),
+      },
+      {
+        id: 'git-push',
+        label: 'Push',
+        group: 'Git',
+        icon: <ArrowUpToLine size={14} />,
+        onSelect: () => void doPush(),
+      },
+    ] : []),
+    {
+      id: 'workspace-hooks',
+      label: 'Workspace Hooks…',
+      group: 'Workspace',
+      icon: <SlidersHorizontal size={14} />,
+      onSelect: () => setHooksModalOpen(true),
+    },
+    ...(activeWorktree ? [{
+      id: 'new-terminal',
+      label: 'New Terminal',
+      group: 'Workspace',
+      icon: <Terminal size={14} />,
+      onSelect: () => void terminalManager.openTerminal(activeWorktree.path),
+    }] : []),
+    {
+      id: 'toggle-sidebar',
+      label: sidebarCollapsed ? 'Expand Sidebar' : 'Collapse Sidebar',
+      group: 'Workspace',
+      shortcut: 'Cmd/Ctrl+B',
+      onSelect: () => setSidebarCollapsed((v) => !v),
+    },
+    {
+      id: 'new-window',
+      label: 'New Window',
+      group: 'Workspace',
+      icon: <AppWindow size={14} />,
+      onSelect: () => void api.openNewWindow(),
+    },
+  ];
 
   // ── Render ────────────────────────────────────────────────────────────
 
@@ -544,6 +729,11 @@ function WorkspaceInner() {
                           settings,
                         });
                       }}
+                      listStashes={p => api.listStashes(p)}
+                      createStash={(p, message) => api.createStash(p, message)}
+                      applyStash={(p, ref) => api.applyStash(p, ref)}
+                      popStash={(p, ref) => api.popStash(p, ref)}
+                      dropStash={(p, ref) => api.dropStash(p, ref)}
                       onCommit={() => {
                         toast("Committed", "success");
                         setStagingRefresh((n) => n + 1);
@@ -676,6 +866,13 @@ function WorkspaceInner() {
         attentionBySession={attentionBySession}
         onJump={(session) => handleJumpToSession(session)}
         onClose={() => setSessionsPanelOpen(false)}
+      />
+
+      {/* Command palette */}
+      <CommandPalette
+        open={showCommandPalette}
+        onClose={() => setShowCommandPalette(false)}
+        items={commandItems}
       />
 
       <WorkspaceDialogs

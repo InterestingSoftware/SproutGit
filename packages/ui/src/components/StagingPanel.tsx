@@ -14,9 +14,10 @@ import yamlLang from 'highlight.js/lib/languages/yaml';
 import sqlLang from 'highlight.js/lib/languages/sql';
 import pythonLang from 'highlight.js/lib/languages/python';
 import goLang from 'highlight.js/lib/languages/go';
-import { type StatusFileEntry, type WorktreeStatusResult, type CommitMessageGenerateResult } from '@sproutgit/types';
+import { type StatusFileEntry, type WorktreeStatusResult, type CommitMessageGenerateResult, type StashListResult } from '@sproutgit/types';
 import { Spinner } from './Spinner.js';
 import { ConfirmDialog } from './ConfirmDialog.js';
+import { StashPanel } from './StashPanel.js';
 import { escapeHtml } from '../html-escape.js';
 
 hljs.registerLanguage('typescript', typescriptLang);
@@ -57,6 +58,11 @@ type Props = {
   onToast?: (message: string, variant: 'success' | 'error') => void;
   /** Runs the configured AI commit-message generator against the staged diff. */
   generateCommitMessage?: (worktreePath: string) => Promise<CommitMessageGenerateResult>;
+  listStashes: (worktreePath: string) => Promise<StashListResult>;
+  createStash: (worktreePath: string, message?: string) => Promise<void>;
+  applyStash: (worktreePath: string, ref: string) => Promise<void>;
+  popStash: (worktreePath: string, ref: string) => Promise<void>;
+  dropStash: (worktreePath: string, ref: string) => Promise<void>;
 };
 
 // ─── Validation ───────────────────────────────────────────────────────────────
@@ -89,6 +95,11 @@ export function StagingPanel({
   refreshSignal = 0,
   onToast,
   generateCommitMessage,
+  listStashes,
+  createStash,
+  applyStash,
+  popStash,
+  dropStash,
 }: Props) {
   const qc = useQueryClient();
   const statusKey = ['stagingStatus', worktreePath, refreshSignal] as const;
@@ -454,6 +465,19 @@ export function StagingPanel({
               </button>
               <p className="text-center text-[9px] text-(--sg-text-faint) m-0">{/mac/i.test(navigator.platform) ? '⌘↵' : 'Ctrl+Enter'} to commit</p>
             </section>
+
+            <StashPanel
+              worktreePath={worktreePath}
+              hasChangesToStash={statusFiles.length > 0}
+              listStashes={listStashes}
+              createStash={createStash}
+              applyStash={applyStash}
+              popStash={popStash}
+              dropStash={dropStash}
+              onToast={onToast}
+              onChanged={invalidateStatus}
+              refreshSignal={refreshSignal}
+            />
           </>
         )}
       </div>

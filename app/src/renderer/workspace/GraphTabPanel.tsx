@@ -133,6 +133,23 @@ export function GraphTabPanel({
                 .catch((err: unknown) => toast(String(err), "error"));
             }
           }}
+          onCherryPick={(sha) => {
+            if (activeWorktree) {
+              void api
+                .cherryPick(activeWorktree.path, sha)
+                .then(() => {
+                  toast("Cherry-pick applied", "success");
+                  void qc.invalidateQueries({
+                    queryKey: qk.commits(gitRepoPath),
+                  });
+                  void qc.invalidateQueries({ queryKey: qk.refs(gitRepoPath) });
+                  void qc.invalidateQueries({
+                    queryKey: qk.worktreeStatus(activeWorktree.path),
+                  });
+                })
+                .catch((err: unknown) => toast(String(err), "error"));
+            }
+          }}
           issueTrackerPatterns={issueTrackerPatterns}
         />
       </div>
