@@ -13,8 +13,6 @@ export { ConfirmDialog } from './components/ConfirmDialog.js';
 export { ErrorModal } from './components/ErrorModal.js';
 export type { ErrorModalData } from './components/ErrorModal.js';
 
-export { fuzzyScore } from './fuzzy-match.js';
-
 export { languageForPath } from './file-language.js';
 
 export { ContextMenuProvider, useContextMenu } from './components/ContextMenu.js';

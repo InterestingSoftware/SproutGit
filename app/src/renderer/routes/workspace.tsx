@@ -382,7 +382,7 @@ function WorkspaceInner() {
           group: 'Worktrees',
           keywords: wt.path,
           icon: <Bot size={14} />,
-          onSelect: () => void terminalManager.launchAgent(wt.path),
+          onSelect: () => void terminalManager.launchAgent(wt.path, agentConfig?.id),
         });
       }
       items.push({
@@ -502,7 +502,7 @@ function WorkspaceInner() {
       id: 'toggle-sidebar',
       label: sidebarCollapsed ? 'Expand Sidebar' : 'Collapse Sidebar',
       group: 'Workspace',
-      shortcut: '⌘B',
+      shortcut: 'Cmd/Ctrl+B',
       onSelect: () => setSidebarCollapsed((v) => !v),
     },
     {

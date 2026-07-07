@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { Search } from 'lucide-react';
-import { fuzzyScore } from '../fuzzy-match.js';
+import { fuzzyFilterSort } from '../fuzzy.js';
 
 export type CommandPaletteItem = {
   id: string;
@@ -34,14 +34,10 @@ export function CommandPalette({ open, onClose, items, placeholder = 'Type a com
     setTimeout(() => inputRef.current?.focus(), 0);
   }, [open]);
 
-  const filtered = useMemo(() => {
-    if (!query.trim()) return items;
-    return items
-      .map(item => ({ item, score: fuzzyScore(query, `${item.label} ${item.keywords ?? ''}`) }))
-      .filter((entry): entry is { item: CommandPaletteItem; score: number } => entry.score !== null)
-      .sort((a, b) => b.score - a.score)
-      .map(entry => entry.item);
-  }, [items, query]);
+  const filtered = useMemo(
+    () => fuzzyFilterSort(items, query, item => `${item.label} ${item.keywords ?? ''}`),
+    [items, query],
+  );
 
   useEffect(() => { setActiveIndex(0); }, [query]);
 
@@ -53,7 +49,7 @@ export function CommandPalette({ open, onClose, items, placeholder = 'Type a com
         onClose();
       } else if (e.key === 'ArrowDown') {
         e.preventDefault();
-        setActiveIndex(i => Math.min(i + 1, filtered.length - 1));
+        setActiveIndex(i => Math.min(i + 1, Math.max(filtered.length - 1, 0)));
       } else if (e.key === 'ArrowUp') {
         e.preventDefault();
         setActiveIndex(i => Math.max(i - 1, 0));

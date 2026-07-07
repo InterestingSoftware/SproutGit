@@ -471,7 +471,7 @@ function HomeView() {
   // ── Command palette (Cmd/Ctrl+K) ─────────────────────────────────────────
 
   const commandItems: CommandPaletteItem[] = [
-    ...(agentConfig?.command.trim() ? [{
+    ...(defaultAgent?.command.trim() ? [{
       id: 'new-from-idea',
       label: 'New from idea…',
       group: 'Start',
