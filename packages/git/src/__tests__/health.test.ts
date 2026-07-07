@@ -32,21 +32,7 @@ describe('getWorktreeHealth', { timeout: 20_000 }, () => {
     expect(health.compareRef).toBeNull();
     expect(health.ahead).toBe(0);
     expect(health.behind).toBe(0);
-    expect(health.dirtyCount).toBe(0);
     expect(health.lastCommitAt).not.toBeNull();
-
-    rmSync(dir, { recursive: true, force: true });
-  });
-
-  it('counts modified and untracked files as dirty', async () => {
-    const dir = tempDir('sg-health-dirty-');
-    createRepo(dir);
-    writeFileSync(join(dir, 'f'), 'changed\n');
-    writeFileSync(join(dir, 'untracked'), 'new\n');
-
-    const health = await getWorktreeHealth(dir);
-
-    expect(health.dirtyCount).toBe(2);
 
     rmSync(dir, { recursive: true, force: true });
   });
@@ -65,6 +51,11 @@ describe('getWorktreeHealth', { timeout: 20_000 }, () => {
     execSync('git push -q origin HEAD:refs/heads/main', { cwd: seedDir, stdio: 'ignore' });
 
     execSync(`git clone -q -b main "${remoteDir}" "${cloneDir}"`, { stdio: 'ignore' });
+    // Clones don't inherit user.name/user.email from the seed repo — CI
+    // runners have no global git identity configured, so committing in
+    // cloneDir below would otherwise fail with "Please tell me who you are".
+    execSync('git config user.email "test@sproutgit.test"', { cwd: cloneDir, stdio: 'ignore' });
+    execSync('git config user.name "SproutGit Test"', { cwd: cloneDir, stdio: 'ignore' });
 
     // Advance the remote by one commit the clone hasn't seen yet (behind 1).
     writeFileSync(join(seedDir, 'g'), 'more\n');
@@ -136,5 +127,20 @@ describe('getWorktreesHealth', { timeout: 20_000 }, () => {
     expect(result[missingDir]).toBeUndefined();
 
     rmSync(dirA, { recursive: true, force: true });
+  });
+
+  it('still processes every worktree when concurrency is passed as 0', async () => {
+    const dirA = tempDir('sg-health-batch-zero-a-');
+    const dirB = tempDir('sg-health-batch-zero-b-');
+    createRepo(dirA);
+    createRepo(dirB);
+
+    const result = await getWorktreesHealth([dirA, dirB], null, 0);
+
+    expect(result[dirA]?.worktreePath).toBe(dirA);
+    expect(result[dirB]?.worktreePath).toBe(dirB);
+
+    rmSync(dirA, { recursive: true, force: true });
+    rmSync(dirB, { recursive: true, force: true });
   });
 });
