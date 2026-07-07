@@ -26,6 +26,12 @@ export const IPC = {
   GIT_WORKING_DIFF: 'git:workingDiff',
   GIT_UNSTAGED_FILE_DIFF: 'git:unstagedFileDiff',
   GIT_STAGED_FILE_DIFF: 'git:stagedFileDiff',
+  GIT_STASH_CREATE: 'git:stashCreate',
+  GIT_STASH_LIST: 'git:stashList',
+  GIT_STASH_APPLY: 'git:stashApply',
+  GIT_STASH_POP: 'git:stashPop',
+  GIT_STASH_DROP: 'git:stashDrop',
+  GIT_CHERRY_PICK: 'git:cherryPick',
   // ── Worktrees ────────────────────────────────────────────────────────────
   WORKTREE_CREATE: 'worktree:create',
   WORKTREE_DELETE: 'worktree:delete',
@@ -219,6 +225,7 @@ import type {
   WorktreePushStatus,
   RefsResult,
   FetchSummary,
+  StashListResult,
   WorktreeDeleteResult,
 } from './git.js';
 import type { WorkspaceInitResult, WorkspaceStatus, RecentWorkspace, WorktreeProvenance, NestedRepoSyncRule, ImportRepoMode, CreateWorktreeResult } from './workspace.js';
@@ -303,6 +310,12 @@ export type IpcMap = {
   'git:workingDiff': { args: [args: { worktreePath: string; file?: string }];                result: string };
   'git:unstagedFileDiff': { args: [args: { worktreePath: string; file: string }];             result: string };
   'git:stagedFileDiff':   { args: [args: { worktreePath: string; file?: string }];            result: string };
+  'git:stashCreate': { args: [args: { worktreePath: string; message?: string }];             result: void };
+  'git:stashList':   { args: [worktreePath: string];                                         result: StashListResult };
+  'git:stashApply':  { args: [args: { worktreePath: string; ref: string }];                  result: void };
+  'git:stashPop':    { args: [args: { worktreePath: string; ref: string }];                  result: void };
+  'git:stashDrop':   { args: [args: { worktreePath: string; ref: string }];                  result: void };
+  'git:cherryPick':  { args: [args: { worktreePath: string; sha: string }];                  result: void };
   'git:getConfig':   { args: [key: string];                                                  result: string | null };
   'git:setConfig':   { args: [args: { key: string; value: string }];                         result: void };
   // ── Worktrees ─────────────────────────────────────────────────────────────

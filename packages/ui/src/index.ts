@@ -5,6 +5,9 @@ export { CommitGraph } from './components/CommitGraph.js';
 
 export { linkifyIssueRefs, matchIssueRef } from './issuetracker-linkify.js';
 
+export { CommandPalette } from './components/CommandPalette.js';
+export type { CommandPaletteItem } from './components/CommandPalette.js';
+
 export { ConfirmDialog } from './components/ConfirmDialog.js';
 
 export { ErrorModal } from './components/ErrorModal.js';
@@ -23,6 +26,8 @@ export { ResizableSidebar } from './components/ResizableSidebar.js';
 export { Select } from './components/Select.js';
 
 export { StagingPanel } from './components/StagingPanel.js';
+
+export { StashPanel } from './components/StashPanel.js';
 
 export { Spinner } from './components/Spinner.js';
 

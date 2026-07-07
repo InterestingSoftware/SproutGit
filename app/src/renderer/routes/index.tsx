@@ -3,7 +3,7 @@ import { createRoute, useNavigate } from '@tanstack/react-router';
 import { rootRoute } from './__root.js';
 import { useState, useEffect, useRef } from 'react';
 import { AppWindow, ArrowRight, Clock, Download, FolderInput, FolderOpen, HelpCircle, Play, Settings, Sparkles, X, AlertTriangle } from 'lucide-react';
-import { Spinner, WindowControls, UpdateBadge, Autocomplete, ResizableSidebar } from '@sproutgit/ui';
+import { Spinner, WindowControls, UpdateBadge, Autocomplete, ResizableSidebar, CommandPalette, type CommandPaletteItem } from '@sproutgit/ui';
 import type { UpdateState } from '@sproutgit/ui';
 import type { Driver } from 'driver.js';
 import type { AgentRoster, GitHubRepo, GitInfo, GitHubAuthStatus, GitOpProgressEvent, RecentWorkspace } from '@sproutgit/types';
@@ -77,6 +77,7 @@ function HomeView() {
   const [gitChecked, setGitChecked] = useState(false);
   const [gitNotInstalled, setGitNotInstalled] = useState(false);
   const [updateState, setUpdateState] = useState<UpdateState>({ status: 'idle' });
+  const [showCommandPalette, setShowCommandPalette] = useState(false);
 
   // First-run walkthrough — see onboarding/homeTour.ts
   const [recentsLoaded, setRecentsLoaded] = useState(false);
@@ -251,6 +252,19 @@ function HomeView() {
         else if (showClone) { e.preventDefault(); setShowClone(false); }
         else if (showIdea) { e.preventDefault(); setShowIdea(false); }
       }
+    }
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [showClone, showImport, showIdea]);
+
+  // ── Cmd/Ctrl+K opens the command palette ────────────────────────────────
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if (!(e.metaKey || e.ctrlKey) || e.key.toLowerCase() !== 'k') return;
+      if (e.defaultPrevented) return;
+      if (showClone || showImport || showIdea) return;
+      e.preventDefault();
+      setShowCommandPalette(v => !v);
     }
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
@@ -453,6 +467,68 @@ function HomeView() {
 
   const cloneWorkspacePath = projectsFolder && cloneFolderName ? `${projectsFolder}/${cloneFolderName}` : '';
   const ideaWorkspacePath = projectsFolder && ideaName ? `${projectsFolder}/${ideaName}` : '';
+
+  // ── Command palette (Cmd/Ctrl+K) ─────────────────────────────────────────
+
+  const commandItems: CommandPaletteItem[] = [
+    ...(defaultAgent?.command.trim() ? [{
+      id: 'new-from-idea',
+      label: 'New from idea…',
+      group: 'Start',
+      icon: <Sparkles size={14} />,
+      onSelect: () => { resetIdeaState(); setShowIdea(true); },
+    }] : []),
+    {
+      id: 'clone',
+      label: 'Clone Repository…',
+      group: 'Start',
+      icon: <Download size={14} />,
+      onSelect: () => { setCloneError(''); setCloneProgress([]); setShowClone(true); },
+    },
+    {
+      id: 'open-folder',
+      label: 'Open Folder…',
+      group: 'Start',
+      icon: <FolderOpen size={14} />,
+      onSelect: () => void openWithDialog(),
+    },
+    {
+      id: 'import',
+      label: 'Import Git Repo…',
+      group: 'Start',
+      icon: <FolderInput size={14} />,
+      onSelect: () => { setImportError(''); setShowImport(true); },
+    },
+    ...recents.map((ws): CommandPaletteItem => ({
+      id: `recent:${ws.workspacePath}`,
+      label: workspaceDisplayName(ws.workspacePath),
+      group: 'Recent Projects',
+      keywords: ws.workspacePath,
+      icon: <Clock size={14} />,
+      onSelect: () => void openWorkspace(ws.workspacePath, true),
+    })),
+    {
+      id: 'settings',
+      label: 'Open Settings',
+      group: 'Navigate',
+      icon: <Settings size={14} />,
+      onSelect: () => void navigate({ to: '/settings' }),
+    },
+    {
+      id: 'new-window',
+      label: 'New Window',
+      group: 'Navigate',
+      icon: <AppWindow size={14} />,
+      onSelect: () => void api.openNewWindow(),
+    },
+    {
+      id: 'replay-tour',
+      label: 'Replay Walkthrough',
+      group: 'Navigate',
+      icon: <HelpCircle size={14} />,
+      onSelect: () => replayTour(),
+    },
+  ];
 
   return (
     <div className="flex flex-col h-screen overflow-hidden bg-(--sg-bg)">
@@ -873,6 +949,13 @@ function HomeView() {
           </form>
         </div>
       )}
+
+      {/* Command palette */}
+      <CommandPalette
+        open={showCommandPalette}
+        onClose={() => setShowCommandPalette(false)}
+        items={commandItems}
+      />
     </div>
   );
 }
