@@ -36,7 +36,8 @@ import type {
   RecentWorkspace,
   CreateWorktreeResult,
   WorktreeSwitchHookSource,
-  AgentConfig,
+  AgentRoster,
+  AgentTestInput,
   AgentTerminalLaunchEvent,
   AcpAdapterStatus,
   AcpAdapterInstallEvent,
@@ -395,23 +396,24 @@ const api = {
   },
 
   // ── Coding agents ─────────────────────────────────────────────────────────
-  getAgentConfig: (): Promise<AgentConfig> =>
-    invoke(IPC.AGENT_GET),
+  getAgentRoster: (): Promise<AgentRoster> =>
+    invoke(IPC.AGENT_ROSTER_GET),
 
-  saveAgentConfig: (config: AgentConfig): Promise<void> =>
-    invoke(IPC.AGENT_SAVE, config),
+  saveAgentRoster: (roster: AgentRoster): Promise<void> =>
+    invoke(IPC.AGENT_ROSTER_SAVE, roster),
 
   launchAgent: (args: {
     workspacePath: string;
     worktreePath: string;
+    agentId?: string;
   }): Promise<string> =>
     invoke(IPC.AGENT_LAUNCH, args),
 
-  testAgent: (): Promise<ToolTestResult> =>
-    invoke(IPC.AGENT_TEST),
+  testAgent: (agent: AgentTestInput): Promise<ToolTestResult> =>
+    invoke(IPC.AGENT_TEST, agent),
 
-  getAcpAdapterStatus: (): Promise<AcpAdapterStatus | null> =>
-    invoke(IPC.AGENT_ACP_ADAPTER_STATUS),
+  getAcpAdapterStatus: (agentId: string): Promise<AcpAdapterStatus | null> =>
+    invoke(IPC.AGENT_ACP_ADAPTER_STATUS, agentId),
 
   installAcpAdapter: (npmPackage: string): Promise<void> =>
     invoke(IPC.AGENT_ACP_ADAPTER_INSTALL, npmPackage),
@@ -435,7 +437,7 @@ const api = {
   },
 
   // ── Chat (Integrated agent mode) ─────────────────────────────────────────
-  chatStart: (args: { worktreePath: string; initialPrompt?: string }): Promise<{ sessionId: string; configOptions: ChatConfigOption[] }> =>
+  chatStart: (args: { worktreePath: string; initialPrompt?: string; agentId?: string }): Promise<{ sessionId: string; configOptions: ChatConfigOption[] }> =>
     invoke(IPC.CHAT_START, args),
 
   chatSend: (args: { sessionId: string; prompt: string }): Promise<void> =>

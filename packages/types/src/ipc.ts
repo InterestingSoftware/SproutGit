@@ -59,8 +59,8 @@ export const IPC = {
   SETTINGS_DELETE: 'settings:delete',
   SETTINGS_GET_ALL: 'settings:getAll',
   // ── Coding agents ────────────────────────────────────────────────────────
-  AGENT_GET: 'agent:get',
-  AGENT_SAVE: 'agent:save',
+  AGENT_ROSTER_GET: 'agent:rosterGet',
+  AGENT_ROSTER_SAVE: 'agent:rosterSave',
   AGENT_LAUNCH: 'agent:launch',
   AGENT_TEST: 'agent:test',
   AGENT_ACP_ADAPTER_STATUS: 'agent:acpAdapterStatus',
@@ -218,7 +218,7 @@ import type { EditorInfo, GitToolInfo, ToolTestResult } from './tools.js';
 import type { GitHubAuthStatus, DeviceCodeResponse, GitHubPollResult, GitHubEmailSuggestion, GitHubRepo, PullRequestStatus, PullRequestInfo } from './github.js';
 import type { TerminalInfo } from './terminal.js';
 import type { SessionAttention } from './attention.js';
-import type { AgentConfig, AcpAdapterStatus } from './agents.js';
+import type { AgentRoster, AgentTestInput, AcpAdapterStatus } from './agents.js';
 import type { ChatConfigOption } from './chat.js';
 import type { CommitMessageGeneratorSettings, CommitMessageGenerateResult } from './commit-message-generator.js';
 import type { ProjectIdeaGenerateResult } from './project-idea.js';
@@ -337,14 +337,14 @@ export type IpcMap = {
   'settings:delete': { args: [key: string];                                  result: void };
   'settings:getAll': { args: [];                                             result: { key: string; value: string }[] };
   // ── Coding agents ─────────────────────────────────────────────────────────
-  'agent:get':    { args: [];                                                          result: AgentConfig };
-  'agent:save':   { args: [config: AgentConfig];                                       result: void };
-  'agent:launch': { args: [args: { workspacePath: string; worktreePath: string }];     result: string };
-  'agent:test':   { args: [];                                                          result: ToolTestResult };
-  'agent:acpAdapterStatus':  { args: [];                                               result: AcpAdapterStatus | null };
+  'agent:rosterGet':  { args: [];                                                      result: AgentRoster };
+  'agent:rosterSave': { args: [roster: AgentRoster];                                   result: void };
+  'agent:launch': { args: [args: { workspacePath: string; worktreePath: string; agentId?: string }]; result: string };
+  'agent:test':   { args: [agent: AgentTestInput];                                     result: ToolTestResult };
+  'agent:acpAdapterStatus':  { args: [agentId: string];                                result: AcpAdapterStatus | null };
   'agent:acpAdapterInstall': { args: [npmPackage: string];                             result: void };
   // ── Chat (Integrated agent mode) ─────────────────────────────────────────
-  'chat:start':             { args: [args: { worktreePath: string; initialPrompt?: string }];       result: { sessionId: string; configOptions: ChatConfigOption[] } };
+  'chat:start':             { args: [args: { worktreePath: string; initialPrompt?: string; agentId?: string }]; result: { sessionId: string; configOptions: ChatConfigOption[] } };
   'chat:send':              { args: [args: { sessionId: string; prompt: string }];                  result: void };
   'chat:stop':              { args: [sessionId: string];                                            result: void };
   'chat:respondPermission': { args: [args: { sessionId: string; requestId: string; optionId: string }]; result: void };

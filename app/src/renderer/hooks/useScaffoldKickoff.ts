@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { api } from "../api.js";
 import { consumePendingScaffold } from "../pending-scaffold.js";
 import { useWorkspaceStore } from "../stores/workspace-store.js";
-import type { AgentConfig, WorktreeInfo } from "@sproutgit/types";
+import type { AgentRosterEntry, WorktreeInfo } from "@sproutgit/types";
 import type { ToastFn } from "../toast-context.js";
 
 /**
@@ -16,7 +16,7 @@ import type { ToastFn } from "../toast-context.js";
  */
 export function useScaffoldKickoff(params: {
   activeWorktree: WorktreeInfo | null;
-  agentConfig: AgentConfig | null;
+  agentConfig: AgentRosterEntry | null;
   workspacePath: string;
   toast: ToastFn;
 }) {
@@ -39,6 +39,7 @@ export function useScaffoldKickoff(params: {
         const terminalId = await api.launchAgent({
           workspacePath,
           worktreePath: activeWorktree.path,
+          agentId: agentConfig.id,
         });
         // Give the CLI a moment to boot before "typing" the kickoff prompt.
         setTimeout(() => {

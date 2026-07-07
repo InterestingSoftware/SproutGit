@@ -389,7 +389,7 @@ function WorkspaceInner() {
             worktreesWithLiveAgent={worktreesWithLiveAgent}
             attentionByWorktree={attentionByWorktree}
             onJumpToAttention={handleJumpToAttention}
-            onLaunchAgent={(wtPath) => void terminalManager.launchAgent(wtPath)}
+            onLaunchAgent={(wtPath) => void terminalManager.launchAgent(wtPath, agentConfig?.id)}
             onCreatePr={(wt) => setCreatePrTarget(wt)}
           />
 

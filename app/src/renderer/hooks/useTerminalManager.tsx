@@ -297,9 +297,9 @@ export function useTerminalManager(params: {
     }
   }
 
-  async function launchAgent(worktreePath: string) {
+  async function launchAgent(worktreePath: string, agentId?: string) {
     try {
-      await api.launchAgent({ workspacePath, worktreePath });
+      await api.launchAgent(agentId ? { workspacePath, worktreePath, agentId } : { workspacePath, worktreePath });
     } catch (err) {
       toast(`Failed to launch agent: ${String(err)}`, "error");
     }

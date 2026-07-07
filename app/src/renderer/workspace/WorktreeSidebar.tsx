@@ -241,7 +241,7 @@ type Props = {
   creatingWorktree: boolean;
   pendingCreationBranch: string | null;
   updateState: UpdateState;
-  /** Whether an AI agent command is configured (Settings → AI Agent) — gates the launch button/menu item. */
+  /** Whether an AI agent command is configured (Settings → AI Agents) — gates the launch button/menu item. */
   agentConfigured: boolean;
   worktreesWithLiveAgent: Set<string>;
   /** Live session attention state (working/awaiting-permission/awaiting-input/finished/failed), keyed by worktree path — see useSessionAttention(). */

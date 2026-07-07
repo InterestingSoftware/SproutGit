@@ -1,18 +1,22 @@
 /**
  * Coding-agent IPC handlers.
  *
- * There is a single configured AI agent (command + args + invocation mode),
- * same shape as the editor/diff-tool/merge-tool settings rows — not a roster.
- * "Terminal" mode launches it as a PTY session in a worktree, the same way
- * hooks are launched. "Integrated" mode (Claude Code only, for now) is
- * handled separately by chat.ts, which spawns the agent with structured
- * streaming output and renders it in the Chat tab.
+ * The user configures a roster of named agents (command + args + per-agent
+ * env vars + invocation mode), not just one. "Terminal" mode launches the
+ * selected agent as a PTY session in a worktree, the same way hooks are
+ * launched. "Integrated" mode is handled separately by chat.ts, which spawns
+ * the agent's Agent Client Protocol (ACP) invocation with structured
+ * streaming output and renders it in the Chat tab — gated by each roster
+ * entry's own `acp` flag rather than a hardcoded command allowlist.
  */
 import { BrowserWindow } from 'electron';
-import { execFile } from 'node:child_process';
+import { execFile, spawn } from 'node:child_process';
+import { homedir } from 'node:os';
+import { Readable, Writable } from 'node:stream';
+import { ClientSideConnection, ndJsonStream, PROTOCOL_VERSION, type AgentCapabilities, type Client } from '@agentclientprotocol/sdk';
 import { IPC, ACP_PRESET_TOKENS } from '@sproutgit/types';
-import type { AcpAdapterStatus, AgentConfig, IssueTrackerPattern, ToolTestResult } from '@sproutgit/types';
-import { openWorkspaceDb, eq, getAgentConfig, saveAgentConfig, type ConfigDb } from '@sproutgit/database';
+import type { AcpAdapterStatus, AgentRosterEntry, AgentRoster, AgentTestInput, IssueTrackerPattern, ToolTestResult } from '@sproutgit/types';
+import { openWorkspaceDb, eq, getAgentRoster, saveAgentRoster, resolveRosterAgent, type ConfigDb } from '@sproutgit/database';
 import { worktreeMetadata } from '@sproutgit/database/schema/workspace';
 import { readIssueTrackerFile } from '@sproutgit/git';
 import { join, basename } from 'path';
@@ -47,7 +51,7 @@ function resolveIssueUrl(issueRef: string, patterns: IssueTrackerPattern[]): str
   return '';
 }
 
-/** The resolved argv to spawn a configured agent in Agent Client Protocol (ACP) mode. */
+/** The resolved argv to spawn an agent in Agent Client Protocol (ACP) mode. */
 type AcpLaunchSpec = { bin: string; args: string[] };
 
 interface AcpPreset {
@@ -82,6 +86,13 @@ interface AcpPreset {
  *   binary that bundles its own Codex runtime.
  * - Kiro CLI: native support via the `acp` subcommand (`kiro-cli acp`).
  * - Cursor CLI: native support via the `acp` subcommand (`cursor-agent acp`).
+ *
+ * This table is only consulted for *recognized* commands — it remains the
+ * default source of truth for the known presets' invocation quirks (a
+ * separate adapter binary vs. a flag/subcommand). Ad-hoc/custom agents that
+ * aren't recognized here are still allowed to assert `acp: true` themselves
+ * (see `getAcpLaunchSpecForAgent`); they're just spawned as configured, with
+ * no augmentation, since there's no known quirk to correct for.
  */
 const ACP_PRESETS: readonly AcpPreset[] = [
   {
@@ -120,10 +131,11 @@ const ACP_PRESETS: readonly AcpPreset[] = [
 
 /**
  * `command` is always just the binary (args live separately in
- * `AgentConfig.args`), so this takes the path's basename directly rather
- * than running it through splitCommand()'s general tokenizer — which would
- * incorrectly split an unquoted absolute path containing spaces (common on
- * Windows) at the first space instead of treating it as one atomic value.
+ * `AgentRosterEntry.args`), so this takes the path's basename directly
+ * rather than running it through splitCommand()'s general tokenizer — which
+ * would incorrectly split an unquoted absolute path containing spaces
+ * (common on Windows) at the first space instead of treating it as one
+ * atomic value.
  */
 function commandToken(command: string): string {
   const trimmed = command.trim().replace(/^["']|["']$/g, '');
@@ -146,18 +158,18 @@ function commandIsClaudeCli(command: string): boolean {
   return token === 'claude' || token === 'claude-code';
 }
 
-/** Recognizes commands that support Agent Client Protocol (ACP) mode ("Integrated" mode). */
+/** Recognizes commands matching one of the known ACP-capable presets (Claude Code, Gemini, Codex, Kiro, Cursor). Distinct from a roster entry's own `acp` flag — a recognized preset always implies ACP support, but `acp` can also be asserted by the user for an unrecognized/custom command. */
 export function commandSupportsIntegratedMode(command: string): boolean {
   return findAcpPreset(command) !== undefined;
 }
 
 /**
- * Resolves the argv to spawn for the configured agent's ACP mode, or `null`
- * if it isn't recognized. For CLIs with native ACP support this augments
- * the user's configured command/args with the right flag or subcommand; for
- * agents whose ACP support ships as a separate adapter package, this
- * ignores the configured command entirely and returns that adapter's own
- * binary name (still subject to PATH resolution by the caller).
+ * Resolves the argv to spawn for a *recognized* command's ACP mode, or
+ * `null` if it isn't recognized. For CLIs with native ACP support this
+ * augments the user's configured command/args with the right flag or
+ * subcommand; for agents whose ACP support ships as a separate adapter
+ * package, this ignores the configured command entirely and returns that
+ * adapter's own binary name (still subject to PATH resolution by the caller).
  */
 export type AcpPresetInfo = AcpLaunchSpec & { label: string; npmPackage?: string; approxSizeMb?: number };
 
@@ -176,7 +188,26 @@ export function getAcpLaunchSpec(command: string, args: string[]): AcpPresetInfo
   return info;
 }
 
-async function buildAgentEnv(args: { workspacePath: string; worktreePath: string }): Promise<Record<string, string>> {
+/**
+ * Resolves the argv to spawn for a roster agent's ACP mode, or `null` if it
+ * doesn't support ACP at all. A recognized preset (matched by command
+ * basename) always takes its known invocation quirk from `getAcpLaunchSpec`,
+ * even if the roster entry's own `acp` flag happens to be false (a stale
+ * import, say) — recognized presets are always ACP-capable. Otherwise, an
+ * ad-hoc/custom agent is spawned exactly as configured (no flag/subcommand
+ * augmentation) if — and only if — the user has explicitly flagged it with
+ * `acp: true`.
+ */
+export function getAcpLaunchSpecForAgent(agent: Pick<AgentRosterEntry, 'name' | 'command' | 'args' | 'acp'>): AcpPresetInfo | null {
+  const preset = getAcpLaunchSpec(agent.command, agent.args);
+  if (preset) return preset;
+  if (!agent.acp) return null;
+  const configuredBin = agent.command.trim().replace(/^["']|["']$/g, '');
+  if (!configuredBin) return null;
+  return { bin: configuredBin, args: agent.args, label: agent.name || configuredBin };
+}
+
+async function buildAgentEnv(args: { workspacePath: string; worktreePath: string; agentId: string }): Promise<Record<string, string>> {
   const db = getWorkspaceDb(args.workspacePath);
   const wtMeta = db
     .select()
@@ -202,27 +233,103 @@ async function buildAgentEnv(args: { workspacePath: string; worktreePath: string
     SPROUTGIT_WORKTREE_BRANCH: wtMeta?.branch ?? '',
     SPROUTGIT_SOURCE_REF: wtMeta?.sourceRef ?? '',
     SPROUTGIT_OS: osName,
-    // Fixed value now that there's a single configured agent rather than a
-    // roster of named agents with distinct ids — kept for scripts/hooks that
-    // already key off this var to detect an agent-launched session.
-    SPROUTGIT_AGENT: 'agent',
+    SPROUTGIT_AGENT: args.agentId,
     SPROUTGIT_ISSUE_REF: issueRef,
     SPROUTGIT_ISSUE_URL: issueRef ? resolveIssueUrl(issueRef, issuePatterns) : '',
     SPROUTGIT_ISSUE_TITLE: wtMeta?.issueTitle ?? '',
   };
 }
 
-export function registerAgentHandlers(configDb: ConfigDb, userDataPath: string): void {
-  handle(IPC.AGENT_GET, () => getAgentConfig(configDb));
+/** Flattens the agent capabilities negotiated by a real ACP `initialize` handshake into a short list of human-readable flags, for display in the Test result. */
+function describeAcpCapabilities(caps: AgentCapabilities | undefined): string[] {
+  if (!caps) return [];
+  const flags: string[] = [];
+  if (caps.loadSession) flags.push('loadSession');
+  if (caps.promptCapabilities?.image) flags.push('prompt.image');
+  if (caps.promptCapabilities?.audio) flags.push('prompt.audio');
+  if (caps.promptCapabilities?.embeddedContext) flags.push('prompt.embeddedContext');
+  if (caps.mcpCapabilities?.http) flags.push('mcp.http');
+  if (caps.mcpCapabilities?.sse) flags.push('mcp.sse');
+  return flags;
+}
 
-  handle(IPC.AGENT_SAVE, (_e, config: AgentConfig) => {
-    saveAgentConfig(configDb, config);
+/**
+ * Runs a real ACP `initialize` handshake against `bin`/`args` and reports the
+ * agent's self-reported name/version/capabilities — used by AGENT_TEST for
+ * any agent flagged `acp: true` (recognized preset or ad-hoc), so a custom
+ * ACP integration can be verified before it's used in the Chat tab. Spawns
+ * the process, completes just the `initialize` call (no `session/new` —
+ * this is a capability probe, not a real session), then kills it. Races the
+ * handshake against the child exiting early so a bad binary or missing auth
+ * surfaces as a clear error instead of a hang.
+ */
+async function runAcpHandshakeTest(spec: AcpPresetInfo, resolvedBin: string, env: Record<string, string>): Promise<ToolTestResult> {
+  const resolvedCommand = `${resolvedBin} ${spec.args.join(' ')}`.trim();
+  const child = spawn(resolvedBin, spec.args, {
+    cwd: homedir(),
+    env: { ...process.env, ...env },
+    stdio: ['pipe', 'pipe', 'pipe'],
+  });
+
+  let stderrBuf = '';
+  child.stderr.on('data', d => { stderrBuf += String(d); });
+
+  try {
+    const stream = ndJsonStream(Writable.toWeb(child.stdin), Readable.toWeb(child.stdout));
+    // initialize() never sends session/update or requestPermission -- these
+    // handlers exist only to satisfy the Client interface.
+    const noopClient: Client = {
+      sessionUpdate: () => undefined,
+      requestPermission: () => Promise.resolve({ outcome: { outcome: 'cancelled' } }),
+    };
+    const connection = new ClientSideConnection(() => noopClient, stream);
+
+    const earlyExit = new Promise<never>((_, reject) => {
+      child.once('error', err => reject(err));
+      child.once('exit', code => reject(new Error(stderrBuf.trim() || `Agent exited during startup with code ${code}`)));
+    });
+    earlyExit.catch(() => undefined);
+
+    const response = await Promise.race([
+      connection.initialize({ protocolVersion: PROTOCOL_VERSION, clientCapabilities: {} }),
+      earlyExit,
+    ]);
+
+    const agentInfo = response.agentInfo;
+    const detail = [
+      `Agent: ${agentInfo?.name ?? spec.label}${agentInfo?.version ? ` v${agentInfo.version}` : ''}`,
+      `Protocol version: ${response.protocolVersion}`,
+    ].join(' — ');
+
+    return {
+      ok: true,
+      resolvedCommand,
+      detail,
+      acp: {
+        name: agentInfo?.name ?? spec.label,
+        ...(agentInfo?.version ? { version: agentInfo.version } : {}),
+        capabilities: describeAcpCapabilities(response.agentCapabilities),
+      },
+    };
+  } catch (err) {
+    return errResult(resolvedCommand, err instanceof Error ? err.message : String(err));
+  } finally {
+    try { child.kill(); } catch { /* already exited */ }
+  }
+}
+
+export function registerAgentHandlers(configDb: ConfigDb, userDataPath: string): void {
+  handle(IPC.AGENT_ROSTER_GET, (): AgentRoster => getAgentRoster(configDb));
+
+  handle(IPC.AGENT_ROSTER_SAVE, (_e, roster: AgentRoster) => {
+    saveAgentRoster(configDb, roster);
   });
 
   // ── ACP adapter install (Claude Code / Codex CLI) ───────────────────────
-  handle(IPC.AGENT_ACP_ADAPTER_STATUS, async (): Promise<AcpAdapterStatus | null> => {
-    const agent = getAgentConfig(configDb);
-    const spec = getAcpLaunchSpec(agent.command, agent.args);
+  handle(IPC.AGENT_ACP_ADAPTER_STATUS, async (_e, agentId: string): Promise<AcpAdapterStatus | null> => {
+    const roster = getAgentRoster(configDb);
+    const agent = resolveRosterAgent(roster, agentId);
+    const spec = getAcpLaunchSpecForAgent(agent);
     if (!spec?.npmPackage) return null;
     const [resolved, npmBin] = await Promise.all([
       resolveAcpAdapterBin(userDataPath, spec),
@@ -251,16 +358,19 @@ export function registerAgentHandlers(configDb: ConfigDb, userDataPath: string):
   handle(IPC.AGENT_LAUNCH, async (_e, args: {
     workspacePath: string;
     worktreePath: string;
+    agentId?: string;
   }) => {
     const win = BrowserWindow.fromWebContents(_e.sender);
     if (!win) throw new Error('No active window to launch the agent in.');
 
-    const agent = getAgentConfig(configDb);
+    const roster = getAgentRoster(configDb);
+    const agent = resolveRosterAgent(roster, args.agentId);
     if (!agent.command.trim()) {
-      throw new Error('No agent command configured. Set one in Settings → AI Agent.');
+      throw new Error('No agent command configured. Set one in Settings → AI Agents.');
     }
 
-    const env = await buildAgentEnv(args);
+    const baseEnv = await buildAgentEnv({ workspacePath: args.workspacePath, worktreePath: args.worktreePath, agentId: agent.id });
+    const env = { ...baseEnv, ...agent.env };
 
     // The agent binary is spawned directly (not through a shell). On POSIX,
     // a missing/bad command still surfaces as a normal async PTY exit. On
@@ -277,9 +387,9 @@ export function registerAgentHandlers(configDb: ConfigDb, userDataPath: string):
         args: agent.args,
         resolveShell: false,
         env,
-        label: 'AI Agent',
-        agentId: 'agent',
-        agentName: commandToken(agent.command),
+        label: agent.name || 'AI Agent',
+        agentId: agent.id,
+        agentName: agent.name || commandToken(agent.command),
       });
     } catch (spawnErr) {
       const message = spawnErr instanceof Error ? spawnErr.message : String(spawnErr);
@@ -298,40 +408,53 @@ export function registerAgentHandlers(configDb: ConfigDb, userDataPath: string):
   });
 
   // ── Test ──────────────────────────────────────────────────────────────
-  // Actually runs the configured agent command with a small fixed real
-  // prompt and confirms non-empty, non-error stdout comes back — not just
-  // `<cmd> --version`. Only Claude Code's non-interactive prompt flag (-p)
-  // is known; any other configured command would likely just hang waiting
-  // for interactive input on a bare positional prompt, so we confirm the
-  // binary resolves and stop there rather than guessing at a flag. This is
-  // independent of ACP support (commandSupportsIntegratedMode) — that gates
-  // the Chat tab, which spawns a different ACP-mode invocation entirely
-  // (see chat.ts), not this raw `-p` smoke test.
-  handle(IPC.AGENT_TEST, async (): Promise<ToolTestResult> => {
-    const agent = getAgentConfig(configDb);
-    // agent.command is always just the binary (args live separately in
-    // agent.args) — strip a wrapping quote pair rather than running it
+  // Runs a real scenario against the given (possibly unsaved) agent entry,
+  // so the Settings UI can validate an edit before it's saved to the
+  // roster. For ACP-flagged agents (a recognized preset, or an ad-hoc entry
+  // the user has asserted speaks ACP), this performs a real ACP `initialize`
+  // handshake and reports the agent's name/version/capabilities. Otherwise
+  // it falls back to the previous behavior: a small fixed real prompt for
+  // Claude Code (the only command known to support a non-interactive `-p`
+  // flag), or just confirming the binary resolves for anything else.
+  handle(IPC.AGENT_TEST, async (_e, input: AgentTestInput): Promise<ToolTestResult> => {
+    // input.command is always just the binary (args live separately in
+    // input.args) — strip a wrapping quote pair rather than running it
     // through splitCommand()'s general tokenizer, which would incorrectly
     // split an unquoted absolute path containing spaces (common on Windows).
-    const bin = agent.command.trim().replace(/^["']|["']$/g, '');
+    const bin = input.command.trim().replace(/^["']|["']$/g, '');
     if (!bin) return errResult('', 'No agent command configured.');
+
+    const agentLike = { name: input.name ?? bin, command: input.command, args: input.args, acp: input.acp };
+    const acpSpec = getAcpLaunchSpecForAgent(agentLike);
+    if (acpSpec) {
+      const resolvedBin = acpSpec.npmPackage
+        ? await resolveAcpAdapterBin(userDataPath, acpSpec)
+        : await resolveCommandPath(acpSpec.bin);
+      if (!resolvedBin) {
+        const hint = acpSpec.npmPackage
+          ? ` Install it from Settings → AI Agents, or run: npm install -g ${acpSpec.npmPackage}`
+          : '';
+        return errResult(acpSpec.bin, `Could not find "${acpSpec.bin}" (${acpSpec.label}'s ACP mode) on PATH.${hint}`);
+      }
+      return runAcpHandshakeTest(acpSpec, resolvedBin, input.env ?? {});
+    }
 
     const resolved = await resolveCommandPath(bin);
     if (!resolved) return errResult(bin, `Command not found on PATH: ${bin}`);
 
-    if (!commandIsClaudeCli(agent.command)) {
+    if (!commandIsClaudeCli(input.command)) {
       return okResult(resolved, `Found ${resolved}. This command's non-interactive prompt flag isn't known, so a live prompt test wasn't run — only Claude Code supports that right now.`);
     }
 
     const prompt = 'Reply with only the word OK.';
-    const testArgs = [...agent.args, '-p', prompt];
+    const testArgs = [...input.args, '-p', prompt];
     const resolvedCommand = `${resolved} ${testArgs.join(' ')}`;
 
     return new Promise(resolve => {
       const child = execFile(
         resolved,
         testArgs,
-        { timeout: 15_000, maxBuffer: 5 * 1024 * 1024 },
+        { timeout: 15_000, maxBuffer: 5 * 1024 * 1024, env: { ...process.env, ...input.env } },
         (error, stdout, stderr) => {
           if (error) {
             resolve(errResult(resolvedCommand, error.killed ? 'Agent timed out after 15s.' : (stderr.trim() || error.message), truncate(stdout + stderr)));

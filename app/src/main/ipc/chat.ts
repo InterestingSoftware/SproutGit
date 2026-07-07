@@ -29,16 +29,16 @@ import {
   type StopReason,
 } from '@agentclientprotocol/sdk';
 import { IPC } from '@sproutgit/types';
-import type { AgentConfig, ChatConfigOption, ChatStreamEvent } from '@sproutgit/types';
+import type { AgentRosterEntry, ChatConfigOption, ChatStreamEvent } from '@sproutgit/types';
 import type { ConfigDb } from '@sproutgit/database';
-import { getAgentConfig } from '@sproutgit/database';
+import { getAgentRoster, resolveRosterAgent } from '@sproutgit/database';
 import { handle } from './handle.js';
 import { log } from '../telemetry.js';
 import { attentionTracker } from './session-attention.js';
 import { FINISHED_ENTRY_TTL_MS } from '../attention-tracker.js';
 import { translateSessionUpdate, translatePermissionRequest, toChatConfigOptions, type TurnState } from './chat-acp-events.js';
 import { resolveCommandPath } from './tool-test-helpers.js';
-import { commandSupportsIntegratedMode, getAcpLaunchSpec } from './agents.js';
+import { getAcpLaunchSpecForAgent } from './agents.js';
 import { resolveAcpAdapterBin } from './acp-adapters.js';
 
 type ChatSession = {
@@ -108,8 +108,8 @@ function createClientHandlers(getSession: () => ChatSession): Client {
  * exiting early (bad binary, missing auth, etc.) so a startup failure
  * surfaces as a clear rejection instead of a hang.
  */
-async function spawnAcpSession(agent: AgentConfig, worktreePath: string, userDataPath: string): Promise<ChatSession> {
-  const spec = getAcpLaunchSpec(agent.command, agent.args);
+async function spawnAcpSession(agent: AgentRosterEntry, worktreePath: string, userDataPath: string): Promise<ChatSession> {
+  const spec = getAcpLaunchSpecForAgent(agent);
   if (!spec) throw new Error('The configured agent does not support Agent Client Protocol (ACP) mode.');
 
   const resolvedBin = spec.npmPackage
@@ -117,7 +117,7 @@ async function spawnAcpSession(agent: AgentConfig, worktreePath: string, userDat
     : await resolveCommandPath(spec.bin);
   if (!resolvedBin) {
     const hint = spec.npmPackage
-      ? ` Install it from Settings → AI Agent, or run: npm install -g ${spec.npmPackage}`
+      ? ` Install it from Settings → AI Agents, or run: npm install -g ${spec.npmPackage}`
       : '';
     throw new Error(`Could not find "${spec.bin}" (${spec.label}'s ACP mode) on PATH.${hint}`);
   }
@@ -128,7 +128,7 @@ async function spawnAcpSession(agent: AgentConfig, worktreePath: string, userDat
   // and rethrows any error, so no separate try/catch is needed here.
   const child = spawn(resolvedBin, spec.args, {
     cwd: worktreePath,
-    env: process.env,
+    env: { ...process.env, ...agent.env },
     stdio: ['pipe', 'pipe', 'pipe'],
   });
 
@@ -207,13 +207,14 @@ async function runTurn(session: ChatSession, prompt: string): Promise<void> {
 }
 
 export function registerChatHandlers(configDb: ConfigDb, userDataPath: string): void {
-  handle(IPC.CHAT_START, async (_e, args: { worktreePath: string; initialPrompt?: string }) => {
-    const agent = getAgentConfig(configDb);
-    if (!commandSupportsIntegratedMode(agent.command)) {
+  handle(IPC.CHAT_START, async (_e, args: { worktreePath: string; initialPrompt?: string; agentId?: string }) => {
+    const roster = getAgentRoster(configDb);
+    const agent = resolveRosterAgent(roster, args.agentId);
+    if (!getAcpLaunchSpecForAgent(agent)) {
       throw new Error('The configured agent does not support Integrated (ACP) mode — use Terminal mode instead.');
     }
     if (agent.mode !== 'integrated') {
-      throw new Error('Integrated mode is not enabled for the configured agent. Switch to Integrated mode in Settings → AI Agent.');
+      throw new Error('Integrated mode is not enabled for the configured agent. Switch to Integrated mode in Settings → AI Agents.');
     }
 
     const session = await spawnAcpSession(agent, args.worktreePath, userDataPath);

@@ -8,14 +8,59 @@
 export type AgentInvocationMode = 'integrated' | 'terminal';
 
 /**
- * The user's single configured AI agent — command + args, same shape as the
- * editor/diff-tool/merge-tool settings rows. Only one agent is active at a
- * time; there is no roster.
+ * Legacy shape of the (pre-roster) single configured AI agent — command +
+ * args, same shape as the editor/diff-tool/merge-tool settings rows. Kept
+ * only so the database layer can recognize and migrate a value stored under
+ * this shape into the roster on first read after upgrading; nothing new
+ * should be written in this shape.
  */
 export type AgentConfig = {
   command: string;
   args: string[];
   mode: AgentInvocationMode;
+};
+
+/**
+ * One named agent in the user's roster — command + args + per-agent
+ * environment variables (API keys, base URLs, etc. without polluting the
+ * global environment), plus an explicit `acp` flag: the user's own assertion
+ * that this command speaks Agent Client Protocol, rather than the command
+ * having to match the hardcoded `ACP_PRESET_TOKENS` allowlist. Recognized
+ * presets still default `acp` to `true` when added via a quick-add button
+ * (see `commandSupportsIntegratedMode`), but any command can be flagged this
+ * way — obscure or internal ACP-speaking CLIs included.
+ */
+export type AgentRosterEntry = {
+  id: string;
+  name: string;
+  command: string;
+  args: string[];
+  env: Record<string, string>;
+  mode: AgentInvocationMode;
+  /** User-asserted: does this command speak Agent Client Protocol? Gates Integrated mode alongside `commandSupportsIntegratedMode`. */
+  acp: boolean;
+};
+
+/** The user's full set of configured coding agents, plus which one is used by default (agent:launch / chat:start when no agentId is specified). */
+export type AgentRoster = {
+  agents: AgentRosterEntry[];
+  defaultAgentId: string;
+};
+
+/** Minimal fields needed to run agent:test against unsaved edits in the Settings UI, before the entry is saved to the roster. */
+export type AgentTestInput = {
+  name?: string;
+  command: string;
+  args: string[];
+  env?: Record<string, string>;
+  acp: boolean;
+};
+
+/** Agent name/version/capabilities reported back by a real ACP `initialize` handshake (agent:test, for acp-flagged agents). */
+export type AcpHandshakeInfo = {
+  name: string;
+  version?: string;
+  capabilities: string[];
 };
 
 /** Pushed to the renderer when an agent-launched PTY session is spawned, so it can be added as a terminal tab. */
