@@ -11,6 +11,10 @@ function initTestRepo(): string {
   execSync('git init -b main', { cwd: dir, stdio: 'ignore' });
   execSync('git config user.email "test@sproutgit.test"', { cwd: dir, stdio: 'ignore' });
   execSync('git config user.name "SproutGit Test"', { cwd: dir, stdio: 'ignore' });
+  // This test asserts exact file content byte-for-byte — without this, a
+  // Windows runner's global core.autocrlf=true would rewrite LF to CRLF on
+  // checkout, failing the comparison for reasons unrelated to cherry-pick.
+  execSync('git config core.autocrlf false', { cwd: dir, stdio: 'ignore' });
 
   writeFileSync(join(dir, 'README.md'), '# Test Repo\n');
   execSync('git add .', { cwd: dir, stdio: 'ignore' });

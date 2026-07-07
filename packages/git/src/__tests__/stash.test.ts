@@ -11,6 +11,10 @@ function initTestRepo(): string {
   execSync('git init', { cwd: dir, stdio: 'ignore' });
   execSync('git config user.email "test@sproutgit.test"', { cwd: dir, stdio: 'ignore' });
   execSync('git config user.name "SproutGit Test"', { cwd: dir, stdio: 'ignore' });
+  // A couple of tests below assert exact file content — without this, a
+  // Windows runner's global core.autocrlf=true would rewrite LF to CRLF on
+  // checkout, failing the comparison for reasons unrelated to stash.
+  execSync('git config core.autocrlf false', { cwd: dir, stdio: 'ignore' });
 
   writeFileSync(join(dir, 'README.md'), '# Test Repo\n');
   execSync('git add .', { cwd: dir, stdio: 'ignore' });
