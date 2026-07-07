@@ -1,0 +1,106 @@
+/* Onboarding walkthrough — driver.js popover/overlay retheme onto SproutGit's
+   --sg-* design tokens. Selectors mirror driver.js's own class names
+   (see driver.js/dist/driver.css) so this file only needs to win on
+   specificity, not fight !important. */
+
+.sg-tour-popover.driver-popover {
+  background: var(--sg-surface);
+  color: var(--sg-text);
+  border: 1px solid var(--sg-border);
+  border-radius: 14px;
+  padding: 18px;
+  max-width: 320px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.25);
+}
+
+.sg-tour-popover .driver-popover-title {
+  font-family: var(--sg-font-heading);
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--sg-text);
+}
+
+.sg-tour-popover .driver-popover-description {
+  font-family: var(--sg-font-body);
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--sg-text-dim);
+}
+
+.sg-tour-popover .driver-popover-title[style*='block'] + .driver-popover-description {
+  margin-top: 8px;
+}
+
+.sg-tour-popover .driver-popover-description p {
+  margin: 0 0 8px;
+}
+.sg-tour-popover .driver-popover-description p:last-child {
+  margin-bottom: 0;
+}
+
+.sg-tour-popover .sg-tour-list {
+  margin: 0;
+  padding-left: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.sg-tour-popover .driver-popover-description strong {
+  color: var(--sg-text);
+  font-weight: 600;
+}
+
+.sg-tour-popover .driver-popover-close-btn {
+  color: var(--sg-text-faint);
+}
+.sg-tour-popover .driver-popover-close-btn:hover,
+.sg-tour-popover .driver-popover-close-btn:focus {
+  color: var(--sg-text);
+}
+
+.sg-tour-popover .driver-popover-footer {
+  margin-top: 16px;
+}
+
+.sg-tour-popover .driver-popover-progress-text {
+  color: var(--sg-text-faint);
+  font-size: 11px;
+}
+
+.sg-tour-popover .driver-popover-footer-btn {
+  background: transparent;
+  border: 1px solid var(--sg-border);
+  color: var(--sg-text-dim);
+  border-radius: 6px;
+  padding: 5px 12px;
+  font-size: 11px;
+  font-weight: 500;
+  transition: background-color 0.15s, color 0.15s, border-color 0.15s;
+}
+.sg-tour-popover .driver-popover-footer-btn:hover,
+.sg-tour-popover .driver-popover-footer-btn:focus {
+  background: var(--sg-surface-raised);
+}
+.sg-tour-popover .driver-popover-footer-btn.driver-popover-btn-disabled {
+  opacity: 0.4;
+}
+
+.sg-tour-popover .driver-popover-next-btn,
+.sg-tour-popover .driver-popover-done-btn {
+  background: var(--sg-primary);
+  border-color: var(--sg-primary);
+  color: #fff;
+}
+.sg-tour-popover .driver-popover-next-btn:hover,
+.sg-tour-popover .driver-popover-done-btn:hover {
+  background: var(--sg-primary-hover);
+  border-color: var(--sg-primary-hover);
+}
+
+/* Retint only the arrow's visible edge — the other three are already
+   transparent via driver.css's own per-side rules. */
+.sg-tour-popover .driver-popover-arrow-side-left { border-left-color: var(--sg-surface); }
+.sg-tour-popover .driver-popover-arrow-side-right { border-right-color: var(--sg-surface); }
+.sg-tour-popover .driver-popover-arrow-side-top { border-top-color: var(--sg-surface); }
+.sg-tour-popover .driver-popover-arrow-side-bottom { border-bottom-color: var(--sg-surface); }

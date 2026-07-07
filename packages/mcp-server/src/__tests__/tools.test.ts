@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest';
 import { execSync } from 'node:child_process';
 import { mkdtempSync, rmSync, writeFileSync, realpathSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
@@ -9,8 +9,10 @@ import {
   listWorktreesHandler,
   getWorkspaceInfoHandler,
   getWorktreeStatusHandler,
+  getWorktreeDiffHandler,
   createWorktreeHandler,
   removeWorktreeHandler,
+  reportSessionDoneHandler,
   MUTATING_TOOLS_DISABLED_MESSAGE,
 } from '../tools.js';
 
@@ -37,12 +39,14 @@ describe('mcp tool handlers', () => {
   let managedWorktreesPath: string;
   let context: McpServerContext;
   let mutatingEnabled: boolean;
+  let reportSessionDoneMock: ReturnType<typeof vi.fn<McpServerContext['reportSessionDone']>>;
 
   beforeAll(() => {
     repoPath = initTestRepo();
     managedWorktreesPath = join(repoPath, '.sproutgit', 'worktrees');
     mkdirSync(managedWorktreesPath, { recursive: true });
     mutatingEnabled = false;
+    reportSessionDoneMock = vi.fn().mockResolvedValue(undefined);
     context = {
       workspacePath: repoPath,
       gitRepoPath: repoPath,
@@ -54,6 +58,7 @@ describe('mcp tool handlers', () => {
       // covered by its own tests instead.
       createWorktree: args => createManagedWorktree(repoPath, managedWorktreesPath, args.fromRef, args.newBranch),
       removeWorktree: async args => { await deleteManagedWorktree(repoPath, args.worktreePath, args.deleteBranch, args.branchName ?? null); },
+      reportSessionDone: reportSessionDoneMock,
     };
   });
 
@@ -91,6 +96,50 @@ describe('mcp tool handlers', () => {
     const result = await getWorktreeStatusHandler(context, { worktreePath: '/not/a/worktree' });
     expect(result.isError).toBe(true);
     expect(firstText(result)).toMatch(/not a known worktree/);
+  });
+
+  it('get_worktree_diff returns the unified diff for uncommitted changes', async () => {
+    writeFileSync(join(repoPath, 'README.md'), '# Test Repo\n\nchanged.\n');
+    const result = await getWorktreeDiffHandler(context, { worktreePath: repoPath });
+    const parsed = JSON.parse(firstText(result));
+    expect(parsed.filePath).toBeNull();
+    expect(parsed.diff).toMatch(/README\.md/);
+    expect(parsed.diff).toMatch(/changed\./);
+  });
+
+  it('get_worktree_diff scopes to a single file when filePath is given', async () => {
+    const result = await getWorktreeDiffHandler(context, { worktreePath: repoPath, filePath: 'README.md' });
+    const parsed = JSON.parse(firstText(result));
+    expect(parsed.filePath).toBe('README.md');
+  });
+
+  it('get_worktree_diff rejects a path that is not a known worktree', async () => {
+    const result = await getWorktreeDiffHandler(context, { worktreePath: '/not/a/worktree' });
+    expect(result.isError).toBe(true);
+    expect(firstText(result)).toMatch(/not a known worktree/);
+  });
+
+  it('report_session_done forwards the call to context.reportSessionDone and acknowledges', async () => {
+    reportSessionDoneMock.mockClear();
+    const result = await reportSessionDoneHandler(context, { worktreePath: repoPath, summary: 'Fixed the bug' });
+    expect(result.isError).toBeUndefined();
+    expect(reportSessionDoneMock).toHaveBeenCalledWith({ worktreePath: repoPath, summary: 'Fixed the bug' });
+    const parsed = JSON.parse(firstText(result));
+    expect(parsed).toEqual({ acknowledged: true, worktreePath: repoPath });
+  });
+
+  it('report_session_done defaults summary to null when omitted', async () => {
+    reportSessionDoneMock.mockClear();
+    await reportSessionDoneHandler(context, { worktreePath: repoPath });
+    expect(reportSessionDoneMock).toHaveBeenCalledWith({ worktreePath: repoPath, summary: null });
+  });
+
+  it('report_session_done rejects a path that is not a known worktree', async () => {
+    reportSessionDoneMock.mockClear();
+    const result = await reportSessionDoneHandler(context, { worktreePath: '/not/a/worktree' });
+    expect(result.isError).toBe(true);
+    expect(firstText(result)).toMatch(/not a known worktree/);
+    expect(reportSessionDoneMock).not.toHaveBeenCalled();
   });
 
   it('create_worktree refuses when mutating tools are disabled', async () => {

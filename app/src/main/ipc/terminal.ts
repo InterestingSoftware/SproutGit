@@ -1,5 +1,6 @@
 import { ipcMain, BrowserWindow } from 'electron';
 import { IPC } from '@sproutgit/types';
+import type { AgentSessionStatusEvent } from '@sproutgit/types';
 import { TerminalManagerWithMeta } from '@sproutgit/terminal';
 import { handle } from './handle.js';
 import { log } from '../telemetry.js';
@@ -22,9 +23,24 @@ export const manager = new TerminalManagerWithMeta(
     }
   },
   (id, exitCode) => {
+    // Read before handleSessionExit() (which runs after this callback, per
+    // TerminalManagerWithMeta's exit ordering) deletes it — a session
+    // closed deliberately via close() has already had its metadata removed
+    // by the time this fires, so `meta` is undefined and no status event is
+    // sent for that case, which is the desired behaviour (no notification
+    // for a terminal the user closed on purpose).
+    const meta = manager.getMeta(id);
     const win = sessionWindows.get(id);
     if (win && !win.isDestroyed()) {
       win.webContents.send(IPC.TERMINAL_EXIT, { id });
+      if (meta && meta.agentId !== null) {
+        win.webContents.send(IPC.EVENT_AGENT_SESSION_STATUS, {
+          id,
+          cwd: meta.cwd,
+          agentName: meta.agentName,
+          reason: 'exited',
+        } satisfies AgentSessionStatusEvent);
+      }
     }
     const hookHandler = hookExitHandlers.get(id);
     if (hookHandler) {
@@ -32,6 +48,17 @@ export const manager = new TerminalManagerWithMeta(
       hookExitHandlers.delete(id);
     }
     sessionWindows.delete(id);
+  },
+  (id, meta) => {
+    const win = sessionWindows.get(id);
+    if (win && !win.isDestroyed()) {
+      win.webContents.send(IPC.EVENT_AGENT_SESSION_STATUS, {
+        id,
+        cwd: meta.cwd,
+        agentName: meta.agentName,
+        reason: 'idle',
+      } satisfies AgentSessionStatusEvent);
+    }
   },
 );
 
@@ -91,6 +118,6 @@ export function registerTerminalHandlers(): void {
   });
 
   handle(IPC.TERMINAL_LIST, () => {
-    return manager.listSessions().map(s => ({ ...s, label: s.label }));
+    return manager.listSessions();
   });
 }

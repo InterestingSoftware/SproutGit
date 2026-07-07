@@ -278,6 +278,7 @@ export function registerAgentHandlers(configDb: ConfigDb, userDataPath: string):
         env,
         label: 'AI Agent',
         agentId: 'agent',
+        agentName: commandToken(agent.command),
       });
     } catch (spawnErr) {
       const message = spawnErr instanceof Error ? spawnErr.message : String(spawnErr);
