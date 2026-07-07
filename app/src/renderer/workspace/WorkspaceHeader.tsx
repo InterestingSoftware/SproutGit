@@ -26,7 +26,11 @@ type Props = {
   onSwitchWorkspace: (path: string) => void;
   /** Whether any worktree currently has a live agent-launched terminal session — shows a live dot on the Agent Sessions button. */
   hasLiveAgentSession: boolean;
+  /** Number of tracked sessions currently in an "awaiting" state (awaiting-permission or awaiting-input) — see useSessionAttention(). */
+  waitingCount: number;
   onToggleSessionsPanel: () => void;
+  /** Jumps straight to the oldest-waiting session's pending prompt; falls back to opening the sessions panel if `waitingCount` somehow drops to 0 between render and click. */
+  onJumpToNextWaiting: () => void;
 };
 
 /** Last path segment, tolerating both '/' (macOS/Linux) and '\' (Windows) separators. */
@@ -44,7 +48,9 @@ export function WorkspaceHeader({
   loadRecentWorkspaces,
   onSwitchWorkspace,
   hasLiveAgentSession,
+  waitingCount,
   onToggleSessionsPanel,
+  onJumpToNextWaiting,
 }: Props) {
   const navigate = useNavigate();
   const contextMenu = useContextMenu();
@@ -118,6 +124,16 @@ export function WorkspaceHeader({
           state={updateState}
           onInstall={() => void api.installUpdate()}
         />
+        {waitingCount > 0 && (
+          <button
+            className="inline-flex items-center gap-1 rounded-full bg-(--sg-warning)/15 px-2 py-0.5 text-[11px] font-semibold text-(--sg-warning) border-none cursor-pointer hover:bg-(--sg-warning)/25"
+            title={`${waitingCount} agent session${waitingCount === 1 ? "" : "s"} waiting on you — jump to the oldest one`}
+            onClick={onJumpToNextWaiting}
+            data-testid="waiting-sessions-indicator"
+          >
+            {waitingCount} waiting
+          </button>
+        )}
         <button
           className="relative inline-flex items-center justify-center p-2 bg-transparent border-none cursor-pointer text-(--sg-text-faint) rounded-sm transition-colors hover:text-(--sg-text) hover:bg-(--sg-surface-raised)"
           title="Agent Sessions"

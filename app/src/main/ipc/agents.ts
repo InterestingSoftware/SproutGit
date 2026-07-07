@@ -17,6 +17,7 @@ import { worktreeMetadata } from '@sproutgit/database/schema/workspace';
 import { readIssueTrackerFile } from '@sproutgit/git';
 import { join, basename } from 'path';
 import { manager, sessionWindows } from './terminal.js';
+import { attentionTracker } from './session-attention.js';
 import { handle } from './handle.js';
 import { resolveCommandPath, truncate, okResult, errResult } from './tool-test-helpers.js';
 import { installAcpAdapter, resolveAcpAdapterBin } from './acp-adapters.js';
@@ -286,6 +287,7 @@ export function registerAgentHandlers(configDb: ConfigDb, userDataPath: string):
     }
 
     sessionWindows.set(id, win);
+    attentionTracker.setWorking(id, 'terminal', args.worktreePath);
 
     win.webContents.send(IPC.EVENT_AGENT_TERMINAL_LAUNCH, {
       terminalId: id,

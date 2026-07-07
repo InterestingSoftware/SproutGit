@@ -4,6 +4,8 @@ import type { AgentSessionStatusEvent } from '@sproutgit/types';
 import { TerminalManagerWithMeta } from '@sproutgit/terminal';
 import { handle } from './handle.js';
 import { log } from '../telemetry.js';
+import { attentionTracker } from './session-attention.js';
+import { FINISHED_ENTRY_TTL_MS } from '../attention-tracker.js';
 
 // Forward PTY output/exit events to the renderer window that created the session.
 export const sessionWindows = new Map<string, BrowserWindow>();
@@ -20,6 +22,13 @@ export const manager = new TerminalManagerWithMeta(
     const win = sessionWindows.get(id);
     if (win && !win.isDestroyed()) {
       win.webContents.send(IPC.TERMINAL_DATA, { id, data });
+    }
+    // Output resuming after an inferred-idle state means the agent is
+    // working again — only flip sessions the idle heuristic actually
+    // flagged, so plain shell output doesn't spuriously touch the tracker.
+    const meta = manager.getMeta(id);
+    if (meta && meta.agentId !== null && attentionTracker.get(id)?.heuristic) {
+      attentionTracker.setWorking(id, 'terminal', meta.cwd);
     }
   },
   (id, exitCode) => {
@@ -42,6 +51,11 @@ export const manager = new TerminalManagerWithMeta(
         } satisfies AgentSessionStatusEvent);
       }
     }
+    if (meta && meta.agentId !== null) {
+      if (exitCode === 0) attentionTracker.setFinished(id, 'terminal', meta.cwd);
+      else attentionTracker.setFailed(id, 'terminal', meta.cwd);
+      attentionTracker.scheduleRemoval(id, FINISHED_ENTRY_TTL_MS);
+    }
     const hookHandler = hookExitHandlers.get(id);
     if (hookHandler) {
       hookHandler(exitCode);
@@ -59,6 +73,12 @@ export const manager = new TerminalManagerWithMeta(
         reason: 'idle',
       } satisfies AgentSessionStatusEvent);
     }
+    // Same idle signal driving the OS notification (#92) also drives the
+    // in-app attention chip/badge (#140) — a PTY agent has no protocol to
+    // signal "waiting on you" explicitly, so both features share this one
+    // output-idle heuristic (TerminalManagerWithMeta's IdleTracker) rather
+    // than running two separate idle timers.
+    attentionTracker.setIdle(id, 'terminal', meta.cwd);
   },
 );
 
