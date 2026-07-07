@@ -133,3 +133,18 @@ export type GitOpProgressEvent = {
   message: string;
   percent: number | null;
 };
+
+export type StashEntry = {
+  /** 0-based position in `git stash list` — newest first. */
+  index: number;
+  /** Ref usable with apply/pop/drop, e.g. `stash@{0}`. */
+  ref: string;
+  hash: string;
+  message: string;
+  date: string;
+};
+
+export type StashListResult = {
+  worktreePath: string;
+  stashes: StashEntry[];
+};

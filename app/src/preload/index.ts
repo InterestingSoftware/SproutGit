@@ -10,6 +10,7 @@ import type {
   DiffFileEntry,
   WorktreePushStatus,
   FetchSummary,
+  StashListResult,
   DeviceCodeResponse,
   GitHubPollResult,
   GitHubAuthStatus,
@@ -173,6 +174,26 @@ const api = {
 
   getWorkingDiff: (worktreePath: string, file?: string): Promise<string> =>
     invoke(IPC.GIT_WORKING_DIFF, file ? { worktreePath, file } : { worktreePath }),
+
+  // ── Stash ────────────────────────────────────────────────────────────────
+  createStash: (worktreePath: string, message?: string): Promise<void> =>
+    invoke(IPC.GIT_STASH_CREATE, message ? { worktreePath, message } : { worktreePath }),
+
+  listStashes: (worktreePath: string): Promise<StashListResult> =>
+    invoke(IPC.GIT_STASH_LIST, worktreePath),
+
+  applyStash: (worktreePath: string, ref: string): Promise<void> =>
+    invoke(IPC.GIT_STASH_APPLY, { worktreePath, ref }),
+
+  popStash: (worktreePath: string, ref: string): Promise<void> =>
+    invoke(IPC.GIT_STASH_POP, { worktreePath, ref }),
+
+  dropStash: (worktreePath: string, ref: string): Promise<void> =>
+    invoke(IPC.GIT_STASH_DROP, { worktreePath, ref }),
+
+  // ── Cherry-pick ──────────────────────────────────────────────────────────
+  cherryPick: (worktreePath: string, sha: string): Promise<void> =>
+    invoke(IPC.GIT_CHERRY_PICK, { worktreePath, sha }),
 
   // ── Terminal ──────────────────────────────────────────────────────────────
   createTerminal: (args: {

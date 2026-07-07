@@ -1408,6 +1408,18 @@ function WorkspaceInner() {
                                 .catch((err: unknown) => toast(String(err), 'error'));
                             }
                           }}
+                          onCherryPick={sha => {
+                            if (activeWorktree) {
+                              void api.cherryPick(activeWorktree.path, sha)
+                                .then(() => {
+                                  toast('Cherry-pick applied', 'success');
+                                  void qc.invalidateQueries({ queryKey: qk.commits(gitRepoPath) });
+                                  void qc.invalidateQueries({ queryKey: qk.refs(gitRepoPath) });
+                                  if (activeWorktree) void qc.invalidateQueries({ queryKey: qk.worktreeStatus(activeWorktree.path) });
+                                })
+                                .catch((err: unknown) => toast(String(err), 'error'));
+                            }
+                          }}
                           issueTrackerPatterns={issueTrackerPatterns}
                         />
                       </div>
@@ -1451,6 +1463,11 @@ function WorkspaceInner() {
                         const settings = await loadCommitMessageGeneratorSettings();
                         return api.generateCommitMessage({ workspacePath, worktreePath: p, settings });
                       }}
+                      listStashes={p => api.listStashes(p)}
+                      createStash={(p, message) => api.createStash(p, message)}
+                      applyStash={(p, ref) => api.applyStash(p, ref)}
+                      popStash={(p, ref) => api.popStash(p, ref)}
+                      dropStash={(p, ref) => api.dropStash(p, ref)}
                       onCommit={() => {
                         toast('Committed', 'success');
                         setStagingRefresh(n => n + 1);

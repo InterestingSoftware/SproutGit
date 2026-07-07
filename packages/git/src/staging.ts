@@ -96,8 +96,11 @@ export async function resetWorktreeBranch(
 // ─── Internal helpers ─────────────────────────────────────────────────────────
 
 function parsePorcelainStatus(raw: string): StatusFileEntry[] {
+  // Trailing-only: a leading space on the first line is meaningful (index
+  // status "clean"), so a whole-string `.trim()` would eat it and shift
+  // every fixed-column parse below off by one character.
   return raw
-    .trim()
+    .replace(/\s+$/, '')
     .split('\n')
     .filter(Boolean)
     .map(line => {

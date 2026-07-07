@@ -49,7 +49,7 @@ export async function getDiffContent(
 
   const diff = await git.raw(args);
 
-  return { commit, base: base ?? null, filePath: filePath ?? null, diff };
+  return { commit, base: base ?? null, filePath: filePath ?? null, diff: diff.replace(/\s+$/, '') };
 }
 
 /**
@@ -58,7 +58,8 @@ export async function getDiffContent(
  */
 export async function getStagedDiff(worktreePath: string): Promise<string> {
   const git = gitForPath(worktreePath);
-  return git.raw(['diff', '--cached', '--unified=3']);
+  const diff = await git.raw(['diff', '--cached', '--unified=3']);
+  return diff.replace(/\s+$/, '');
 }
 
 /**
@@ -77,5 +78,5 @@ export async function getWorkingDiff(
 
   const diff = await git.raw(args);
 
-  return { commit: 'WORKING', base: 'HEAD', filePath: filePath ?? null, diff };
+  return { commit: 'WORKING', base: 'HEAD', filePath: filePath ?? null, diff: diff.replace(/\s+$/, '') };
 }
