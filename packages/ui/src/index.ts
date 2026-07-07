@@ -27,6 +27,8 @@ export { Select } from './components/Select.js';
 
 export { StagingPanel } from './components/StagingPanel.js';
 
+export { StashPanel } from './components/StashPanel.js';
+
 export { Spinner } from './components/Spinner.js';
 
 export { Toast, ToastContainer } from './components/Toast.js';

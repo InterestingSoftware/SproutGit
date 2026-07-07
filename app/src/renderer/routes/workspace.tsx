@@ -720,6 +720,11 @@ function WorkspaceInner() {
                           settings,
                         });
                       }}
+                      listStashes={p => api.listStashes(p)}
+                      createStash={(p, message) => api.createStash(p, message)}
+                      applyStash={(p, ref) => api.applyStash(p, ref)}
+                      popStash={(p, ref) => api.popStash(p, ref)}
+                      dropStash={(p, ref) => api.dropStash(p, ref)}
                       onCommit={() => {
                         toast("Committed", "success");
                         setStagingRefresh((n) => n + 1);
