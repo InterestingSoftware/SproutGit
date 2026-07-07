@@ -1,9 +1,13 @@
 /**
  * Tracks a per-session "attention" state — working / awaiting-permission /
  * awaiting-input / finished / failed — for both ACP chat sessions and
- * PTY-launched agent terminals (see #140). This module is intentionally free
- * of Electron/node-pty imports so the state machine itself is unit-testable
- * in isolation; `app/src/main/ipc/session-attention.ts` wires it up to IPC.
+ * PTY-launched agent terminals (see #140). PTY sessions have no protocol to
+ * signal "waiting on you" explicitly, so their awaiting-input/idle transitions
+ * are driven by `@sproutgit/terminal`'s own output-idle heuristic (`IdleTracker`,
+ * added for the OS-notification feature in #92) rather than a second one here
+ * — see `app/src/main/ipc/terminal.ts`. This module is intentionally free of
+ * Electron/node-pty imports so the state machine itself is unit-testable in
+ * isolation; `app/src/main/ipc/session-attention.ts` wires it up to IPC.
  */
 import type { SessionAttention, SessionAttentionState, SessionKind } from '@sproutgit/types';
 
@@ -93,66 +97,5 @@ export class AttentionTracker {
   }
 }
 
-/** How long a PTY-mode agent session must produce no output before the idle heuristic marks it "awaiting-input". Conservative on purpose — a false "idle" for a session that's actually thinking is worse than a late one. */
-export const PTY_IDLE_THRESHOLD_MS = 20_000;
-
-/** How often `sweep()` should be called by the caller's interval timer. */
-export const PTY_IDLE_CHECK_INTERVAL_MS = 5_000;
-
 /** How long a finished/failed session stays visible in `list()`/events after its process exits, before being pruned. */
 export const FINISHED_ENTRY_TTL_MS = 5_000;
-
-/**
- * Best-effort output-idle heuristic for PTY agent sessions, which — unlike
- * ACP chat sessions — have no protocol to signal "I'm waiting on you" (a
- * process sitting on a y/n prompt looks identical to one still working).
- * Only sessions explicitly `start()`ed are watched; callers should only do
- * this for agent-launched terminals, not plain shells.
- */
-export class PtyIdleHeuristic {
-  private sessions = new Map<string, { worktreePath: string; lastOutputAt: number }>();
-
-  constructor(
-    private readonly tracker: AttentionTracker,
-    private readonly nowFn: () => number = Date.now,
-  ) {}
-
-  start(sessionId: string, worktreePath: string): void {
-    this.sessions.set(sessionId, { worktreePath, lastOutputAt: this.nowFn() });
-    this.tracker.setWorking(sessionId, 'terminal', worktreePath);
-  }
-
-  /** Call on every PTY data chunk. No-op for sessions not being watched. */
-  noteOutput(sessionId: string): void {
-    const session = this.sessions.get(sessionId);
-    if (!session) return;
-    session.lastOutputAt = this.nowFn();
-    const current = this.tracker.get(sessionId);
-    // Only flip back to "working" if we'd previously inferred idle — an
-    // explicit awaiting-permission signal (from prompt-pattern matching, were
-    // one added later) shouldn't be silently overwritten by output.
-    if (current?.heuristic) this.tracker.setWorking(sessionId, 'terminal', session.worktreePath);
-  }
-
-  /** Call when the underlying PTY process exits. No-op for sessions not being watched. */
-  finish(sessionId: string, success: boolean): void {
-    const session = this.sessions.get(sessionId);
-    if (!session) return;
-    if (success) this.tracker.setFinished(sessionId, 'terminal', session.worktreePath);
-    else this.tracker.setFailed(sessionId, 'terminal', session.worktreePath);
-    this.sessions.delete(sessionId);
-    this.tracker.scheduleRemoval(sessionId, FINISHED_ENTRY_TTL_MS);
-  }
-
-  /** Sweeps every watched session, flagging any silent past `PTY_IDLE_THRESHOLD_MS` as idle. Intended to be called on an interval. */
-  sweep(): void {
-    const now = this.nowFn();
-    for (const [sessionId, session] of this.sessions) {
-      if (now - session.lastOutputAt < PTY_IDLE_THRESHOLD_MS) continue;
-      const current = this.tracker.get(sessionId);
-      if (current && !current.heuristic && current.state === 'working') {
-        this.tracker.setIdle(sessionId, 'terminal', session.worktreePath);
-      }
-    }
-  }
-}

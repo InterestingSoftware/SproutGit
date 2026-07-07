@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { AttentionTracker, PtyIdleHeuristic, PTY_IDLE_THRESHOLD_MS, FINISHED_ENTRY_TTL_MS } from '../attention-tracker.js';
+import { AttentionTracker } from '../attention-tracker.js';
 
 describe('AttentionTracker', () => {
   it('starts a session in the requested state and notifies change listeners', () => {
@@ -125,101 +125,5 @@ describe('AttentionTracker', () => {
     off();
     tracker.setAwaitingInput('s1', 'chat', '/wt/a');
     expect(changes).toEqual(['working']);
-  });
-});
-
-describe('PtyIdleHeuristic', () => {
-  function setup(startTime = 0) {
-    let now = startTime;
-    const tracker = new AttentionTracker();
-    const heuristic = new PtyIdleHeuristic(tracker, () => now);
-    return { tracker, heuristic, advance: (ms: number) => { now += ms; } };
-  }
-
-  it('starts a watched session as working', () => {
-    const { tracker, heuristic } = setup();
-    heuristic.start('t1', '/wt/a');
-    expect(tracker.get('t1')).toMatchObject({ kind: 'terminal', state: 'working', heuristic: false });
-  });
-
-  it('flags a silent session as idle once past the threshold, without touching unwatched sessions', () => {
-    const { tracker, heuristic, advance } = setup();
-    heuristic.start('t1', '/wt/a');
-    tracker.setWorking('other', 'chat', '/wt/b'); // not watched by the heuristic
-
-    advance(PTY_IDLE_THRESHOLD_MS - 1);
-    heuristic.sweep();
-    expect(tracker.get('t1')?.state).toBe('working');
-
-    advance(2);
-    heuristic.sweep();
-    expect(tracker.get('t1')).toMatchObject({ state: 'awaiting-input', heuristic: true });
-    // Unrelated session untouched by the sweep.
-    expect(tracker.get('other')?.state).toBe('working');
-  });
-
-  it('resets an idle session back to working as soon as output resumes', () => {
-    const { tracker, heuristic, advance } = setup();
-    heuristic.start('t1', '/wt/a');
-    advance(PTY_IDLE_THRESHOLD_MS + 1);
-    heuristic.sweep();
-    expect(tracker.get('t1')?.heuristic).toBe(true);
-
-    heuristic.noteOutput('t1');
-    expect(tracker.get('t1')).toMatchObject({ state: 'working', heuristic: false });
-  });
-
-  it('noteOutput() on a non-idle session does not spuriously re-emit a change', () => {
-    const { tracker, heuristic } = setup();
-    heuristic.start('t1', '/wt/a');
-    const changes: string[] = [];
-    tracker.onChange(entry => changes.push(entry.state));
-    heuristic.noteOutput('t1');
-    expect(changes).toEqual([]);
-  });
-
-  it('finish() marks the session finished/failed by exit success, keeping it visible briefly before pruning it', () => {
-    vi.useFakeTimers();
-    try {
-      const { tracker, heuristic } = setup();
-      heuristic.start('t1', '/wt/a');
-      heuristic.finish('t1', true);
-      // The entry stays visible right after finish() — so a live UI (or a
-      // session:attentionList snapshot taken in this window) can actually
-      // render the "Finished" chip instead of the row vanishing before it's
-      // ever seen, since the owning terminal session's own metadata is
-      // deleted immediately on exit.
-      expect(tracker.get('t1')?.state).toBe('finished');
-
-      vi.advanceTimersByTime(FINISHED_ENTRY_TTL_MS + 1);
-      expect(tracker.get('t1')).toBeUndefined();
-
-      heuristic.start('t2', '/wt/b');
-      heuristic.finish('t2', false);
-      expect(tracker.get('t2')?.state).toBe('failed');
-      vi.advanceTimersByTime(FINISHED_ENTRY_TTL_MS + 1);
-      expect(tracker.get('t2')).toBeUndefined();
-    } finally {
-      vi.useRealTimers();
-    }
-  });
-
-  it('sweep()/noteOutput()/finish() are no-ops for a session id that was never start()ed', () => {
-    const { tracker, heuristic } = setup();
-    expect(() => heuristic.noteOutput('unknown')).not.toThrow();
-    expect(() => heuristic.finish('unknown', true)).not.toThrow();
-    expect(() => heuristic.sweep()).not.toThrow();
-    expect(tracker.list()).toEqual([]);
-  });
-
-  it('does not flag a session idle a second time (heuristic already applied) on repeated sweeps', () => {
-    const { tracker, heuristic, advance } = setup();
-    heuristic.start('t1', '/wt/a');
-    advance(PTY_IDLE_THRESHOLD_MS + 1);
-    heuristic.sweep();
-    const firstUpdatedAt = tracker.get('t1')?.updatedAt;
-    advance(1000);
-    heuristic.sweep();
-    expect(tracker.get('t1')?.updatedAt).toBe(firstUpdatedAt);
   });
 });

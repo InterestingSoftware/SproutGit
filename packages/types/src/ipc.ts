@@ -49,6 +49,10 @@ export const IPC = {
   TERMINAL_CLOSE: 'terminal:close',
   TERMINAL_LIST: 'terminal:list',
   TERMINAL_CLOSE_ALL: 'terminal:closeAll',
+  EVENT_AGENT_SESSION_STATUS: 'event:agentSessionStatus',
+  // ── Notifications ────────────────────────────────────────────────────────
+  NOTIFICATION_SHOW: 'notification:show',
+  EVENT_NOTIFICATION_CLICKED: 'event:notificationClicked',
   // ── Settings ─────────────────────────────────────────────────────────────
   SETTINGS_GET: 'settings:get',
   SETTINGS_SET: 'settings:set',
@@ -176,6 +180,8 @@ export const IPC = {
   MCP_SET_PORT: 'mcp:setPort',
   MCP_WRITE_CLIENT_CONFIG: 'mcp:writeClientConfig',
   MCP_GET_MANUAL_SNIPPET: 'mcp:getManualSnippet',
+  // Fired by main when the report_session_done MCP tool is called, so the renderer can toast it.
+  EVENT_MCP_SESSION_DONE: 'event:mcpSessionDone',
   // ── Global error reporting (main → renderer push events) ──────────────────
   EVENT_GLOBAL_ERROR: 'event:globalError',
 } as const;
@@ -220,6 +226,7 @@ import type { IssueTrackerPattern } from './issuetracker.js';
 import type { ProviderIssue } from './providers.js';
 import type { FileTreeNode, FileReadResult } from './files.js';
 import type { McpClientId, McpServerStatus, McpConfigWriteResult } from './mcp.js';
+import type { ShowAgentNotificationArgs } from './notifications.js';
 
 /** Shape of one row returned by WORKTREE_GET_META / WORKTREE_SET_META. */
 export type WorktreeMetaRow = {
@@ -322,6 +329,8 @@ export type IpcMap = {
   'terminal:closeForPath': { args: [pathPrefix: string];                     result: void };
   'terminal:closeAll': { args: [];                                           result: void };
   'terminal:list':   { args: [];                                             result: TerminalInfo[] };
+  // ── Notifications ─────────────────────────────────────────────────────────
+  'notification:show': { args: [args: ShowAgentNotificationArgs];            result: void };
   // ── Settings ──────────────────────────────────────────────────────────────
   'settings:get':    { args: [key: string];                                  result: string | null };
   'settings:set':    { args: [args: { key: string; value: string }];        result: void };

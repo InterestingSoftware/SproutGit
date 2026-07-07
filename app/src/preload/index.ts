@@ -54,9 +54,13 @@ import type {
   McpClientId,
   McpServerStatus,
   McpConfigWriteResult,
+  McpSessionDoneEvent,
   GlobalErrorEvent,
   ProjectIdeaGenerateResult,
   SessionAttention,
+  AgentSessionStatusEvent,
+  ShowAgentNotificationArgs,
+  NotificationClickedEvent,
 } from '@sproutgit/types';
 
 /**
@@ -225,6 +229,22 @@ const api = {
     };
     ipcRenderer.on(IPC.TERMINAL_EXIT, handler);
     return () => ipcRenderer.off(IPC.TERMINAL_EXIT, handler);
+  },
+
+  onAgentSessionStatus: (callback: (event: AgentSessionStatusEvent) => void) => {
+    const handler = (_e: Electron.IpcRendererEvent, payload: AgentSessionStatusEvent) => callback(payload);
+    ipcRenderer.on(IPC.EVENT_AGENT_SESSION_STATUS, handler);
+    return () => ipcRenderer.off(IPC.EVENT_AGENT_SESSION_STATUS, handler);
+  },
+
+  // ── Notifications ─────────────────────────────────────────────────────────
+  showAgentSessionNotification: (args: ShowAgentNotificationArgs): Promise<void> =>
+    invoke(IPC.NOTIFICATION_SHOW, args),
+
+  onNotificationClicked: (callback: (event: NotificationClickedEvent) => void) => {
+    const handler = (_e: Electron.IpcRendererEvent, payload: NotificationClickedEvent) => callback(payload);
+    ipcRenderer.on(IPC.EVENT_NOTIFICATION_CLICKED, handler);
+    return () => ipcRenderer.off(IPC.EVENT_NOTIFICATION_CLICKED, handler);
   },
 
   // ── Workspace / recent ────────────────────────────────────────────────────
@@ -406,6 +426,12 @@ const api = {
     const handler = (_e: Electron.IpcRendererEvent, payload: AgentTerminalLaunchEvent) => callback(payload);
     ipcRenderer.on(IPC.EVENT_AGENT_TERMINAL_LAUNCH, handler);
     return () => ipcRenderer.off(IPC.EVENT_AGENT_TERMINAL_LAUNCH, handler);
+  },
+
+  onMcpSessionDone: (callback: (event: McpSessionDoneEvent) => void) => {
+    const handler = (_e: Electron.IpcRendererEvent, payload: McpSessionDoneEvent) => callback(payload);
+    ipcRenderer.on(IPC.EVENT_MCP_SESSION_DONE, handler);
+    return () => ipcRenderer.off(IPC.EVENT_MCP_SESSION_DONE, handler);
   },
 
   // ── Chat (Integrated agent mode) ─────────────────────────────────────────

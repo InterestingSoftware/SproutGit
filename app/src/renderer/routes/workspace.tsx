@@ -33,7 +33,9 @@ import { useWorktreeSelection } from "../hooks/useWorktreeSelection.js";
 import { useCommitDiffState } from "../hooks/useCommitDiffState.js";
 import { useTerminalManager } from "../hooks/useTerminalManager.js";
 import { useSessionAttention } from "../hooks/useSessionAttention.js";
+import { useAgentSessionNotifications } from "../hooks/useAgentSessionNotifications.js";
 import { useAutoUpdateListeners } from "../hooks/useAutoUpdateListeners.js";
+import { useMcpSessionDoneListener } from "../hooks/useMcpSessionDoneListener.js";
 import { useWorkspaceFileWatchers } from "../hooks/useWorkspaceFileWatchers.js";
 import { useWorkspaceUiPersistence } from "../hooks/useWorkspaceUiPersistence.js";
 import { useEditorTabsForWorktree } from "../hooks/useEditorTabsForWorktree.js";
@@ -87,6 +89,7 @@ function WorkspaceInner() {
     (s) => s.pendingCreationBranch,
   );
   const updateState = useAutoUpdateListeners();
+  useMcpSessionDoneListener(toast);
 
   // ── File editor tabs (Zustand) ─────────────────────────────────────────
   const { editorTabsForActiveWorktree, editorActiveTabKey, activeEditorTab } =
@@ -203,9 +206,10 @@ function WorkspaceInner() {
     closeDeleteDialog: () => setDeleteTarget(null),
   });
 
-  /** Jump-to-terminal action from the agent sessions dashboard: switches to
-   *  the session's worktree (if not already active) and focuses its terminal tab. */
-  function handleJumpToSession(session: TerminalInfo) {
+  /** Jump-to-terminal action from the agent sessions dashboard (and from
+   *  clicking an agent-session-finished OS notification): switches to the
+   *  session's worktree (if not already active) and focuses its terminal tab. */
+  function handleJumpToSession(session: { id: string; cwd: string }) {
     const wt = worktrees.find((w) => w.path === session.cwd);
     // The dashboard already filters to this workspace's worktrees, but guard
     // here too — jumping to a session with no matching worktree would leave
@@ -265,6 +269,8 @@ function WorkspaceInner() {
     }
     handleJumpToAttention(awaiting[0]!);
   }
+
+  useAgentSessionNotifications({ worktrees, onJump: handleJumpToSession });
 
   // ── Commit diff state ──────────────────────────────────────────────────
   const {

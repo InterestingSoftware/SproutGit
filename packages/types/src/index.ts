@@ -16,3 +16,4 @@ export * from './mcp.js';
 export * from './errors.js';
 export * from './project-idea.js';
 export * from './attention.js';
+export * from './notifications.js';
