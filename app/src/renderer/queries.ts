@@ -8,7 +8,7 @@ import { api } from './api.js';
  */
 
 import { useQuery, useQueries, useMutation, useQueryClient } from '@tanstack/react-query';
-import type { CommitEntry, RefInfo, WorktreeInfo, WorkspaceStatus, WorktreePushStatus, IssueTrackerPattern, FetchSummary, FileTreeNode, GitHubAuthStatus, PullRequestStatus, PullRequestInfo, MergeMethod, MergePullRequestResult } from '@sproutgit/types';
+import type { CommitEntry, RefInfo, WorktreeInfo, WorkspaceStatus, WorktreePushStatus, IssueTrackerPattern, FetchSummary, FileTreeNode, GitHubAuthStatus, PullRequestStatus, PullRequestInfo, MergeMethod, MergePullRequestResult, WorktreeDeleteResult } from '@sproutgit/types';
 
 // ── Query key factory ─────────────────────────────────────────────────────────
 
@@ -274,11 +274,23 @@ export function useDeleteWorktree(gitRepoPath: string) {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (args: { workspacePath: string; rootRepoPath: string; managedWorktreesPath?: string; worktreePath: string; deleteBranch: boolean; branchName?: string | null; initiatingWorktreePath?: string | null; afterRemoveWorktreePath?: string | null }) =>
-      api.deleteWorktree(args) as Promise<void>,
+      api.deleteWorktree(args) as Promise<WorktreeDeleteResult>,
     onSuccess: (_data, args) => {
       // Remove cached status for the deleted worktree so no in-flight refetch
       // can fire against the now-missing directory and show an error toast.
       qc.removeQueries({ queryKey: qk.worktreeStatus(args.worktreePath) });
+      void qc.invalidateQueries({ queryKey: qk.worktrees(gitRepoPath) });
+      void qc.invalidateQueries({ queryKey: qk.refs(gitRepoPath) });
+    },
+  });
+}
+
+export function useRestoreWorktree(gitRepoPath: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (args: { rootRepoPath: string; deleted: WorktreeDeleteResult }) =>
+      api.restoreWorktree(args) as Promise<void>,
+    onSuccess: () => {
       void qc.invalidateQueries({ queryKey: qk.worktrees(gitRepoPath) });
       void qc.invalidateQueries({ queryKey: qk.refs(gitRepoPath) });
     },

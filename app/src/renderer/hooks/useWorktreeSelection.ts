@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { api } from "../api.js";
 import { useWorkspaceStore } from "../stores/workspace-store.js";
-import type { useDeleteWorktree } from "../queries.js";
+import type { useDeleteWorktree, useRestoreWorktree } from "../queries.js";
 import type { ToastFn } from "../toast-context.js";
 import type {
   WorkspaceStatus,
@@ -38,6 +38,7 @@ export function useWorktreeSelection(params: {
   workspaceStatus: WorkspaceStatus | undefined;
   activeWorktree: WorktreeInfo | null;
   deleteWorktreeMutation: ReturnType<typeof useDeleteWorktree>;
+  restoreWorktreeMutation: ReturnType<typeof useRestoreWorktree>;
   toast: ToastFn;
   closeDeleteDialog: () => void;
 }) {
@@ -49,6 +50,7 @@ export function useWorktreeSelection(params: {
     workspaceStatus,
     activeWorktree,
     deleteWorktreeMutation,
+    restoreWorktreeMutation,
     toast,
     closeDeleteDialog,
   } = params;
@@ -231,7 +233,7 @@ export function useWorktreeSelection(params: {
       // queries fire on the deleted path while or after the deletion runs.
       if (isDeletingActive)
         useWorkspaceStore.setState({ activeWorktree: nextWt });
-      await deleteWorktreeMutation.mutateAsync({
+      const deleted = await deleteWorktreeMutation.mutateAsync({
         workspacePath,
         rootRepoPath: gitRepoPath,
         ...(workspaceStatus?.worktreesPath
@@ -246,7 +248,28 @@ export function useWorktreeSelection(params: {
         afterRemoveWorktreePath,
       });
 
-      toast("Worktree removed", "success");
+      // Detached-HEAD worktrees have no branch to recreate against, so
+      // there's nothing a restore could reattach the worktree to — omit
+      // Undo there.
+      toast(
+        "Worktree removed",
+        "success",
+        deleted.branch
+          ? {
+              label: "Undo",
+              onClick: () => {
+                restoreWorktreeMutation.mutate(
+                  { rootRepoPath: gitRepoPath, deleted },
+                  {
+                    onSuccess: () => toast("Worktree restored", "success"),
+                    onError: (err: unknown) =>
+                      toast(`Undo failed: ${String(err)}`, "error"),
+                  },
+                );
+              },
+            }
+          : undefined,
+      );
     } catch (err) {
       toast(`Failed to remove worktree: ${String(err)}`, "error");
     } finally {
