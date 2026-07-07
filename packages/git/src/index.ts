@@ -6,6 +6,7 @@ export {
   createFirstManagedWorktree,
   addWorktreeForExistingBranch,
   deleteManagedWorktree,
+  restoreDeletedWorktree,
 } from './worktrees.js';
 export { getCommitGraph, countCommits, listRefs, getRecentCommitSubjects } from './commits.js';
 export {

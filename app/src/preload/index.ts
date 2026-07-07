@@ -39,6 +39,7 @@ import type {
   NestedRepoSyncRule,
   RecentWorkspace,
   CreateWorktreeResult,
+  WorktreeDeleteResult,
   WorktreeSwitchHookSource,
   AgentRoster,
   AgentTestInput,
@@ -134,8 +135,11 @@ const api = {
     branchName?: string | null;
     initiatingWorktreePath?: string | null;
     afterRemoveWorktreePath?: string | null;
-  }): Promise<void> =>
+  }): Promise<WorktreeDeleteResult> =>
     invoke(IPC.WORKTREE_DELETE, args),
+
+  restoreWorktree: (args: { rootRepoPath: string; deleted: WorktreeDeleteResult; managedWorktreesPath?: string }): Promise<void> =>
+    invoke(IPC.WORKTREE_RESTORE, args),
 
   pruneWorktreeMetadata: (args: { workspacePath: string; activeWorktreePaths: string[] }): Promise<void> =>
     invoke(IPC.WORKTREE_PRUNE_METADATA, args),

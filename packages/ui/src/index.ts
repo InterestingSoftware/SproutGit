@@ -29,7 +29,7 @@ export { StashPanel } from './components/StashPanel.js';
 export { Spinner } from './components/Spinner.js';
 
 export { Toast, ToastContainer } from './components/Toast.js';
-export type { ToastData, ToastVariant } from './components/Toast.js';
+export type { ToastData, ToastVariant, ToastAction } from './components/Toast.js';
 
 export { TerminalPane } from './components/TerminalPane.js';
 
