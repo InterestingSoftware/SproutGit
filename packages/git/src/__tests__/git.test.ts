@@ -142,6 +142,38 @@ describe('staging', () => {
   });
 });
 
+describe('getWorktreeStatus', () => {
+  let repoPath: string;
+
+  beforeAll(() => {
+    repoPath = initTestRepo();
+    return () => rmSync(repoPath, { recursive: true, force: true });
+  });
+
+  it('reports the correct path when the only change is an unstaged modification to a tracked file', async () => {
+    // Regression test: `gitForPath()` configures simple-git with
+    // `trimmed: true`, which runs a whole-string `.trim()` on git's stdout.
+    // When the *only* status line is an unstaged-only change (" M file",
+    // i.e. the porcelain output's very first character is a space), that
+    // leading space used to be indistinguishable from incidental whitespace
+    // and got stripped along with it — corrupting the parsed path (losing
+    // its first character) and misreading the index/worktree columns.
+    writeFileSync(join(repoPath, 'README.md'), '# Test Repo\nmodified\n');
+
+    const result = await getWorktreeStatus(repoPath);
+    expect(result.files).toHaveLength(1);
+    expect(result.files[0]).toMatchObject({
+      path: 'README.md',
+      staged: false,
+      indexStatus: ' ',
+      workTreeStatus: 'M',
+    });
+
+    // Restore for any tests that run after this one in the same file.
+    execSync('git checkout -- README.md', { cwd: repoPath });
+  });
+});
+
 describe('getStagedDiff', () => {
   let repoPath: string;
 

@@ -14,7 +14,7 @@ import yamlLang from 'highlight.js/lib/languages/yaml';
 import sqlLang from 'highlight.js/lib/languages/sql';
 import pythonLang from 'highlight.js/lib/languages/python';
 import goLang from 'highlight.js/lib/languages/go';
-import { type StatusFileEntry, type WorktreeStatusResult, type CommitMessageGenerateResult } from '@sproutgit/types';
+import { type StatusFileEntry, type WorktreeStatusResult, type CommitMessageGenerateResult, parseFileDiff } from '@sproutgit/types';
 import { Spinner } from './Spinner.js';
 import { ConfirmDialog } from './ConfirmDialog.js';
 import { escapeHtml } from '../html-escape.js';
@@ -32,12 +32,6 @@ hljs.registerLanguage('sql', sqlLang);
 hljs.registerLanguage('python', pythonLang);
 hljs.registerLanguage('go', goLang);
 
-// Unified diff file headers are always "--- a/path" / "+++ b/path" (or /dev/null),
-// i.e. the marker followed by a space — unlike an added/removed line whose content
-// happens to start with "++"/"--", which has no space right after the marker.
-const OLD_FILE_HEADER = /^--- /;
-const NEW_FILE_HEADER = /^\+\+\+ /;
-
 // ─── Props ────────────────────────────────────────────────────────────────────
 
 type Props = {
@@ -47,6 +41,9 @@ type Props = {
   getStatus: (worktreePath: string) => Promise<WorktreeStatusResult>;
   stageFiles: (worktreePath: string, paths: string[]) => Promise<void>;
   unstageFiles: (worktreePath: string, paths: string[]) => Promise<void>;
+  /** Stages a single hunk (or, when `lineIndices` is given, only those add/del lines within it). */
+  stageHunk: (worktreePath: string, filePath: string, hunkIndex: number, lineIndices?: number[]) => Promise<void>;
+  unstageHunk: (worktreePath: string, filePath: string, hunkIndex: number, lineIndices?: number[]) => Promise<void>;
   createCommit: (worktreePath: string, message: string) => Promise<void>;
   getDiff: (worktreePath: string, staged: boolean, file?: string) => Promise<string>;
   onCommit: () => void;
@@ -81,6 +78,8 @@ export function StagingPanel({
   getStatus,
   stageFiles: stageFilesFn,
   unstageFiles: unstageFilesFn,
+  stageHunk: stageHunkFn,
+  unstageHunk: unstageHunkFn,
   createCommit: createCommitFn,
   getDiff,
   onCommit,
@@ -143,6 +142,26 @@ export function StagingPanel({
     onError: (err) => onToast?.(`Failed to unstage all: ${String(err)}`, 'error'),
   });
 
+  const stageHunkMutation = useMutation({
+    mutationFn: (args: { hunkIndex: number; lineIndices?: number[] }) =>
+      stageHunkFn(worktreePath, diffFile!, args.hunkIndex, args.lineIndices),
+    onSuccess: () => {
+      invalidateStatus();
+      void loadDiff(diffFile, diffStaged);
+    },
+    onError: (err) => onToast?.(`Failed to stage hunk: ${String(err)}`, 'error'),
+  });
+
+  const unstageHunkMutation = useMutation({
+    mutationFn: (args: { hunkIndex: number; lineIndices?: number[] }) =>
+      unstageHunkFn(worktreePath, diffFile!, args.hunkIndex, args.lineIndices),
+    onSuccess: () => {
+      invalidateStatus();
+      void loadDiff(diffFile, diffStaged);
+    },
+    onError: (err) => onToast?.(`Failed to unstage hunk: ${String(err)}`, 'error'),
+  });
+
   const commitMutation = useMutation({
     mutationFn: (message: string) => createCommitFn(worktreePath, message),
     onSuccess: () => {
@@ -166,6 +185,8 @@ export function StagingPanel({
   const [diffError, setDiffError] = useState<string | null>(null);
   const [generating, setGenerating] = useState(false);
   const [confirmOverwrite, setConfirmOverwrite] = useState(false);
+  /** Per-hunk set of *deselected* add/del line indices (indices into that hunk's `lines` array). */
+  const [deselectedLines, setDeselectedLines] = useState<Map<number, Set<number>>>(new Map());
 
   const commitError = commitTouched ? validateCommitMessage(commitMessage) : null;
 
@@ -201,6 +222,7 @@ export function StagingPanel({
     setDiffStaged(staged);
     setDiffLoading(true);
     setDiffError(null);
+    setDeselectedLines(new Map());
     try {
       const content = await getDiff(worktreePath, staged, file ?? undefined);
       setDiffContent(content);
@@ -225,25 +247,102 @@ export function StagingPanel({
 
   // ─── Diff rendering ──────────────────────────────────────────────────────────
 
-  function renderDiff(raw: string): string {
-    if (!raw.trim()) return '<span class="sg-diff-empty">No changes</span>';
+  function toggleLineSelection(hunkIndex: number, lineIdx: number) {
+    setDeselectedLines(prev => {
+      const next = new Map(prev);
+      const set = new Set(next.get(hunkIndex) ?? []);
+      if (set.has(lineIdx)) set.delete(lineIdx); else set.add(lineIdx);
+      next.set(hunkIndex, set);
+      return next;
+    });
+  }
+
+  /** Renders the currently loaded diff as per-hunk sections with stage/unstage controls. */
+  function renderDiffHunks(raw: string) {
+    const parsed = parseFileDiff(raw);
+    if (!parsed || parsed.hunks.length === 0) {
+      return <span className="sg-diff-empty">No changes</span>;
+    }
     const lang = languageForPath(diffFile);
-    const lines = raw.split('\n');
-    return lines.map(line => {
-      if (line.startsWith('+') && !NEW_FILE_HEADER.test(line)) {
-        return `<div class="sg-diff-add">+${highlightCode(line.slice(1), lang)}</div>`;
-      } else if (line.startsWith('-') && !OLD_FILE_HEADER.test(line)) {
-        return `<div class="sg-diff-del">-${highlightCode(line.slice(1), lang)}</div>`;
-      } else if (line.startsWith('@@')) {
-        return `<div class="sg-diff-hunk">${escapeHtml(line)}</div>`;
-      } else if (line.startsWith('diff ') || line.startsWith('index ') || OLD_FILE_HEADER.test(line) || NEW_FILE_HEADER.test(line)) {
-        return `<div class="sg-diff-meta">${escapeHtml(line)}</div>`;
+
+    return parsed.hunks.map((hunk, hunkIndex) => {
+      const deselected = deselectedLines.get(hunkIndex) ?? new Set<number>();
+      const selectableIdx: number[] = [];
+      hunk.lines.forEach((l, idx) => { if (l.kind !== 'context') selectableIdx.push(idx); });
+      const selectedIdx = selectableIdx.filter(idx => !deselected.has(idx));
+      const isPartial = selectedIdx.length > 0 && selectedIdx.length < selectableIdx.length;
+      const nothingSelected = selectedIdx.length === 0;
+
+      const stagePending = stageHunkMutation.isPending && stageHunkMutation.variables?.hunkIndex === hunkIndex;
+      const unstagePending = unstageHunkMutation.isPending && unstageHunkMutation.variables?.hunkIndex === hunkIndex;
+
+      function runStage() {
+        stageHunkMutation.mutate(isPartial ? { hunkIndex, lineIndices: selectedIdx } : { hunkIndex });
       }
-      if (line.startsWith(' ')) {
-        return `<div class="sg-diff-ctx"> ${highlightCode(line.slice(1), lang)}</div>`;
+      function runUnstage() {
+        unstageHunkMutation.mutate(isPartial ? { hunkIndex, lineIndices: selectedIdx } : { hunkIndex });
       }
-      return `<div class="sg-diff-ctx">${highlightCode(line, lang)}</div>`;
-    }).join('');
+
+      return (
+        <div key={hunkIndex} className="sg-diff-hunk-group group/hunk" data-testid="diff-hunk" data-hunk-index={hunkIndex}>
+          <div className="sg-diff-hunk px-1.5">
+            <span>{hunk.header}</span>
+            <div className="flex items-center gap-1 opacity-0 group-hover/hunk:opacity-100 focus-within:opacity-100 transition-opacity">
+              {diffStaged ? (
+                <button
+                  data-testid="unstage-hunk-btn"
+                  data-hunk-index={hunkIndex}
+                  className="sg-unstage-hunk-btn inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-medium bg-(--sg-surface) border border-(--sg-border) text-(--sg-text-dim) hover:bg-(--sg-surface-raised) hover:text-(--sg-text) disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
+                  onClick={runUnstage}
+                  disabled={unstagePending || nothingSelected}
+                  title={isPartial ? 'Unstage selected lines' : 'Unstage hunk'}
+                >
+                  {unstagePending ? <Spinner size="sm" /> : <Minus size={11} />}
+                  {isPartial ? 'Unstage selected' : 'Unstage hunk'}
+                </button>
+              ) : (
+                <button
+                  data-testid="stage-hunk-btn"
+                  data-hunk-index={hunkIndex}
+                  className="sg-stage-hunk-btn inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-medium bg-(--sg-surface) border border-(--sg-border) text-(--sg-text-dim) hover:bg-(--sg-surface-raised) hover:text-(--sg-text) disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
+                  onClick={runStage}
+                  disabled={stagePending || nothingSelected}
+                  title={isPartial ? 'Stage selected lines' : 'Stage hunk'}
+                >
+                  {stagePending ? <Spinner size="sm" /> : <Plus size={11} />}
+                  {isPartial ? 'Stage selected' : 'Stage hunk'}
+                </button>
+              )}
+            </div>
+          </div>
+          {hunk.lines.map((line, idx) => {
+            if (line.kind === 'context') {
+              return (
+                <div key={idx} className="sg-diff-ctx flex items-start gap-1">
+                  <span className="inline-block w-[13px] shrink-0" />
+                  <span style={{ whiteSpace: 'pre' }} dangerouslySetInnerHTML={{ __html: ` ${highlightCode(line.content, lang)}` }} />
+                </div>
+              );
+            }
+            const isAdd = line.kind === 'add';
+            return (
+              <div key={idx} className={`${isAdd ? 'sg-diff-add' : 'sg-diff-del'} flex items-start gap-1`}>
+                <input
+                  type="checkbox"
+                  className="sg-diff-line-checkbox mt-[3px] shrink-0"
+                  data-testid="diff-line-checkbox"
+                  data-hunk-index={hunkIndex}
+                  data-line-index={idx}
+                  checked={!deselected.has(idx)}
+                  onChange={() => toggleLineSelection(hunkIndex, idx)}
+                />
+                <span style={{ whiteSpace: 'pre' }} dangerouslySetInnerHTML={{ __html: `${isAdd ? '+' : '-'}${highlightCode(line.content, lang)}` }} />
+              </div>
+            );
+          })}
+        </div>
+      );
+    });
   }
 
   // ─── Resize state ─────────────────────────────────────────────────────────
@@ -482,10 +581,9 @@ export function StagingPanel({
             <span className="text-[11px] font-(family-name:--sg-font-code)">{diffFile}</span>
           </div>
         ) : diffContent ? (
-          <pre
-            className="sg-diff"
-            dangerouslySetInnerHTML={{ __html: renderDiff(diffContent) }}
-          />
+          <div className="sg-diff">
+            {renderDiffHunks(diffContent)}
+          </div>
         ) : (
           <div className="flex items-center justify-center h-full text-xs text-(--sg-text-faint)">
             Select a file to view its diff

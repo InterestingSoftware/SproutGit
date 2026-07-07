@@ -12,6 +12,8 @@ export const IPC = {
   GIT_STATUS: 'git:status',
   GIT_STAGE: 'git:stage',
   GIT_UNSTAGE: 'git:unstage',
+  GIT_STAGE_HUNK: 'git:stageHunk',
+  GIT_UNSTAGE_HUNK: 'git:unstageHunk',
   GIT_COMMIT: 'git:commit',
   GIT_CHECKOUT: 'git:checkout',
   GIT_RESET: 'git:reset',
@@ -22,6 +24,8 @@ export const IPC = {
   GIT_DIFF_FILES: 'git:diffFiles',
   GIT_DIFF_CONTENT: 'git:diffContent',
   GIT_WORKING_DIFF: 'git:workingDiff',
+  GIT_UNSTAGED_FILE_DIFF: 'git:unstagedFileDiff',
+  GIT_STAGED_FILE_DIFF: 'git:stagedFileDiff',
   // ── Worktrees ────────────────────────────────────────────────────────────
   WORKTREE_CREATE: 'worktree:create',
   WORKTREE_DELETE: 'worktree:delete',
@@ -257,6 +261,8 @@ export type IpcMap = {
   'git:status':      { args: [worktreePath: string];                                         result: WorktreeStatusResult };
   'git:stage':       { args: [args: { worktreePath: string; paths: string[] }];              result: void };
   'git:unstage':     { args: [args: { worktreePath: string; paths: string[] }];              result: void };
+  'git:stageHunk':   { args: [args: { worktreePath: string; filePath: string; hunkIndex: number; lineIndices?: number[] | null }]; result: void };
+  'git:unstageHunk': { args: [args: { worktreePath: string; filePath: string; hunkIndex: number; lineIndices?: number[] | null }]; result: void };
   'git:commit':      { args: [args: { worktreePath: string; message: string }];              result: void };
   'git:checkout':    { args: [args: { worktreePath: string; targetRef: string }];            result: void };
   'git:reset':       { args: [args: { worktreePath: string; targetRef: string; mode: 'soft'|'mixed'|'hard' }]; result: void };
@@ -267,6 +273,8 @@ export type IpcMap = {
   'git:diffFiles':   { args: [args: { repoPath: string; range: string }];                    result: DiffFileEntry[] };
   'git:diffContent': { args: [args: { repoPath: string; range: string; file?: string }];     result: string };
   'git:workingDiff': { args: [args: { worktreePath: string; file?: string }];                result: string };
+  'git:unstagedFileDiff': { args: [args: { worktreePath: string; file: string }];             result: string };
+  'git:stagedFileDiff':   { args: [args: { worktreePath: string; file?: string }];            result: string };
   'git:getConfig':   { args: [key: string];                                                  result: string | null };
   'git:setConfig':   { args: [args: { key: string; value: string }];                         result: void };
   // ── Worktrees ─────────────────────────────────────────────────────────────

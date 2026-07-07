@@ -63,4 +63,57 @@ describe('commit workflow', () => {
 
     await assertNoErrors();
   });
+
+  it('stages and unstages a single hunk, leaving the file\'s other hunk untouched', async () => {
+    const assertNoErrors = monitorErrors();
+
+    const defaultBranch = execSync('git symbolic-ref --short HEAD', { cwd: testRepo }).toString().trim();
+
+    // Commit a baseline multi-line tracked file before opening the workspace,
+    // so the two edits below land far enough apart to produce two separate
+    // diff hunks under git's default 3-line context.
+    const baseline = Array.from({ length: 20 }, (_, i) => `line ${i + 1}`);
+    writeFileSync(join(testRepo, 'notes.txt'), baseline.join('\n') + '\n');
+    execSync('git add notes.txt', { cwd: testRepo });
+    execSync('git commit -m "add notes.txt"', { cwd: testRepo });
+
+    await gotoHash(`/workspace?path=${encodeURIComponent(testRepo)}`);
+    await expect($('//*[contains(@class,"sg-tab") and contains(.,"Graph")]')).toBeDisplayed();
+    await expect($(`[data-testid="worktree-item"][data-branch="${defaultBranch}"]`)).toBeDisplayed();
+
+    const worktreePath = join(testRepo, '.sproutgit', 'worktrees', defaultBranch);
+    const modified = [...baseline];
+    modified[1] = 'LINE TWO';
+    modified[15] = 'LINE SIXTEEN';
+    writeFileSync(join(worktreePath, 'notes.txt'), modified.join('\n') + '\n');
+
+    await $('//*[contains(@class,"sg-tab") and contains(.,"Changes")]').click();
+    await expect($('//*[contains(@class,"sg-file-row") and contains(.,"notes.txt")]')).toBeDisplayed();
+    await $('//*[contains(@class,"sg-file-row") and contains(.,"notes.txt")]').click();
+
+    // Two separate hunks should render for the two far-apart edits.
+    await expect($$('[data-testid="diff-hunk"]')).toBeElementsArrayOfSize(2);
+
+    // Stage only the first hunk.
+    await $('[data-testid="stage-hunk-btn"][data-hunk-index="0"]').click();
+
+    // The diff view refreshes in place — only the second hunk should remain unstaged.
+    await expect($$('[data-testid="diff-hunk"]')).toBeElementsArrayOfSize(1);
+    await expect($('//*[contains(@class,"sg-diff-add") and contains(.,"LINE SIXTEEN")]')).toBeDisplayed();
+
+    // The file now has both staged and unstaged changes.
+    await expect($('[data-testid="staging-staged-file-row"][data-path="notes.txt"]')).toBeDisplayed();
+    await expect($('[data-testid="staging-unstaged-file-row"][data-path="notes.txt"]')).toBeDisplayed();
+
+    // The staged pane shows exactly the hunk that was staged.
+    await $('[data-testid="staging-staged-file-row"][data-path="notes.txt"]').click();
+    await expect($$('[data-testid="diff-hunk"]')).toBeElementsArrayOfSize(1);
+    await expect($('//*[contains(@class,"sg-diff-add") and contains(.,"LINE TWO")]')).toBeDisplayed();
+
+    // Unstage that hunk back — the file should return to fully unstaged.
+    await $('[data-testid="unstage-hunk-btn"][data-hunk-index="0"]').click();
+    await expect($('[data-testid="staging-staged-file-row"][data-path="notes.txt"]')).not.toBeDisplayed();
+
+    await assertNoErrors();
+  });
 });
