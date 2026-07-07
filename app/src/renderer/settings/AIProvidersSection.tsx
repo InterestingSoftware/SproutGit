@@ -24,8 +24,11 @@ function blankDraft(preset: AiProviderPreset): DraftState {
  * Settings: AI provider registry. Presets for Anthropic/OpenAI/Google/OpenRouter
  * plus a generic OpenAI-compatible endpoint (covers Ollama/LM Studio/vLLM/Azure/
  * proxies). API keys are entered here but never read back — the renderer only
- * ever learns "configured" via `hasApiKey`; the actual key material lives
- * encrypted under Electron `safeStorage` in the main process.
+ * ever learns "configured" via `hasApiKey`; the actual key material lives in
+ * the main process, encrypted via Electron `safeStorage` when the OS keychain
+ * is available (falls back to plaintext otherwise, same as GitHub token
+ * storage). Not yet consumed anywhere — see the module doc in
+ * `app/src/main/ai-providers/registry.ts`.
  */
 export function AIProvidersSection({ onToast }: Props) {
   const [providers, setProviders] = useState<AiProviderStatus[]>([]);
@@ -123,9 +126,10 @@ export function AIProvidersSection({ onToast }: Props) {
       </div>
 
       <p className="text-[11px] text-(--sg-text-faint)">
-        Powers the searchable model picker in the Chat panel and (later) other
-        built-in AI features. API keys are encrypted at rest and never leave
-        the main process.
+        For future built-in AI features (the Chat panel's model list comes
+        from your configured coding agent, not from here). API keys never
+        leave the main process, and are encrypted at rest when your OS
+        keychain is available.
       </p>
 
       {draft && (

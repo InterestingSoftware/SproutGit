@@ -80,6 +80,50 @@ describe('ModelPicker', () => {
     expect(selected).toBe('gemini-1.5-pro');
     expect(screen.queryByTestId('model-picker-list')).toBeNull();
   });
+
+  it('keyboard-selects the visually highlighted row even when its match rank interleaves with another group', async () => {
+    // Query "ap" scores 'Apple' (rank 0) > 'Zap' (rank 1, different group) >
+    // 'Zulu Apple' (rank 2) by fuzzy match position — so the score-sorted
+    // order splits group A's two entries across group B's one entry. Once
+    // regrouped for display, group A's entries end up adjacent (indices 0-1)
+    // and group B's entry is last (index 2). Arrowing down twice should land
+    // on — and Enter should select — the row actually highlighted on screen
+    // (Zap), not whatever sat at index 2 of the pre-group sorted list.
+    const interleavedGroups: ModelPickerGroup[] = [
+      { groupId: 'a', groupLabel: 'Group A', models: [
+        { id: 'apple', label: 'Apple' },
+        { id: 'zulu-apple', label: 'Zulu Apple' },
+      ] },
+      { groupId: 'b', groupLabel: 'Group B', models: [
+        { id: 'zap', label: 'Zap' },
+      ] },
+    ];
+    const user = userEvent.setup();
+    let selected: string | undefined;
+    render(<ModelPicker groups={interleavedGroups} onChange={(id) => { selected = id; }} />);
+    await user.click(screen.getByTestId('model-picker-trigger'));
+    await user.type(screen.getByTestId('model-picker-input'), 'ap');
+
+    const options = screen.getAllByTestId('model-picker-option');
+    expect(options.map((o) => o.textContent)).toEqual(['Apple', 'Zulu Apple', 'Zap']);
+
+    await user.keyboard('{ArrowDown}{ArrowDown}{Enter}');
+
+    expect(selected).toBe('zap');
+  });
+
+  it('ignores Arrow/Enter navigation when there are no matches, without throwing', async () => {
+    const user = userEvent.setup();
+    let selected: string | undefined;
+    render(<ModelPicker groups={groups} onChange={(id) => { selected = id; }} />);
+    await user.click(screen.getByTestId('model-picker-trigger'));
+    await user.type(screen.getByTestId('model-picker-input'), 'zzz-nonexistent');
+
+    await user.keyboard('{ArrowDown}{ArrowDown}{Enter}');
+
+    expect(selected).toBeUndefined();
+    expect(screen.getByText('No models found')).toBeTruthy();
+  });
 });
 
 describe('modelMetaLabel', () => {

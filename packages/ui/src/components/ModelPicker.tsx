@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react';
+import { useEffect, useId, useMemo, useRef, useState, type KeyboardEvent } from 'react';
 import { ChevronDown, Search } from 'lucide-react';
 import { fuzzyScore } from '../fuzzy.js';
 
@@ -32,6 +32,7 @@ type Props = {
 };
 
 type FlatRow = { group: ModelPickerGroup; model: ModelPickerModel; score: number };
+type DisplayGroup = { groupId: string; groupLabel: string; rows: FlatRow[] };
 
 function formatContextWindow(tokens: number): string {
   if (tokens >= 1000) return `${Math.round(tokens / 1000)}K ctx`;
@@ -61,6 +62,29 @@ export function modelMetaLabel(model: ModelPickerModel): string | undefined {
 }
 
 /**
+ * Groups (already score-sorted) rows by `groupId`, preserving each group's
+ * first-appearance order. This is the single source of truth for on-screen
+ * row order — `displayRows` (the flattened form) is what keyboard nav and
+ * Enter-to-select index into, so the highlighted row and the selected row
+ * can never diverge the way they would if nav indexed into the pre-group
+ * flat (score-only) order while rendering regrouped it.
+ */
+function groupRows(rows: FlatRow[]): DisplayGroup[] {
+  const groups: DisplayGroup[] = [];
+  const byId = new Map<string, DisplayGroup>();
+  for (const row of rows) {
+    let group = byId.get(row.group.groupId);
+    if (!group) {
+      group = { groupId: row.group.groupId, groupLabel: row.group.groupLabel, rows: [] };
+      byId.set(row.group.groupId, group);
+      groups.push(group);
+    }
+    group.rows.push(row);
+  }
+  return groups;
+}
+
+/**
  * Searchable, provider-grouped model picker. Fuzzy-matches against the
  * model label, description, and group label so typing a provider name
  * (e.g. "openrouter") narrows results too.
@@ -72,6 +96,8 @@ export function ModelPicker({ groups, value, onChange, placeholder = 'Select a m
   const inputRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLUListElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
+  const generatedId = useId();
+  const listId = `${id ?? generatedId}-list`;
 
   const allRows = useMemo<FlatRow[]>(
     () => groups.flatMap((group) => group.models.map((model) => ({ group, model, score: 0 }))),
@@ -90,6 +116,9 @@ export function ModelPicker({ groups, value, onChange, placeholder = 'Select a m
       .filter((r): r is FlatRow => r !== null)
       .sort((a, b) => b.score - a.score);
   }, [allRows, query]);
+
+  const displayGroups = useMemo(() => groupRows(filteredRows), [filteredRows]);
+  const displayRows = useMemo(() => displayGroups.flatMap((g) => g.rows), [displayGroups]);
 
   const selected = allRows.find((r) => r.model.id === value)?.model;
 
@@ -124,15 +153,22 @@ export function ModelPicker({ groups, value, onChange, placeholder = 'Select a m
   }
 
   function handleKeyDown(e: KeyboardEvent<HTMLInputElement>) {
+    if (displayRows.length === 0) {
+      if (e.key === 'Escape') {
+        setOpen(false);
+        setQuery('');
+      }
+      return;
+    }
     if (e.key === 'ArrowDown') {
       e.preventDefault();
-      setActiveIdx((i) => Math.min(i + 1, filteredRows.length - 1));
+      setActiveIdx((i) => Math.min(i + 1, displayRows.length - 1));
     } else if (e.key === 'ArrowUp') {
       e.preventDefault();
       setActiveIdx((i) => Math.max(i - 1, 0));
     } else if (e.key === 'Enter') {
       e.preventDefault();
-      const row = filteredRows[activeIdx];
+      const row = displayRows[activeIdx];
       if (row) select(row);
     } else if (e.key === 'Escape') {
       setOpen(false);
@@ -142,8 +178,6 @@ export function ModelPicker({ groups, value, onChange, placeholder = 'Select a m
 
   const inputCls = 'w-full pl-7 pr-[10px] py-[6px] bg-(--sg-input-bg) border border-(--sg-input-border) rounded-[6px] text-xs text-(--sg-text) outline-none focus:border-(--sg-input-focus)';
   const triggerCls = 'w-full flex items-center justify-between gap-2 px-[10px] py-[6px] bg-(--sg-input-bg) border border-(--sg-input-border) rounded-[6px] text-xs text-(--sg-text) cursor-pointer hover:border-(--sg-input-focus) disabled:opacity-50 disabled:cursor-not-allowed';
-
-  let rowIndex = -1;
 
   return (
     <div ref={containerRef} className={['relative w-full', className].filter(Boolean).join(' ')} data-testid="model-picker">
@@ -163,7 +197,7 @@ export function ModelPicker({ groups, value, onChange, placeholder = 'Select a m
             placeholder={selected?.label ?? placeholder}
             aria-autocomplete="list"
             aria-expanded
-            aria-controls="sg-model-picker-list"
+            aria-controls={listId}
             role="combobox"
             data-testid="model-picker-input"
           />
@@ -178,53 +212,50 @@ export function ModelPicker({ groups, value, onChange, placeholder = 'Select a m
       {open && (
         <ul
           ref={listRef}
-          id="sg-model-picker-list"
+          id={listId}
           className="absolute top-full left-0 right-0 mt-1 bg-(--sg-surface) border border-(--sg-border) rounded-[6px] shadow-[0_4px_16px_rgba(0,0,0,0.12)] max-h-[280px] overflow-y-auto z-100 p-0 m-0 list-none"
           role="listbox"
           data-testid="model-picker-list"
         >
-          {filteredRows.length === 0 ? (
+          {displayGroups.length === 0 ? (
             <li className="px-3 py-2 text-xs text-(--sg-text-faint)" role="option" aria-disabled>
               No models found
             </li>
           ) : (
-            Object.entries(
-              filteredRows.reduce<Record<string, FlatRow[]>>((acc, row) => {
-                (acc[row.group.groupId] ??= []).push(row);
-                return acc;
-              }, {}),
-            ).map(([groupId, rows]) => (
-              <li key={groupId} role="presentation">
-                <div className="sticky top-0 bg-(--sg-surface) px-3 py-1 text-[10px] font-semibold uppercase tracking-wide text-(--sg-text-faint)">
-                  {rows[0]!.group.groupLabel}
-                </div>
-                <ul className="p-0 m-0 list-none">
-                  {rows.map((row) => {
-                    rowIndex += 1;
-                    const idx = rowIndex;
-                    const meta = modelMetaLabel(row.model);
-                    return (
-                      <li
-                        key={row.model.id}
-                        data-row-index={idx}
-                        className={`flex items-center justify-between gap-2 px-3 py-1.5 text-xs cursor-pointer transition-colors ${idx === activeIdx ? 'bg-(--sg-surface-raised)' : 'hover:bg-(--sg-surface-raised)'}`}
-                        role="option"
-                        aria-selected={row.model.id === value}
-                        onMouseDown={(e) => {
-                          e.preventDefault();
-                          select(row);
-                        }}
-                        onMouseEnter={() => setActiveIdx(idx)}
-                        data-testid="model-picker-option"
-                      >
-                        <span className="truncate">{row.model.label}</span>
-                        {meta && <span className="text-[10px] text-(--sg-text-faint) shrink-0 pl-2">{meta}</span>}
-                      </li>
-                    );
-                  })}
-                </ul>
-              </li>
-            ))
+            displayGroups.map((group) => {
+              const startIdx = displayRows.indexOf(group.rows[0]!);
+              return (
+                <li key={group.groupId} role="presentation">
+                  <div className="sticky top-0 bg-(--sg-surface) px-3 py-1 text-[10px] font-semibold uppercase tracking-wide text-(--sg-text-faint)">
+                    {group.groupLabel}
+                  </div>
+                  <ul className="p-0 m-0 list-none">
+                    {group.rows.map((row, i) => {
+                      const idx = startIdx + i;
+                      const meta = modelMetaLabel(row.model);
+                      return (
+                        <li
+                          key={row.model.id}
+                          data-row-index={idx}
+                          className={`flex items-center justify-between gap-2 px-3 py-1.5 text-xs cursor-pointer transition-colors ${idx === activeIdx ? 'bg-(--sg-surface-raised)' : 'hover:bg-(--sg-surface-raised)'}`}
+                          role="option"
+                          aria-selected={row.model.id === value}
+                          onMouseDown={(e) => {
+                            e.preventDefault();
+                            select(row);
+                          }}
+                          onMouseEnter={() => setActiveIdx(idx)}
+                          data-testid="model-picker-option"
+                        >
+                          <span className="truncate">{row.model.label}</span>
+                          {meta && <span className="text-[10px] text-(--sg-text-faint) shrink-0 pl-2">{meta}</span>}
+                        </li>
+                      );
+                    })}
+                  </ul>
+                </li>
+              );
+            })
           )}
         </ul>
       )}

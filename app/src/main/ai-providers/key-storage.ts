@@ -21,9 +21,21 @@ function readKeyMap(userDataPath: string): KeyMap {
   if (!existsSync(path)) return {};
   try {
     const buf = readFileSync(path);
-    const raw = safeStorage.isEncryptionAvailable()
-      ? safeStorage.decryptString(buf)
-      : buf.toString('utf8');
+    // The blob may have been written as plaintext (encryption unavailable
+    // at the time) even though encryption is available now, e.g. after
+    // switching machines/OS keychains — try decrypting first, but fall back
+    // to reading it as plaintext JSON rather than treating a decrypt
+    // failure as "no keys stored" and silently losing them.
+    let raw: string;
+    if (safeStorage.isEncryptionAvailable()) {
+      try {
+        raw = safeStorage.decryptString(buf);
+      } catch {
+        raw = buf.toString('utf8');
+      }
+    } else {
+      raw = buf.toString('utf8');
+    }
     const parsed: unknown = JSON.parse(raw);
     return parsed && typeof parsed === 'object' ? (parsed as KeyMap) : {};
   } catch {

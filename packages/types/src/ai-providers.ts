@@ -25,7 +25,7 @@ export type AiProviderPreset = {
   kind: AiProviderKind;
   /** Fixed for hosted providers; editable (and required) for the generic OpenAI-compatible preset. */
   defaultBaseUrl: string;
-  /** Whether the base URL field is user-editable (true for OpenRouter/generic; false for fixed hosted APIs). */
+  /** Whether the base URL field is user-editable (true only for the generic OpenAI-compatible preset; false for every named hosted API, including OpenRouter). */
   baseUrlEditable: boolean;
   docsUrl?: string;
 };
