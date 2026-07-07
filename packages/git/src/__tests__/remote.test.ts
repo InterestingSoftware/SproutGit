@@ -3,7 +3,7 @@ import { execSync } from 'node:child_process';
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync, realpathSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { fetchWorktree } from '../remote.js';
+import { fetchWorktree, getRemoteUrl } from '../remote.js';
 
 function tempDir(prefix: string): string {
   return realpathSync.native(mkdtempSync(join(tmpdir(), prefix)));
@@ -109,6 +109,37 @@ describe('fetchWorktree', { timeout: 20_000 }, () => {
     execSync('git remote add origin https://example.invalid/nope.git', { cwd: dir, stdio: 'ignore' });
 
     await expect(fetchWorktree(dir)).rejects.toThrow(/example\.invalid/);
+
+    rmSync(dir, { recursive: true, force: true });
+  });
+});
+
+describe('getRemoteUrl', () => {
+  it('returns null when there are no remotes', async () => {
+    const dir = tempDir('sg-remoteurl-none-');
+    createRepo(dir);
+
+    expect(await getRemoteUrl(dir)).toBeNull();
+
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  it('returns the fetch URL for "origin" by default', async () => {
+    const dir = tempDir('sg-remoteurl-origin-');
+    createRepo(dir);
+    execSync('git remote add origin https://github.com/acme/widgets.git', { cwd: dir, stdio: 'ignore' });
+
+    expect(await getRemoteUrl(dir)).toBe('https://github.com/acme/widgets.git');
+
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  it('falls back to the first remote when the named one is missing', async () => {
+    const dir = tempDir('sg-remoteurl-fallback-');
+    createRepo(dir);
+    execSync('git remote add upstream https://github.com/acme/widgets.git', { cwd: dir, stdio: 'ignore' });
+
+    expect(await getRemoteUrl(dir)).toBe('https://github.com/acme/widgets.git');
 
     rmSync(dir, { recursive: true, force: true });
   });

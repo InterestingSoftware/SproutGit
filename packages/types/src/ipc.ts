@@ -50,6 +50,10 @@ export const IPC = {
   TERMINAL_CLOSE: 'terminal:close',
   TERMINAL_LIST: 'terminal:list',
   TERMINAL_CLOSE_ALL: 'terminal:closeAll',
+  EVENT_AGENT_SESSION_STATUS: 'event:agentSessionStatus',
+  // ── Notifications ────────────────────────────────────────────────────────
+  NOTIFICATION_SHOW: 'notification:show',
+  EVENT_NOTIFICATION_CLICKED: 'event:notificationClicked',
   // ── Settings ─────────────────────────────────────────────────────────────
   SETTINGS_GET: 'settings:get',
   SETTINGS_SET: 'settings:set',
@@ -72,6 +76,10 @@ export const IPC = {
   CHAT_SET_CONFIG_OPTION: 'chat:setConfigOption',
   EVENT_CHAT_STREAM: 'event:chatStream',
   EVENT_CHAT_EXIT: 'event:chatExit',
+  // ── Session attention (blocked/waiting agent sessions, #140) ──────────────
+  SESSION_ATTENTION_LIST: 'session:attentionList',
+  EVENT_SESSION_ATTENTION_CHANGED: 'event:sessionAttentionChanged',
+  EVENT_SESSION_ATTENTION_REMOVED: 'event:sessionAttentionRemoved',
   // ── Settings tool tests (editor / diff / merge / shell / commit-msg-gen) ──
   TOOLTEST_EDITOR: 'tooltest:editor',
   TOOLTEST_DIFF_TOOL: 'tooltest:diffTool',
@@ -119,6 +127,8 @@ export const IPC = {
   GITHUB_LOGOUT: 'github:logout',
   GITHUB_LIST_EMAILS: 'github:listEmails',
   GITHUB_LIST_REPOS: 'github:listRepos',
+  GITHUB_GET_PR_STATUS: 'github:getPrStatus',
+  GITHUB_CREATE_PR: 'github:createPr',
   // ── File watcher ─────────────────────────────────────────────────────────
   WATCH_START: 'watch:start',
   WATCH_STOP: 'watch:stop',
@@ -171,6 +181,8 @@ export const IPC = {
   MCP_SET_PORT: 'mcp:setPort',
   MCP_WRITE_CLIENT_CONFIG: 'mcp:writeClientConfig',
   MCP_GET_MANUAL_SNIPPET: 'mcp:getManualSnippet',
+  // Fired by main when the report_session_done MCP tool is called, so the renderer can toast it.
+  EVENT_MCP_SESSION_DONE: 'event:mcpSessionDone',
   // ── Global error reporting (main → renderer push events) ──────────────────
   EVENT_GLOBAL_ERROR: 'event:globalError',
 } as const;
@@ -205,8 +217,9 @@ import type {
   HookListResult,
 } from './hooks.js';
 import type { EditorInfo, GitToolInfo, ToolTestResult } from './tools.js';
-import type { GitHubAuthStatus, DeviceCodeResponse, GitHubPollResult, GitHubEmailSuggestion, GitHubRepo } from './github.js';
+import type { GitHubAuthStatus, DeviceCodeResponse, GitHubPollResult, GitHubEmailSuggestion, GitHubRepo, PullRequestStatus, PullRequestInfo } from './github.js';
 import type { TerminalInfo } from './terminal.js';
+import type { SessionAttention } from './attention.js';
 import type { AgentConfig, AcpAdapterStatus } from './agents.js';
 import type { ChatConfigOption } from './chat.js';
 import type { CommitMessageGeneratorSettings, CommitMessageGenerateResult } from './commit-message-generator.js';
@@ -215,6 +228,7 @@ import type { IssueTrackerPattern } from './issuetracker.js';
 import type { ProviderIssue } from './providers.js';
 import type { FileTreeNode, FileReadResult } from './files.js';
 import type { McpClientId, McpServerStatus, McpConfigWriteResult } from './mcp.js';
+import type { ShowAgentNotificationArgs } from './notifications.js';
 
 /** Shape of one row returned by WORKTREE_GET_META / WORKTREE_SET_META. */
 export type WorktreeMetaRow = {
@@ -318,6 +332,8 @@ export type IpcMap = {
   'terminal:closeForPath': { args: [pathPrefix: string];                     result: void };
   'terminal:closeAll': { args: [];                                           result: void };
   'terminal:list':   { args: [];                                             result: TerminalInfo[] };
+  // ── Notifications ─────────────────────────────────────────────────────────
+  'notification:show': { args: [args: ShowAgentNotificationArgs];            result: void };
   // ── Settings ──────────────────────────────────────────────────────────────
   'settings:get':    { args: [key: string];                                  result: string | null };
   'settings:set':    { args: [args: { key: string; value: string }];        result: void };
@@ -336,6 +352,8 @@ export type IpcMap = {
   'chat:stop':              { args: [sessionId: string];                                            result: void };
   'chat:respondPermission': { args: [args: { sessionId: string; requestId: string; optionId: string }]; result: void };
   'chat:setConfigOption':   { args: [args: { sessionId: string; configId: string; value: string | boolean }]; result: ChatConfigOption[] };
+  // ── Session attention ────────────────────────────────────────────────────
+  'session:attentionList':  { args: [];                                                            result: SessionAttention[] };
   // ── Settings tool tests ──────────────────────────────────────────────────
   'tooltest:editor':    { args: [command: string];                                    result: ToolTestResult };
   'tooltest:diffTool':  { args: [command: string];                                    result: ToolTestResult };
@@ -359,6 +377,8 @@ export type IpcMap = {
   'github:logout':          { args: [];                    result: void };
   'github:listEmails':      { args: [];                    result: GitHubEmailSuggestion[] };
   'github:listRepos':       { args: [];                    result: GitHubRepo[] };
+  'github:getPrStatus':     { args: [worktreePath: string]; result: PullRequestStatus | null };
+  'github:createPr':        { args: [args: { worktreePath: string; title: string; body?: string; base: string; draft?: boolean }]; result: PullRequestInfo };
   // ── Watcher ───────────────────────────────────────────────────────────────
   'watch:start': { args: [repoPath: string]; result: void };
   'watch:stop':  { args: [repoPath: string]; result: void };

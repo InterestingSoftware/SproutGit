@@ -17,9 +17,19 @@ import { createHash } from 'node:crypto';
 import type { AddressInfo } from 'node:net';
 import type { BrowserWindow } from 'electron';
 import type { ConfigDb } from '@sproutgit/database';
+import { IPC } from '@sproutgit/types';
 import { createHttpApp, type McpServerContext } from '@sproutgit/mcp-server';
 import { log } from './telemetry.js';
 import { createWorktreeWithHooks, removeWorktreeWithHooks } from './worktree-lifecycle.js';
+import {
+  getEffectiveHooks,
+  createLocalHook,
+  updateLocalHook,
+  deleteLocalHook,
+  toggleLocalHook,
+  runHookForMcp,
+} from './ipc/hooks.js';
+import { listHookRuns } from './ipc/workspace.js';
 
 export type McpServerParams = {
   workspacePath: string;
@@ -103,6 +113,34 @@ export async function startMcpServer(
         initiatingWorktreePath: null,
       }, getWindow, configDb);
     },
+    // Purely a UI notification — pushed straight to the renderer, nothing to
+    // persist. Silently a no-op if the workspace's window isn't open (e.g.
+    // it was closed after an agent started working), same as other
+    // best-effort main→renderer pushes in this codebase.
+    reportSessionDone: async args => {
+      const win = getWindow();
+      if (win && !win.isDestroyed()) {
+        win.webContents.send(IPC.EVENT_MCP_SESSION_DONE, { worktreePath: args.worktreePath, summary: args.summary });
+      }
+    },
+
+    // Hooks — read tools always run; local-hook writes and run_hook are
+    // gated by mutatingToolsEnabled() in tools.ts, same as create/remove
+    // worktree above. There is deliberately no trust-granting function
+    // anywhere in this context — repo hooks stay read-only and untrusted
+    // ones simply refuse to run (see runHookForMcp).
+    listHooks: worktreePath => getEffectiveHooks(params.workspacePath, worktreePath, configDb),
+    listHookRuns: (worktreePath, limit) => listHookRuns(params.workspacePath, worktreePath, limit),
+    createLocalHook: input => createLocalHook({ workspacePath: params.workspacePath, ...input }),
+    updateLocalHook: (id, input) => updateLocalHook({ workspacePath: params.workspacePath, id, ...input }),
+    deleteLocalHook: id => deleteLocalHook({ workspacePath: params.workspacePath, id }),
+    toggleLocalHook: (id, enabled) => toggleLocalHook({ workspacePath: params.workspacePath, id, enabled }),
+    runHook: args => runHookForMcp({
+      workspacePath: params.workspacePath,
+      hookId: args.hookId,
+      worktreePath: args.worktreePath,
+      initiatingWorktreePath: args.initiatingWorktreePath ?? null,
+    }, getWindow(), configDb),
   };
 
   const app = createHttpApp(context, params.token);

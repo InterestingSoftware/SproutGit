@@ -65,6 +65,18 @@ export async function pushWorktreeBranch(
 }
 
 /**
+ * Returns the fetch URL for a named remote (defaults to "origin"), or null
+ * if the worktree has no remotes / the named remote doesn't exist. Falls
+ * back to the first configured remote when the named one is missing.
+ */
+export async function getRemoteUrl(worktreePath: string, remoteName = 'origin'): Promise<string | null> {
+  const git = gitForPath(worktreePath);
+  const remotes = await git.getRemotes(true);
+  const remote = remotes.find(r => r.name === remoteName) ?? remotes[0];
+  return remote?.refs.fetch ?? null;
+}
+
+/**
  * Returns a summary of the push state for the current branch:
  * whether it has an upstream, which remotes are available, etc.
  */

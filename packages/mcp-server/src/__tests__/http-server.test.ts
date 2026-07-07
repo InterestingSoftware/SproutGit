@@ -80,6 +80,14 @@ describe('createHttpApp', () => {
       // the type.
       createWorktree: () => { throw new Error('not implemented in this test'); },
       removeWorktree: () => { throw new Error('not implemented in this test'); },
+      reportSessionDone: () => { throw new Error('not implemented in this test'); },
+      listHooks: () => { throw new Error('not implemented in this test'); },
+      listHookRuns: () => { throw new Error('not implemented in this test'); },
+      createLocalHook: () => { throw new Error('not implemented in this test'); },
+      updateLocalHook: () => { throw new Error('not implemented in this test'); },
+      deleteLocalHook: () => { throw new Error('not implemented in this test'); },
+      toggleLocalHook: () => { throw new Error('not implemented in this test'); },
+      runHook: () => { throw new Error('not implemented in this test'); },
     };
     const app = createHttpApp(context, TOKEN);
     server = createServer(app);
@@ -180,7 +188,10 @@ describe('createHttpApp', () => {
     const listBody = parseJsonRpcBody(await listTools.text()) as { result: { tools: Array<{ name: string }> } };
     const names = listBody.result.tools.map(t => t.name);
     expect(names).toEqual(expect.arrayContaining([
-      'list_worktrees', 'get_worktree_status', 'get_workspace_info', 'create_worktree', 'remove_worktree',
+      'list_worktrees', 'get_worktree_status', 'get_worktree_diff', 'get_workspace_info',
+      'report_session_done', 'create_worktree', 'remove_worktree',
+      'list_hooks', 'list_hook_runs', 'create_local_hook', 'update_local_hook', 'delete_local_hook',
+      'toggle_local_hook', 'run_hook',
     ]));
   });
 });

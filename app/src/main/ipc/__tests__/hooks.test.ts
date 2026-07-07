@@ -8,10 +8,18 @@ vi.mock('../../telemetry.js', () => ({ log: { error: vi.fn(), info: vi.fn(), war
 
 import { openConfigDb, openWorkspaceDb, type ConfigDb } from '@sproutgit/database';
 import { hookDefinitions, hookDependencies } from '@sproutgit/database/schema/workspace';
-import { getEffectiveHooks } from '../hooks.js';
+import {
+  getEffectiveHooks,
+  createLocalHook,
+  updateLocalHook,
+  deleteLocalHook,
+  toggleLocalHook,
+  runHookForMcp,
+} from '../hooks.js';
 import { writeLocalHooksFile, localHooksFilePath, repoHooksFilePath, hashHookDefinition, readHooksFile } from '../../hooks-file.js';
-import { trustHook } from '../../hooks-trust.js';
+import { trustHook, isHookTrusted } from '../../hooks-trust.js';
 import type { HookFileDefinition } from '@sproutgit/types';
+import type { BrowserWindow } from 'electron';
 
 function workspaceDbPath(workspacePath: string): string {
   return join(workspacePath, '.sproutgit', 'state.db');
@@ -156,5 +164,166 @@ describe('getEffectiveHooks', () => {
     const result = getEffectiveHooks(workspacePath, null, configDb);
     expect(result.repoFileError).toBeNull();
     expect(result.hooks).toEqual([]);
+  });
+});
+
+/** Matches the shape createLocalHook/updateLocalHook expect — a fresh object per call since dependsOn/name get mutated by individual tests. */
+function localHookInput(overrides: { workspacePath: string } & Partial<Parameters<typeof createLocalHook>[0]>): Parameters<typeof createLocalHook>[0] {
+  return {
+    name: 'Install deps', scope: 'worktree', trigger: 'after_worktree_create',
+    executionTarget: 'trigger_worktree', shell: 'bash', script: 'pnpm install',
+    enabled: true, critical: false, switchOncePerSession: false, switchRunOnCreate: true,
+    switchRunOnDelete: false, keepOpenOnCompletion: false, timeoutSeconds: 60, dependsOn: [],
+    ...overrides,
+  };
+}
+
+describe('local hook CRUD — reused as-is by the MCP write tools (see mcp-bridge.ts)', () => {
+  let workspacePath: string;
+
+  beforeEach(() => {
+    workspacePath = mkdtempSync(join(tmpdir(), 'sg-hooks-crud-test-'));
+  });
+
+  afterEach(() => {
+    rmSync(workspacePath, { recursive: true, force: true });
+  });
+
+  it('createLocalHook adds a hook to local-hooks.json', () => {
+    createLocalHook(localHookInput({ workspacePath }));
+    const { hooks } = readHooksFile(localHooksFilePath(workspacePath));
+    expect(hooks).toHaveLength(1);
+    expect(hooks[0]?.name).toBe('Install deps');
+  });
+
+  it('createLocalHook rejects a duplicate local hook name', () => {
+    createLocalHook(localHookInput({ workspacePath }));
+    expect(() => createLocalHook(localHookInput({ workspacePath }))).toThrow(/already exists/);
+  });
+
+  it('createLocalHook rejects a dependsOn referencing an unknown hook', () => {
+    expect(() => createLocalHook(localHookInput({ workspacePath, dependsOn: ['does-not-exist'] })))
+      .toThrow(/unknown local hook/);
+    // The rejected hook must never have been written — otherwise it would
+    // corrupt local-hooks.json and disable every local hook on next read.
+    const { hooks } = readHooksFile(localHooksFilePath(workspacePath));
+    expect(hooks).toHaveLength(0);
+  });
+
+  it('createLocalHook rejects a hook that depends on itself', () => {
+    expect(() => createLocalHook(localHookInput({ workspacePath, name: 'a', dependsOn: ['a'] })))
+      .toThrow(/cannot depend on itself/);
+  });
+
+  it('updateLocalHook renames a hook and cascades the rename into other hooks\' dependsOn', () => {
+    createLocalHook(localHookInput({ workspacePath, name: 'a' }));
+    createLocalHook(localHookInput({ workspacePath, name: 'b', dependsOn: ['a'] }));
+    updateLocalHook({ workspacePath, id: 'local:a', name: 'a-renamed' });
+    const { hooks } = readHooksFile(localHooksFilePath(workspacePath));
+    expect(hooks.find(h => h.name === 'b')?.dependsOn).toEqual(['a-renamed']);
+  });
+
+  it('updateLocalHook rejects a dependsOn referencing an unknown hook, leaving the file untouched', () => {
+    createLocalHook(localHookInput({ workspacePath, name: 'a' }));
+    expect(() => updateLocalHook({ workspacePath, id: 'local:a', dependsOn: ['does-not-exist'] }))
+      .toThrow(/unknown local hook/);
+    const { hooks } = readHooksFile(localHooksFilePath(workspacePath));
+    expect(hooks.find(h => h.name === 'a')?.dependsOn).toEqual([]);
+  });
+
+  it('updateLocalHook rejects a rename that would make dependsOn reference itself', () => {
+    createLocalHook(localHookInput({ workspacePath, name: 'a', dependsOn: [] }));
+    createLocalHook(localHookInput({ workspacePath, name: 'b', dependsOn: ['a'] }));
+    // Renaming "a" to "b" while "b" already depends on the name "a" would
+    // leave "b" depending on itself post-rename.
+    expect(() => updateLocalHook({ workspacePath, id: 'local:b', dependsOn: ['b'] }))
+      .toThrow(/cannot depend on itself/);
+  });
+
+  it('updateLocalHook is a no-op for a repo hook id — repo hooks stay read-only', () => {
+    createLocalHook(localHookInput({ workspacePath }));
+    updateLocalHook({ workspacePath, id: 'repo:Install deps', enabled: false });
+    const { hooks } = readHooksFile(localHooksFilePath(workspacePath));
+    expect(hooks[0]?.enabled).toBe(true);
+  });
+
+  it('deleteLocalHook removes the hook and clears dangling dependsOn references', () => {
+    createLocalHook(localHookInput({ workspacePath, name: 'a' }));
+    createLocalHook(localHookInput({ workspacePath, name: 'b', dependsOn: ['a'] }));
+    deleteLocalHook({ workspacePath, id: 'local:a' });
+    const { hooks } = readHooksFile(localHooksFilePath(workspacePath));
+    expect(hooks.map(h => h.name)).toEqual(['b']);
+    expect(hooks[0]?.dependsOn).toEqual([]);
+  });
+
+  it('deleteLocalHook is a no-op for a repo hook id', () => {
+    createLocalHook(localHookInput({ workspacePath }));
+    deleteLocalHook({ workspacePath, id: 'repo:Install deps' });
+    const { hooks } = readHooksFile(localHooksFilePath(workspacePath));
+    expect(hooks).toHaveLength(1);
+  });
+
+  it('toggleLocalHook flips enabled for a local hook', () => {
+    createLocalHook(localHookInput({ workspacePath }));
+    toggleLocalHook({ workspacePath, id: 'local:Install deps', enabled: false });
+    const { hooks } = readHooksFile(localHooksFilePath(workspacePath));
+    expect(hooks[0]?.enabled).toBe(false);
+  });
+});
+
+describe('runHookForMcp — the run_hook tool boundary (no trust granting, no bypass)', () => {
+  let workspacePath: string;
+  let worktreePath: string;
+  let configDb: ConfigDb;
+  const fakeWin = { webContents: { send: () => { /* no-op */ } } } as unknown as BrowserWindow;
+
+  beforeEach(() => {
+    workspacePath = mkdtempSync(join(tmpdir(), 'sg-hooks-run-test-'));
+    worktreePath = mkdtempSync(join(tmpdir(), 'sg-hooks-run-worktree-'));
+    configDb = openConfigDb(join(workspacePath, 'config.db'));
+  });
+
+  afterEach(() => {
+    configDb.close();
+    rmSync(workspacePath, { recursive: true, force: true });
+    rmSync(worktreePath, { recursive: true, force: true });
+  });
+
+  it('refuses to run an untrusted repo hook, and grants it no trust as a side effect', async () => {
+    writeFileSync(repoHooksFilePath(worktreePath), JSON.stringify({
+      version: 1,
+      hooks: [{ name: 'Repo hook', trigger: 'manual', executionTarget: 'trigger_worktree', shell: 'bash', script: 'echo pwned' }],
+    }));
+    const { hooks: repoDefs } = readHooksFile(repoHooksFilePath(worktreePath));
+    const hash = hashHookDefinition(repoDefs[0]!);
+    expect(isHookTrusted(configDb, worktreePath, hash)).toBe(false);
+
+    const result = await runHookForMcp({ workspacePath, hookId: 'repo:Repo hook', worktreePath }, fakeWin, configDb);
+
+    expect(result.status).toBe('not_run');
+    expect(result.errorMessage).toMatch(/untrusted/i);
+    // The whole point of this test: calling run_hook must never have the
+    // side effect of trusting the hook it refused to run.
+    expect(isHookTrusted(configDb, worktreePath, hash)).toBe(false);
+  });
+
+  it('refuses to run a disabled local hook', async () => {
+    createLocalHook(localHookInput({ workspacePath, name: 'Off hook', enabled: false, trigger: 'manual' }));
+    const result = await runHookForMcp({ workspacePath, hookId: 'local:Off hook', worktreePath }, fakeWin, configDb);
+    expect(result.status).toBe('not_run');
+    expect(result.errorMessage).toMatch(/disabled/i);
+  });
+
+  it('reports not_run with a clear message for an unknown hookId', async () => {
+    const result = await runHookForMcp({ workspacePath, hookId: 'local:does-not-exist', worktreePath }, fakeWin, configDb);
+    expect(result.status).toBe('not_run');
+    expect(result.errorMessage).toMatch(/no hook/i);
+  });
+
+  it('reports not_run when no workspace window is open, rather than throwing', async () => {
+    createLocalHook(localHookInput({ workspacePath, name: 'Trusted hook', trigger: 'manual' }));
+    const result = await runHookForMcp({ workspacePath, hookId: 'local:Trusted hook', worktreePath }, null, configDb);
+    expect(result.status).toBe('not_run');
+    expect(result.errorMessage).toMatch(/no open window/i);
   });
 });

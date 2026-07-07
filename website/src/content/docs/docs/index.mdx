@@ -1,0 +1,54 @@
+---
+title: SproutGit Docs
+description: Documentation for SproutGit, the worktree-first Git desktop app.
+template: splash
+hero:
+  tagline: A worktree-first Git desktop app for humans and AI coding agents working in parallel.
+  actions:
+    - text: Get started
+      link: /docs/getting-started/installation/
+      icon: right-arrow
+      variant: primary
+    - text: View on GitHub
+      link: https://github.com/InterestingSoftware/SproutGit
+      icon: external
+      variant: minimal
+---
+
+import { Card, CardGrid } from '@astrojs/starlight/components';
+
+SproutGit gives every piece of work — yours or an AI agent's — its own real
+working directory on disk, backed by [git worktrees](https://git-scm.com/docs/git-worktree),
+instead of forcing everything through one checked-out branch. That means no
+stashing, no context-switching, and no agents fighting over the same files.
+
+<CardGrid stagger>
+	<Card title="Getting Started" icon="rocket">
+		Install SproutGit and open your first workspace.
+
+		[Installation](/docs/getting-started/installation/) ·
+		[Your first workspace](/docs/getting-started/first-workspace/)
+	</Card>
+	<Card title="Concepts" icon="puzzle">
+		Understand the worktree-first workflow, how a workspace is laid out on
+		disk, and how hooks are trusted.
+
+		[Worktree-first workflow](/docs/concepts/worktree-workflow/) ·
+		[Workspace layout](/docs/concepts/workspace-layout/) ·
+		[Hooks & trust](/docs/concepts/hooks-and-trust/)
+	</Card>
+	<Card title="Guides" icon="open-book">
+		Set up a coding agent, write your own hooks, or connect an MCP client.
+
+		[Coding agents](/docs/guides/coding-agents/) ·
+		[Writing hooks](/docs/guides/writing-hooks/) ·
+		[MCP server](/docs/guides/mcp-server/)
+	</Card>
+	<Card title="Reference" icon="setting">
+		Look up what each Settings panel section does, or troubleshoot a
+		specific problem.
+
+		[Settings panel](/docs/reference/settings/) ·
+		[Troubleshooting](/docs/reference/troubleshooting/)
+	</Card>
+</CardGrid>
