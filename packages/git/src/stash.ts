@@ -5,10 +5,15 @@ import { gitForPath } from './client.js';
  * Creates a stash of the current working-tree + index state.
  * Uses `stash push` (not the deprecated `stash save`) so an optional
  * message can be attached without relying on positional-arg parsing.
+ * Includes untracked files (`-u`) — the UI's "changes to stash" check counts
+ * untracked files too, so without `-u` a stash of an untracked-only change
+ * would silently no-op ("No local changes to save") while still reporting
+ * success.
  */
 export async function createStash(worktreePath: string, message?: string): Promise<void> {
   const git = gitForPath(worktreePath);
-  await git.stash(message ? ['push', '-m', message] : ['push']);
+  const args = message ? ['push', '-u', '-m', message] : ['push', '-u'];
+  await git.stash(args);
 }
 
 /**

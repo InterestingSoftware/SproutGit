@@ -1,9 +1,18 @@
 import { gitForPath } from './client.js';
 
-/** Thrown when a cherry-pick stops due to conflicts and is rolled back. */
+/**
+ * Thrown when a cherry-pick stops due to conflicts. `abortFailed` reflects
+ * whether `git cherry-pick --abort` itself succeeded — if it didn't, the
+ * worktree may still be mid-cherry-pick and needs manual attention, so the
+ * message must not claim a clean rollback happened.
+ */
 export class CherryPickConflictError extends Error {
-  constructor(public readonly sha: string) {
-    super(`Cherry-pick of ${sha.slice(0, 7)} stopped due to conflicts and was rolled back.`);
+  constructor(public readonly sha: string, public readonly abortFailed = false) {
+    super(
+      abortFailed
+        ? `Cherry-pick of ${sha.slice(0, 7)} stopped due to conflicts, and the automatic rollback failed. Run "git cherry-pick --abort" manually to restore a clean state.`
+        : `Cherry-pick of ${sha.slice(0, 7)} stopped due to conflicts and was rolled back.`
+    );
     this.name = 'CherryPickConflictError';
   }
 }
@@ -24,14 +33,13 @@ export async function cherryPickCommit(worktreePath: string, sha: string): Promi
   } catch (error) {
     if (!isCherryPickConflict(error)) throw error;
 
+    let abortFailed = false;
     try {
       await git.raw(['cherry-pick', '--abort']);
     } catch {
-      // Best-effort: if abort itself fails, surface the original conflict
-      // error below rather than the abort failure — the worktree may need
-      // manual attention either way, but the conflict is the actionable part.
+      abortFailed = true;
     }
-    throw new CherryPickConflictError(sha);
+    throw new CherryPickConflictError(sha, abortFailed);
   }
 }
 

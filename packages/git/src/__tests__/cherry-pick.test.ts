@@ -64,7 +64,10 @@ describe('cherryPickCommit', () => {
     execSync('git add .', { cwd: repoPath, stdio: 'ignore' });
     execSync('git commit -m "main change"', { cwd: repoPath, stdio: 'ignore' });
 
-    await expect(cherryPickCommit(repoPath, featureSha)).rejects.toThrow(CherryPickConflictError);
+    const error = await cherryPickCommit(repoPath, featureSha).catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(CherryPickConflictError);
+    expect((error as CherryPickConflictError).abortFailed).toBe(false);
+    expect((error as CherryPickConflictError).message).toContain('was rolled back');
 
     // The cherry-pick must be fully rolled back — no in-progress state, no
     // conflict markers left behind, working tree clean.

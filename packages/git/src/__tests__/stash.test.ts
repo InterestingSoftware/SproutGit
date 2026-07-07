@@ -103,6 +103,22 @@ describe('stash', () => {
     expect(content).not.toContain('dropped');
   });
 
+  it('includes untracked files in the stash (not just tracked modifications)', async () => {
+    writeFileSync(join(repoPath, 'untracked.txt'), 'new file\n');
+
+    await createStash(repoPath, 'untracked file');
+
+    const status = execSync('git status --porcelain', { cwd: repoPath }).toString();
+    expect(status.trim()).toBe('');
+
+    const result = await listStashes(repoPath);
+    expect(result.stashes).toHaveLength(1);
+
+    await popStash(repoPath, 'stash@{0}');
+    const content = execSync('cat untracked.txt', { cwd: repoPath }).toString();
+    expect(content).toBe('new file\n');
+  });
+
   it('lists multiple stashes newest first, matching stash@{N} refs', async () => {
     writeFileSync(join(repoPath, 'README.md'), '# Test Repo\nfirst\n');
     await createStash(repoPath, 'first stash');
