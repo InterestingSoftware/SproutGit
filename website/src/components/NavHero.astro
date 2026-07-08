@@ -112,12 +112,6 @@ const RELEASES_PAGE = `${GITHUB}/releases/latest`;
           <span class="download-links-label" data-download-status>Loading latest release…</span>
           <a href={GITHUB} target="_blank" rel="noopener noreferrer">GitHub</a>
           <a href={RELEASES_PAGE} target="_blank" rel="noopener noreferrer">All releases</a>
-          <a href={RELEASES_PAGE} target="_blank" rel="noopener noreferrer" data-inline-platform-link="macos-arm64">Mac (Apple Silicon)</a>
-          <a href={RELEASES_PAGE} target="_blank" rel="noopener noreferrer" data-inline-platform-link="macos-x64">Mac (Intel)</a>
-          <a href={RELEASES_PAGE} target="_blank" rel="noopener noreferrer" data-inline-platform-link="windows-x64">Windows</a>
-          <a href={RELEASES_PAGE} target="_blank" rel="noopener noreferrer" data-inline-platform-link="windows-arm64">Windows (ARM64)</a>
-          <a href={RELEASES_PAGE} target="_blank" rel="noopener noreferrer" data-inline-platform-link="linux-x64">Linux</a>
-          <a href={RELEASES_PAGE} target="_blank" rel="noopener noreferrer" data-inline-platform-link="linux-arm64">Linux (ARM64)</a>
         </div>
       </div>
 
@@ -288,10 +282,8 @@ const RELEASES_PAGE = `${GITHUB}/releases/latest`;
     ]);
 
     const menuLinks = {};
-    const inlineLinks = {};
     for (const key of platformKeys) {
       menuLinks[key] = root.querySelector(`[data-platform-link="${key}"]`);
-      inlineLinks[key] = root.querySelector(`[data-inline-platform-link="${key}"]`);
     }
 
     const detectOS = () => {
@@ -410,7 +402,6 @@ const RELEASES_PAGE = `${GITHUB}/releases/latest`;
     const syncLinks = () => {
       for (const key of platformKeys) {
         if (menuLinks[key] instanceof HTMLAnchorElement) menuLinks[key].href = links[key];
-        if (inlineLinks[key] instanceof HTMLAnchorElement) inlineLinks[key].href = links[key];
       }
 
       if (macDownloadLink instanceof HTMLAnchorElement) {
