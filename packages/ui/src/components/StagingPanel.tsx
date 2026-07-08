@@ -270,11 +270,28 @@ export function StagingPanel({
 
   /** Renders the currently loaded diff as per-hunk sections with stage/unstage controls. */
   function renderDiffHunks(raw: string) {
-    const parsed = parseFileDiff(raw);
-    if (!parsed || parsed.hunks.length === 0) {
+    if (!raw.trim()) {
       return <span className="sg-diff-empty">No changes</span>;
     }
+    const parsed = parseFileDiff(raw);
+    if (!parsed || parsed.hunks.length === 0) {
+      // Binary diffs, mode-only changes, and renames without content changes
+      // have no hunks to stage — show the raw header lines rather than
+      // claiming there's nothing here, which would hide a real diff.
+      const lines = (parsed?.headerLines ?? raw.split('\n')).filter(Boolean);
+      return lines.map((line, idx) => <div key={idx} className="sg-diff-meta">{line}</div>);
+    }
     const lang = languageForPath(diffFile);
+
+    // Disabling only the specific hunk's own button lets a second click land
+    // on a different hunk while the first mutation is still in flight —
+    // React Query's `variables` only tracks the latest call, so the two
+    // requests can race and leave the staged/unstaged panes out of sync with
+    // their spinners. Disable every stage (or unstage) button while any
+    // mutation of that kind is pending; the spinner still only shows on the
+    // hunk actually being mutated.
+    const anyStagePending = stageHunkMutation.isPending;
+    const anyUnstagePending = unstageHunkMutation.isPending;
 
     return parsed.hunks.map((hunk, hunkIndex) => {
       const deselected = deselectedLines.get(hunkIndex) ?? new Set<number>();
@@ -284,8 +301,8 @@ export function StagingPanel({
       const isPartial = selectedIdx.length > 0 && selectedIdx.length < selectableIdx.length;
       const nothingSelected = selectedIdx.length === 0;
 
-      const stagePending = stageHunkMutation.isPending && stageHunkMutation.variables?.hunkIndex === hunkIndex;
-      const unstagePending = unstageHunkMutation.isPending && unstageHunkMutation.variables?.hunkIndex === hunkIndex;
+      const isThisStagePending = anyStagePending && stageHunkMutation.variables?.hunkIndex === hunkIndex;
+      const isThisUnstagePending = anyUnstagePending && unstageHunkMutation.variables?.hunkIndex === hunkIndex;
 
       function runStage() {
         stageHunkMutation.mutate(isPartial ? { hunkIndex, lineIndices: selectedIdx } : { hunkIndex });
@@ -305,10 +322,10 @@ export function StagingPanel({
                   data-hunk-index={hunkIndex}
                   className="sg-unstage-hunk-btn inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-medium bg-(--sg-surface) border border-(--sg-border) text-(--sg-text-dim) hover:bg-(--sg-surface-raised) hover:text-(--sg-text) disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
                   onClick={runUnstage}
-                  disabled={unstagePending || nothingSelected}
+                  disabled={anyUnstagePending || nothingSelected}
                   title={isPartial ? 'Unstage selected lines' : 'Unstage hunk'}
                 >
-                  {unstagePending ? <Spinner size="sm" /> : <Minus size={11} />}
+                  {isThisUnstagePending ? <Spinner size="sm" /> : <Minus size={11} />}
                   {isPartial ? 'Unstage selected' : 'Unstage hunk'}
                 </button>
               ) : (
@@ -317,10 +334,10 @@ export function StagingPanel({
                   data-hunk-index={hunkIndex}
                   className="sg-stage-hunk-btn inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-medium bg-(--sg-surface) border border-(--sg-border) text-(--sg-text-dim) hover:bg-(--sg-surface-raised) hover:text-(--sg-text) disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
                   onClick={runStage}
-                  disabled={stagePending || nothingSelected}
+                  disabled={anyStagePending || nothingSelected}
                   title={isPartial ? 'Stage selected lines' : 'Stage hunk'}
                 >
-                  {stagePending ? <Spinner size="sm" /> : <Plus size={11} />}
+                  {isThisStagePending ? <Spinner size="sm" /> : <Plus size={11} />}
                   {isPartial ? 'Stage selected' : 'Stage hunk'}
                 </button>
               )}
@@ -346,6 +363,7 @@ export function StagingPanel({
                   data-line-index={idx}
                   checked={!deselected.has(idx)}
                   onChange={() => toggleLineSelection(hunkIndex, idx)}
+                  aria-label={`${isAdd ? 'Added' : 'Removed'} line in hunk ${hunkIndex + 1}: ${line.content}`}
                 />
                 <span style={{ whiteSpace: 'pre' }} dangerouslySetInnerHTML={{ __html: `${isAdd ? '+' : '-'}${highlightCode(line.content, lang)}` }} />
               </div>
