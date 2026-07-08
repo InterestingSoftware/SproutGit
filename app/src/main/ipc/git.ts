@@ -1,9 +1,9 @@
 import { existsSync } from 'node:fs';
 import { BrowserWindow } from 'electron';
-import { IPC } from '@sproutgit/types';
+import { IPC, type WorktreeDeleteResult } from '@sproutgit/types';
 import type { ConfigDb } from '@sproutgit/database';
 import { getGitInfo, isBareRepoPath } from '@sproutgit/git';
-import { listWorktrees } from '@sproutgit/git/worktrees';
+import { listWorktrees, restoreDeletedWorktree } from '@sproutgit/git/worktrees';
 import { getCommitGraph, countCommits, listRefs } from '@sproutgit/git/commits';
 import {
   getWorktreeStatus,
@@ -15,6 +15,8 @@ import {
 } from '@sproutgit/git/staging';
 import { fetchWorktree, pullWorktree, pushWorktreeBranch, getWorktreePushStatus } from '@sproutgit/git/remote';
 import { getDiffFiles, getDiffContent, getWorkingDiff } from '@sproutgit/git/diff';
+import { createStash, listStashes, applyStash, popStash, dropStash } from '@sproutgit/git/stash';
+import { cherryPickCommit } from '@sproutgit/git/cherry-pick';
 import { handle } from './handle.js';
 import { createWorktreeWithHooks, removeWorktreeWithHooks } from '../worktree-lifecycle.js';
 
@@ -73,7 +75,14 @@ export function registerGitHandlers(configDb: ConfigDb): void {
     initiatingWorktreePath?: string | null;
     afterRemoveWorktreePath?: string | null;
   }) => {
-    await removeWorktreeWithHooks(args, () => BrowserWindow.fromWebContents(_e.sender), configDb);
+    return removeWorktreeWithHooks(args, () => BrowserWindow.fromWebContents(_e.sender), configDb);
+  });
+
+  // Reverses a WORKTREE_DELETE within the toast's undo window — see
+  // restoreDeletedWorktree's doc comment for why this is a direct restore
+  // rather than routed back through the create lifecycle/hooks.
+  handle(IPC.WORKTREE_RESTORE, async (_e, args: { rootRepoPath: string; deleted: WorktreeDeleteResult; managedWorktreesPath?: string }) => {
+    await restoreDeletedWorktree(args.rootRepoPath, args.deleted, args.managedWorktreesPath);
   });
 
   // ── commits ───────────────────────────────────────────────────────────────
@@ -183,5 +192,37 @@ export function registerGitHandlers(configDb: ConfigDb): void {
     assertWorkingTreePath(args.worktreePath);
     const result = await getWorkingDiff(args.worktreePath, args.file);
     return result.diff;
+  });
+
+  // ── stash ─────────────────────────────────────────────────────────────────
+  handle(IPC.GIT_STASH_CREATE, async (_e, args: { worktreePath: string; message?: string }) => {
+    assertWorkingTreePath(args.worktreePath);
+    return createStash(args.worktreePath, args.message);
+  });
+
+  handle(IPC.GIT_STASH_LIST, async (_e, worktreePath: string) => {
+    assertWorkingTreePath(worktreePath);
+    return listStashes(worktreePath);
+  });
+
+  handle(IPC.GIT_STASH_APPLY, async (_e, args: { worktreePath: string; ref: string }) => {
+    assertWorkingTreePath(args.worktreePath);
+    return applyStash(args.worktreePath, args.ref);
+  });
+
+  handle(IPC.GIT_STASH_POP, async (_e, args: { worktreePath: string; ref: string }) => {
+    assertWorkingTreePath(args.worktreePath);
+    return popStash(args.worktreePath, args.ref);
+  });
+
+  handle(IPC.GIT_STASH_DROP, async (_e, args: { worktreePath: string; ref: string }) => {
+    assertWorkingTreePath(args.worktreePath);
+    return dropStash(args.worktreePath, args.ref);
+  });
+
+  // ── cherry-pick ───────────────────────────────────────────────────────────
+  handle(IPC.GIT_CHERRY_PICK, async (_e, args: { worktreePath: string; sha: string }) => {
+    assertWorkingTreePath(args.worktreePath);
+    return cherryPickCommit(args.worktreePath, args.sha);
   });
 }

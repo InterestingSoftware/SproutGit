@@ -6,6 +6,7 @@ export {
   createFirstManagedWorktree,
   addWorktreeForExistingBranch,
   deleteManagedWorktree,
+  restoreDeletedWorktree,
 } from './worktrees.js';
 export { getCommitGraph, countCommits, listRefs, getRecentCommitSubjects } from './commits.js';
 export {
@@ -21,6 +22,7 @@ export {
   pullWorktree,
   pushWorktreeBranch,
   getWorktreePushStatus,
+  getRemoteUrl,
 } from './remote.js';
 export { getDiffFiles, getDiffContent, getWorkingDiff, getStagedDiff } from './diff.js';
 export { initBareRepo, cloneBareRepo } from './init.js';
@@ -31,5 +33,7 @@ export {
   ConversionRollbackFailedError,
 } from './convert.js';
 export { isBareRepoPath } from './bare.js';
+export { createStash, listStashes, applyStash, popStash, dropStash } from './stash.js';
+export { cherryPickCommit, CherryPickConflictError } from './cherry-pick.js';
 export { readIssueTrackerFile } from './issuetracker.js';
 export { waitForIdleRepo } from './pending-ops.js';

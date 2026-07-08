@@ -10,11 +10,17 @@ import type {
   DiffFileEntry,
   WorktreePushStatus,
   FetchSummary,
+  StashListResult,
   DeviceCodeResponse,
   GitHubPollResult,
   GitHubAuthStatus,
   GitHubEmailSuggestion,
   GitHubRepo,
+  PullRequestStatus,
+  PullRequestInfo,
+  CheckFailureDetail,
+  MergeMethod,
+  MergePullRequestResult,
   EditorInfo,
   GitToolInfo,
   WorkspaceInitResult,
@@ -33,8 +39,10 @@ import type {
   NestedRepoSyncRule,
   RecentWorkspace,
   CreateWorktreeResult,
+  WorktreeDeleteResult,
   WorktreeSwitchHookSource,
-  AgentConfig,
+  AgentRoster,
+  AgentTestInput,
   AgentTerminalLaunchEvent,
   AcpAdapterStatus,
   AcpAdapterInstallEvent,
@@ -52,8 +60,16 @@ import type {
   McpClientId,
   McpServerStatus,
   McpConfigWriteResult,
+  McpSessionDoneEvent,
   GlobalErrorEvent,
   ProjectIdeaGenerateResult,
+  AiProviderConfig,
+  AiProviderStatus,
+  AiProviderCatalog,
+  SessionAttention,
+  AgentSessionStatusEvent,
+  ShowAgentNotificationArgs,
+  NotificationClickedEvent,
 } from '@sproutgit/types';
 
 /**
@@ -75,6 +91,13 @@ function invoke<K extends keyof IpcMap>(
  * to Node.js or the Electron internals.
  */
 const api = {
+  // ── Environment ───────────────────────────────────────────────────────────
+  // Static (not IPC) — preload has direct Node access even under context
+  // isolation, so this reads argv locally instead of round-tripping to main.
+  // Lets renderer-only behavior (e.g. the onboarding tour) opt out of
+  // WebdriverIO's shared, long-lived session without a dedicated IPC channel.
+  isE2E: process.argv.includes('--sproutgit-e2e'),
+
   // ── Git info ──────────────────────────────────────────────────────────────
   gitInfo: (): Promise<GitInfo> =>
     invoke(IPC.GIT_INFO),
@@ -112,8 +135,11 @@ const api = {
     branchName?: string | null;
     initiatingWorktreePath?: string | null;
     afterRemoveWorktreePath?: string | null;
-  }): Promise<void> =>
+  }): Promise<WorktreeDeleteResult> =>
     invoke(IPC.WORKTREE_DELETE, args),
+
+  restoreWorktree: (args: { rootRepoPath: string; deleted: WorktreeDeleteResult; managedWorktreesPath?: string }): Promise<void> =>
+    invoke(IPC.WORKTREE_RESTORE, args),
 
   pruneWorktreeMetadata: (args: { workspacePath: string; activeWorktreePaths: string[] }): Promise<void> =>
     invoke(IPC.WORKTREE_PRUNE_METADATA, args),
@@ -174,6 +200,26 @@ const api = {
   getWorkingDiff: (worktreePath: string, file?: string): Promise<string> =>
     invoke(IPC.GIT_WORKING_DIFF, file ? { worktreePath, file } : { worktreePath }),
 
+  // ── Stash ────────────────────────────────────────────────────────────────
+  createStash: (worktreePath: string, message?: string): Promise<void> =>
+    invoke(IPC.GIT_STASH_CREATE, message ? { worktreePath, message } : { worktreePath }),
+
+  listStashes: (worktreePath: string): Promise<StashListResult> =>
+    invoke(IPC.GIT_STASH_LIST, worktreePath),
+
+  applyStash: (worktreePath: string, ref: string): Promise<void> =>
+    invoke(IPC.GIT_STASH_APPLY, { worktreePath, ref }),
+
+  popStash: (worktreePath: string, ref: string): Promise<void> =>
+    invoke(IPC.GIT_STASH_POP, { worktreePath, ref }),
+
+  dropStash: (worktreePath: string, ref: string): Promise<void> =>
+    invoke(IPC.GIT_STASH_DROP, { worktreePath, ref }),
+
+  // ── Cherry-pick ──────────────────────────────────────────────────────────
+  cherryPick: (worktreePath: string, sha: string): Promise<void> =>
+    invoke(IPC.GIT_CHERRY_PICK, { worktreePath, sha }),
+
   // ── Terminal ──────────────────────────────────────────────────────────────
   createTerminal: (args: {
     cwd: string;
@@ -215,6 +261,22 @@ const api = {
     };
     ipcRenderer.on(IPC.TERMINAL_EXIT, handler);
     return () => ipcRenderer.off(IPC.TERMINAL_EXIT, handler);
+  },
+
+  onAgentSessionStatus: (callback: (event: AgentSessionStatusEvent) => void) => {
+    const handler = (_e: Electron.IpcRendererEvent, payload: AgentSessionStatusEvent) => callback(payload);
+    ipcRenderer.on(IPC.EVENT_AGENT_SESSION_STATUS, handler);
+    return () => ipcRenderer.off(IPC.EVENT_AGENT_SESSION_STATUS, handler);
+  },
+
+  // ── Notifications ─────────────────────────────────────────────────────────
+  showAgentSessionNotification: (args: ShowAgentNotificationArgs): Promise<void> =>
+    invoke(IPC.NOTIFICATION_SHOW, args),
+
+  onNotificationClicked: (callback: (event: NotificationClickedEvent) => void) => {
+    const handler = (_e: Electron.IpcRendererEvent, payload: NotificationClickedEvent) => callback(payload);
+    ipcRenderer.on(IPC.EVENT_NOTIFICATION_CLICKED, handler);
+    return () => ipcRenderer.off(IPC.EVENT_NOTIFICATION_CLICKED, handler);
   },
 
   // ── Workspace / recent ────────────────────────────────────────────────────
@@ -365,23 +427,24 @@ const api = {
   },
 
   // ── Coding agents ─────────────────────────────────────────────────────────
-  getAgentConfig: (): Promise<AgentConfig> =>
-    invoke(IPC.AGENT_GET),
+  getAgentRoster: (): Promise<AgentRoster> =>
+    invoke(IPC.AGENT_ROSTER_GET),
 
-  saveAgentConfig: (config: AgentConfig): Promise<void> =>
-    invoke(IPC.AGENT_SAVE, config),
+  saveAgentRoster: (roster: AgentRoster): Promise<void> =>
+    invoke(IPC.AGENT_ROSTER_SAVE, roster),
 
   launchAgent: (args: {
     workspacePath: string;
     worktreePath: string;
+    agentId?: string;
   }): Promise<string> =>
     invoke(IPC.AGENT_LAUNCH, args),
 
-  testAgent: (): Promise<ToolTestResult> =>
-    invoke(IPC.AGENT_TEST),
+  testAgent: (agent: AgentTestInput): Promise<ToolTestResult> =>
+    invoke(IPC.AGENT_TEST, agent),
 
-  getAcpAdapterStatus: (): Promise<AcpAdapterStatus | null> =>
-    invoke(IPC.AGENT_ACP_ADAPTER_STATUS),
+  getAcpAdapterStatus: (agentId: string): Promise<AcpAdapterStatus | null> =>
+    invoke(IPC.AGENT_ACP_ADAPTER_STATUS, agentId),
 
   installAcpAdapter: (npmPackage: string): Promise<void> =>
     invoke(IPC.AGENT_ACP_ADAPTER_INSTALL, npmPackage),
@@ -398,8 +461,14 @@ const api = {
     return () => ipcRenderer.off(IPC.EVENT_AGENT_TERMINAL_LAUNCH, handler);
   },
 
+  onMcpSessionDone: (callback: (event: McpSessionDoneEvent) => void) => {
+    const handler = (_e: Electron.IpcRendererEvent, payload: McpSessionDoneEvent) => callback(payload);
+    ipcRenderer.on(IPC.EVENT_MCP_SESSION_DONE, handler);
+    return () => ipcRenderer.off(IPC.EVENT_MCP_SESSION_DONE, handler);
+  },
+
   // ── Chat (Integrated agent mode) ─────────────────────────────────────────
-  chatStart: (args: { worktreePath: string; initialPrompt?: string }): Promise<{ sessionId: string; configOptions: ChatConfigOption[] }> =>
+  chatStart: (args: { worktreePath: string; initialPrompt?: string; agentId?: string }): Promise<{ sessionId: string; configOptions: ChatConfigOption[] }> =>
     invoke(IPC.CHAT_START, args),
 
   chatSend: (args: { sessionId: string; prompt: string }): Promise<void> =>
@@ -424,6 +493,22 @@ const api = {
     const handler = (_e: Electron.IpcRendererEvent, payload: ChatSessionExitEvent) => callback(payload);
     ipcRenderer.on(IPC.EVENT_CHAT_EXIT, handler);
     return () => ipcRenderer.off(IPC.EVENT_CHAT_EXIT, handler);
+  },
+
+  // ── Session attention (#140) ──────────────────────────────────────────────
+  listSessionAttention: (): Promise<SessionAttention[]> =>
+    invoke(IPC.SESSION_ATTENTION_LIST),
+
+  onSessionAttentionChanged: (callback: (entry: SessionAttention) => void) => {
+    const handler = (_e: Electron.IpcRendererEvent, payload: SessionAttention) => callback(payload);
+    ipcRenderer.on(IPC.EVENT_SESSION_ATTENTION_CHANGED, handler);
+    return () => ipcRenderer.off(IPC.EVENT_SESSION_ATTENTION_CHANGED, handler);
+  },
+
+  onSessionAttentionRemoved: (callback: (sessionId: string) => void) => {
+    const handler = (_e: Electron.IpcRendererEvent, payload: { sessionId: string }) => callback(payload.sessionId);
+    ipcRenderer.on(IPC.EVENT_SESSION_ATTENTION_REMOVED, handler);
+    return () => ipcRenderer.off(IPC.EVENT_SESSION_ATTENTION_REMOVED, handler);
   },
 
   // ── Commit message generator ──────────────────────────────────────────────
@@ -578,6 +663,21 @@ const api = {
   githubListRepos: (): Promise<GitHubRepo[]> =>
     invoke(IPC.GITHUB_LIST_REPOS),
 
+  githubGetPrStatus: (worktreePath: string): Promise<PullRequestStatus | null> =>
+    invoke(IPC.GITHUB_GET_PR_STATUS, worktreePath),
+
+  githubCreatePr: (args: { worktreePath: string; title: string; body?: string; base: string; draft?: boolean }): Promise<PullRequestInfo> =>
+    invoke(IPC.GITHUB_CREATE_PR, args),
+
+  githubGetCheckFailureDetail: (args: { worktreePath: string; checkId: string }): Promise<CheckFailureDetail | null> =>
+    invoke(IPC.GITHUB_GET_CHECK_FAILURE_DETAIL, args),
+
+  githubSetPrReady: (args: { worktreePath: string; ready: boolean }): Promise<PullRequestInfo> =>
+    invoke(IPC.GITHUB_SET_PR_READY, args),
+
+  githubMergePr: (args: { worktreePath: string; method: MergeMethod }): Promise<MergePullRequestResult> =>
+    invoke(IPC.GITHUB_MERGE_PR, args),
+
   // ── Auto-update ─────────────────────────────────────────────────────────
   checkForUpdates: (): Promise<void> =>
     invoke(IPC.UPDATE_CHECK),
@@ -669,6 +769,28 @@ const api = {
 
   mcpGetManualSnippet: (workspacePath: string, client?: McpClientId): Promise<string> =>
     invoke(IPC.MCP_GET_MANUAL_SNIPPET, client ? { workspacePath, client } : { workspacePath }),
+
+  // ── AI provider registry ──────────────────────────────────────────────────
+  listAiProviders: (): Promise<AiProviderStatus[]> =>
+    invoke(IPC.AI_PROVIDER_LIST),
+
+  upsertAiProvider: (config: AiProviderConfig, apiKey?: string): Promise<AiProviderStatus> =>
+    invoke(IPC.AI_PROVIDER_UPSERT, apiKey !== undefined ? { config, apiKey } : { config }),
+
+  deleteAiProvider: (providerId: string): Promise<void> =>
+    invoke(IPC.AI_PROVIDER_DELETE, providerId),
+
+  clearAiProviderApiKey: (providerId: string): Promise<AiProviderStatus | null> =>
+    invoke(IPC.AI_PROVIDER_CLEAR_API_KEY, providerId),
+
+  getAiProviderCatalog: (providerId: string): Promise<AiProviderCatalog> =>
+    invoke(IPC.AI_PROVIDER_GET_CATALOG, providerId),
+
+  refreshAiProviderCatalog: (providerId: string): Promise<AiProviderCatalog> =>
+    invoke(IPC.AI_PROVIDER_REFRESH_CATALOG, providerId),
+
+  listAllAiProviderCatalogs: (): Promise<AiProviderCatalog[]> =>
+    invoke(IPC.AI_PROVIDER_LIST_ALL_CATALOGS),
 
   // ── Global error reporting ────────────────────────────────────────────────
   onGlobalError: (callback: (event: GlobalErrorEvent) => void) => {

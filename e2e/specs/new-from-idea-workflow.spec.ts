@@ -54,12 +54,15 @@ if (process.env.SPROUTGIT_AGENT) {
 
 async function seedTestAgent(): Promise<void> {
   await browser.executeAsync(
-    (config: unknown, done: (err?: string) => void) => {
-      (window as unknown as { api: { saveAgentConfig: (c: unknown) => Promise<void> } })
-        .api.saveAgentConfig(config)
+    (roster: unknown, done: (err?: string) => void) => {
+      (window as unknown as { api: { saveAgentRoster: (r: unknown) => Promise<void> } })
+        .api.saveAgentRoster(roster)
         .then(() => done(), (e: unknown) => done(String(e)));
     },
-    { command: 'node', args: ['-e', TEST_AGENT_SCRIPT], mode: 'terminal' }
+    {
+      agents: [{ id: 'e2e-test-agent', name: 'E2E Test Agent', command: 'node', args: ['-e', TEST_AGENT_SCRIPT], env: {}, mode: 'terminal', acp: false }],
+      defaultAgentId: 'e2e-test-agent',
+    }
   );
 }
 

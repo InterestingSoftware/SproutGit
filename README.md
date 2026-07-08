@@ -21,6 +21,10 @@
   <a href="#license">License</a>
 </p>
 
+<p align="center">
+  <img src="website/public/demo.gif" width="880" alt="SproutGit demo: creating worktrees, launching parallel agent sessions, reviewing a diff, and merging — all from one window" />
+</p>
+
 ---
 
 > [!NOTE]

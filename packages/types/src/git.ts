@@ -23,6 +23,19 @@ export type WorktreeListResult = {
   worktrees: WorktreeInfo[];
 };
 
+/**
+ * State captured from a worktree removal so it can be undone: the exact
+ * path it lived at, the branch it was on (if any), and — only when that
+ * branch's ref was actually deleted — the SHA it pointed at, since that's
+ * the one piece `git worktree remove`/`git branch -D` don't leave any other
+ * trace of.
+ */
+export type WorktreeDeleteResult = {
+  worktreePath: string;
+  branch: string | null;
+  branchSha: string | null;
+};
+
 export type RefInfo = {
   name: string;
   fullName: string;
@@ -132,4 +145,19 @@ export type GitOpProgressEvent = {
   phase: string;
   message: string;
   percent: number | null;
+};
+
+export type StashEntry = {
+  /** 0-based position in `git stash list` — newest first. */
+  index: number;
+  /** Ref usable with apply/pop/drop, e.g. `stash@{0}`. */
+  ref: string;
+  hash: string;
+  message: string;
+  date: string;
+};
+
+export type StashListResult = {
+  worktreePath: string;
+  stashes: StashEntry[];
 };

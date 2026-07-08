@@ -3,10 +3,16 @@ import { X, CheckCircle2, AlertCircle, Info, Copy, Check } from 'lucide-react';
 
 export type ToastVariant = 'success' | 'error' | 'info';
 
+export type ToastAction = {
+  label: string;
+  onClick: () => void;
+};
+
 export type ToastData = {
   id: string;
   message: string;
   variant: ToastVariant;
+  action?: ToastAction;
 };
 
 type ToastProps = {
@@ -80,6 +86,19 @@ export function Toast({ toast, onDismiss }: ToastProps) {
         {toast.message}
       </span>
       <div className="flex items-center gap-0.5 shrink-0">
+        {toast.action && (
+          <button
+            type="button"
+            className="sg-toast-undo inline-flex items-center px-2 py-1 rounded-[6px] border-none cursor-pointer text-xs font-medium text-(--sg-primary) hover:bg-(--sg-surface-raised) transition-colors"
+            onClick={() => {
+              toast.action?.onClick();
+              onDismiss(toast.id);
+            }}
+            data-testid="toast-undo"
+          >
+            {toast.action.label}
+          </button>
+        )}
         <button
           className="inline-flex items-center justify-center p-1 bg-transparent border-none cursor-pointer text-(--sg-text-faint) rounded-[5px] hover:bg-(--sg-surface-raised) hover:text-(--sg-text) transition-colors"
           onClick={handleCopy}

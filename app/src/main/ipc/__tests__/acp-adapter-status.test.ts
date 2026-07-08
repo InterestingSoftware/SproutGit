@@ -2,7 +2,7 @@ import { tmpdir } from 'node:os';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import type { AcpAdapterStatus } from '@sproutgit/types';
+import type { AcpAdapterStatus, AgentRoster } from '@sproutgit/types';
 
 const { handleMock, resolveCommandPathMock } = vi.hoisted(() => ({
   handleMock: vi.fn(),
@@ -17,10 +17,10 @@ vi.mock('../tool-test-helpers.js', async importOriginal => ({
 }));
 
 import { IPC } from '@sproutgit/types';
-import { openConfigDb, saveAgentConfig, type ConfigDb } from '@sproutgit/database';
+import { openConfigDb, saveAgentRoster, type ConfigDb } from '@sproutgit/database';
 import { registerAgentHandlers } from '../agents.js';
 
-type Handler = () => Promise<AcpAdapterStatus | null>;
+type Handler = (agentId: string) => Promise<AcpAdapterStatus | null>;
 
 function getHandler(configDb: ConfigDb, userDataPath: string): Handler {
   handleMock.mockClear();
@@ -28,6 +28,10 @@ function getHandler(configDb: ConfigDb, userDataPath: string): Handler {
   const call = handleMock.mock.calls.find(c => c[0] === IPC.AGENT_ACP_ADAPTER_STATUS);
   if (!call) throw new Error(`${IPC.AGENT_ACP_ADAPTER_STATUS} handler was not registered`);
   return call[1] as Handler;
+}
+
+function rosterFor(command: string): AgentRoster {
+  return { agents: [{ id: 'a', name: 'Agent', command, args: [], env: {}, mode: 'terminal', acp: true }], defaultAgentId: 'a' };
 }
 
 describe('AGENT_ACP_ADAPTER_STATUS', () => {
@@ -46,16 +50,16 @@ describe('AGENT_ACP_ADAPTER_STATUS', () => {
   });
 
   it('returns null for a command that does not need a separate adapter', async () => {
-    saveAgentConfig(configDb, { command: 'gemini', args: [], mode: 'terminal' });
+    saveAgentRoster(configDb, rosterFor('gemini'));
     const handler = getHandler(configDb, tmpDir);
-    expect(await handler()).toBeNull();
+    expect(await handler('a')).toBeNull();
   });
 
   it('reports npmAvailable: false and installed: false when neither the adapter nor npm is on PATH', async () => {
-    saveAgentConfig(configDb, { command: 'claude', args: [], mode: 'terminal' });
+    saveAgentRoster(configDb, rosterFor('claude'));
     resolveCommandPathMock.mockResolvedValue(null);
     const handler = getHandler(configDb, tmpDir);
-    expect(await handler()).toEqual({
+    expect(await handler('a')).toEqual({
       npmPackage: '@agentclientprotocol/claude-agent-acp',
       label: 'Claude Code',
       bin: 'claude-agent-acp',
@@ -66,11 +70,11 @@ describe('AGENT_ACP_ADAPTER_STATUS', () => {
   });
 
   it('reports npmAvailable: true and installed: true when both resolve', async () => {
-    saveAgentConfig(configDb, { command: 'codex', args: [], mode: 'terminal' });
+    saveAgentRoster(configDb, rosterFor('codex'));
     resolveCommandPathMock.mockImplementation((cmd: string) =>
       Promise.resolve(cmd === 'npm' ? '/usr/local/bin/npm' : '/usr/local/bin/codex-acp'));
     const handler = getHandler(configDb, tmpDir);
-    const status = await handler();
+    const status = await handler('a');
     expect(status).toMatchObject({ installed: true, npmAvailable: true });
   });
 });

@@ -1,3 +1,5 @@
+import type { AcpHandshakeInfo } from './agents.js';
+
 export type EditorInfo = {
   id: string;
   name: string;
@@ -32,4 +34,6 @@ export type ToolTestResult = {
   detail: string;
   /** Present only when ok is false. */
   error?: string;
+  /** Present only for an ACP-flagged agent test that completed a real `initialize` handshake. */
+  acp?: AcpHandshakeInfo;
 };
