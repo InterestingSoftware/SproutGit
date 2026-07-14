@@ -764,11 +764,13 @@ function WorkspaceInner() {
                       getStatus={(p) => api.getStatus(p)}
                       stageFiles={(p, paths) => api.stageFiles(p, paths)}
                       unstageFiles={(p, paths) => api.unstageFiles(p, paths)}
+                      stageHunk={(p, filePath, hunkIndex, lineIndices) => api.stageHunk(p, filePath, hunkIndex, lineIndices)}
+                      unstageHunk={(p, filePath, hunkIndex, lineIndices) => api.unstageHunk(p, filePath, hunkIndex, lineIndices)}
                       createCommit={(p, msg) => api.createCommit(p, msg)}
                       getDiff={(p, staged, file) =>
                         staged
-                          ? api.getDiffContent(p, "HEAD", file)
-                          : api.getWorkingDiff(p, file)
+                          ? api.getStagedFileDiff(p, file)
+                          : api.getUnstagedFileDiff(p, file ?? "")
                       }
                       generateCommitMessage={async (p) => {
                         const settings =

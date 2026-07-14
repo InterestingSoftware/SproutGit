@@ -1,9 +1,15 @@
+import { mkdtemp, writeFile, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import {
   type WorktreeStatusResult,
   type StatusFileEntry,
   type CheckoutResult,
+  parseFileDiff,
+  buildHunkPatch,
 } from '@sproutgit/types';
 import { gitForPath } from './client.js';
+import { getUnstagedFileDiff, getStagedDiff } from './diff.js';
 
 /**
  * Returns the working-tree + index status for a worktree.
@@ -98,6 +104,58 @@ export async function resetWorktreeBranch(
 ): Promise<void> {
   const git = gitForPath(worktreePath);
   await git.raw(['reset', `--${mode}`, targetRef]);
+}
+
+/**
+ * Stages a single hunk (or a subset of its added/removed lines) from the
+ * working tree into the index, by building a patch from the current
+ * worktree-vs-index diff for `filePath` and applying it with
+ * `git apply --cached`.
+ */
+export async function stageHunk(
+  worktreePath: string,
+  filePath: string,
+  hunkIndex: number,
+  lineIndices?: readonly number[] | null
+): Promise<void> {
+  const raw = await getUnstagedFileDiff(worktreePath, filePath);
+  const fileDiff = parseFileDiff(raw);
+  if (!fileDiff) throw new Error(`No unstaged diff found for "${filePath}"`);
+  const patch = buildHunkPatch(fileDiff, hunkIndex, lineIndices);
+  await applyPatch(worktreePath, patch, false);
+}
+
+/**
+ * Unstages a single hunk (or a subset of its lines) from the index back to
+ * the working tree, by building a patch from the current index-vs-HEAD diff
+ * for `filePath` and applying it with `git apply --cached --reverse`.
+ */
+export async function unstageHunk(
+  worktreePath: string,
+  filePath: string,
+  hunkIndex: number,
+  lineIndices?: readonly number[] | null
+): Promise<void> {
+  const raw = await getStagedDiff(worktreePath, filePath);
+  const fileDiff = parseFileDiff(raw);
+  if (!fileDiff) throw new Error(`No staged diff found for "${filePath}"`);
+  const patch = buildHunkPatch(fileDiff, hunkIndex, lineIndices);
+  await applyPatch(worktreePath, patch, true);
+}
+
+async function applyPatch(worktreePath: string, patch: string, reverse: boolean): Promise<void> {
+  const git = gitForPath(worktreePath);
+  const dir = await mkdtemp(join(tmpdir(), 'sproutgit-patch-'));
+  const patchPath = join(dir, 'hunk.patch');
+  try {
+    await writeFile(patchPath, patch, 'utf8');
+    const args = ['apply', '--cached', '--recount'];
+    if (reverse) args.push('--reverse');
+    args.push(patchPath);
+    await git.raw(args);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
 }
 
 // ─── Internal helpers ─────────────────────────────────────────────────────────

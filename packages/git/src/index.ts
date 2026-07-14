@@ -13,6 +13,8 @@ export {
   getWorktreeStatus,
   stageFiles,
   unstageFiles,
+  stageHunk,
+  unstageHunk,
   createCommit,
   checkoutWorktree,
   resetWorktreeBranch,
@@ -24,7 +26,7 @@ export {
   getWorktreePushStatus,
   getRemoteUrl,
 } from './remote.js';
-export { getDiffFiles, getDiffContent, getWorkingDiff, getStagedDiff } from './diff.js';
+export { getDiffFiles, getDiffContent, getWorkingDiff, getStagedDiff, getUnstagedFileDiff } from './diff.js';
 export { initBareRepo, cloneBareRepo } from './init.js';
 export {
   convertToBareWithWorktree,

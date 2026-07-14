@@ -169,6 +169,12 @@ const api = {
   unstageFiles: (worktreePath: string, paths: string[]): Promise<void> =>
     invoke(IPC.GIT_UNSTAGE, { worktreePath, paths }),
 
+  stageHunk: (worktreePath: string, filePath: string, hunkIndex: number, lineIndices?: number[] | null): Promise<void> =>
+    invoke(IPC.GIT_STAGE_HUNK, lineIndices ? { worktreePath, filePath, hunkIndex, lineIndices } : { worktreePath, filePath, hunkIndex }),
+
+  unstageHunk: (worktreePath: string, filePath: string, hunkIndex: number, lineIndices?: number[] | null): Promise<void> =>
+    invoke(IPC.GIT_UNSTAGE_HUNK, lineIndices ? { worktreePath, filePath, hunkIndex, lineIndices } : { worktreePath, filePath, hunkIndex }),
+
   createCommit: (worktreePath: string, message: string): Promise<void> =>
     invoke(IPC.GIT_COMMIT, { worktreePath, message }),
 
@@ -200,6 +206,12 @@ const api = {
 
   getWorkingDiff: (worktreePath: string, file?: string): Promise<string> =>
     invoke(IPC.GIT_WORKING_DIFF, file ? { worktreePath, file } : { worktreePath }),
+
+  getUnstagedFileDiff: (worktreePath: string, file: string): Promise<string> =>
+    invoke(IPC.GIT_UNSTAGED_FILE_DIFF, { worktreePath, file }),
+
+  getStagedFileDiff: (worktreePath: string, file?: string): Promise<string> =>
+    invoke(IPC.GIT_STAGED_FILE_DIFF, file ? { worktreePath, file } : { worktreePath }),
 
   // ── Stash ────────────────────────────────────────────────────────────────
   createStash: (worktreePath: string, message?: string): Promise<void> =>

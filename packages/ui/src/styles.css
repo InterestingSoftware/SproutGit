@@ -210,10 +210,11 @@ code, pre, kbd, samp {
 .sg-diff { margin: 0; overflow-x: auto; font-size: 12px; font-family: var(--sg-font-code); line-height: 1.5; }
 .sg-diff-add  { display: block; background: #dff3e4; color: #0f5132; }
 .sg-diff-del  { display: block; background: #fbe4e8; color: #8a1f35; }
-.sg-diff-hunk { display: block; color: var(--sg-text-faint); background: var(--sg-surface-raised); }
+.sg-diff-hunk { display: flex; align-items: center; justify-content: space-between; gap: 8px; position: sticky; top: 0; z-index: 1; color: var(--sg-text-faint); background: var(--sg-surface-raised); }
 .sg-diff-ctx  { display: block; color: var(--sg-text-dim); }
 .sg-diff-meta { display: block; color: var(--sg-text-faint); background: var(--sg-surface-raised); }
 .sg-diff-empty { display: block; color: var(--sg-text-faint); padding: 8px; }
+.sg-diff-line-checkbox { cursor: pointer; }
 
 /* Diff-aware token colors preserve contrast over add/del backgrounds. */
 .sg-diff-add .hljs-keyword, .sg-diff-add .hljs-selector-tag, .sg-diff-add .hljs-built_in { color: #0d683a; }
