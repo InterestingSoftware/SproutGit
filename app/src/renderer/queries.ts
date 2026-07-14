@@ -8,7 +8,7 @@ import { api } from './api.js';
  */
 
 import { useQuery, useQueries, useMutation, useQueryClient } from '@tanstack/react-query';
-import type { CommitEntry, RefInfo, WorktreeInfo, WorkspaceStatus, WorktreePushStatus, IssueTrackerPattern, FetchSummary, FileTreeNode, GitHubAuthStatus, PullRequestStatus, PullRequestInfo, MergeMethod, MergePullRequestResult, WorktreeDeleteResult, StatusFileEntry } from '@sproutgit/types';
+import type { CommitEntry, RefInfo, WorktreeInfo, WorkspaceStatus, WorktreePushStatus, IssueTrackerPattern, FetchSummary, FileTreeNode, WorktreeHealth, GitHubAuthStatus, PullRequestStatus, PullRequestInfo, MergeMethod, MergePullRequestResult, WorktreeDeleteResult, StatusFileEntry } from '@sproutgit/types';
 
 // ── Query key factory ─────────────────────────────────────────────────────────
 
@@ -21,6 +21,7 @@ export const qk = {
   pushStatus: (worktreePath: string) => ['pushStatus', worktreePath] as const,
   worktreeStatus: (worktreePath: string) => ['worktreeStatus', worktreePath] as const,
   worktreeChangeCounts: (gitRepoPath: string) => ['worktreeChangeCounts', gitRepoPath] as const,
+  worktreeHealth: (gitRepoPath: string) => ['worktreeHealth', gitRepoPath] as const,
   diffFiles: (repoPath: string, range: string) => ['diffFiles', repoPath, range] as const,
   diffContent: (repoPath: string, range: string, file: string, staged?: boolean) =>
     ['diffContent', repoPath, range, file, staged] as const,
@@ -180,6 +181,37 @@ export function useWorktreeStatus(worktreePath: string | undefined) {
     enabled: !!worktreePath,
     staleTime: 5_000,
     refetchInterval: 15_000,
+  });
+}
+
+// ── Worktree health (ahead/behind, dirty count, last-commit age) ─────────────
+
+/**
+ * Fetches ahead/behind counts and last-commit age for every non-root
+ * worktree in a single batched IPC call (the main process runs the
+ * underlying git commands with a concurrency limit — see
+ * `getWorktreesHealth` in `@sproutgit/git`).
+ *
+ * Polls on the same slower cadence as `usePrStatuses` rather than
+ * `useWorktreeChangeCounts`'s 15s: ahead/behind and last-commit-age change
+ * far less often than dirty-file state, so there's no need to match the
+ * faster poll — and every worktree this queries adds concurrent git
+ * traffic on top of the existing per-worktree pollers, which showed up as
+ * flakier close-time races in CI at the faster cadence.
+ */
+export function useWorktreeHealth(
+  gitRepoPath: string,
+  worktrees: WorktreeInfo[],
+  rootPath?: string,
+) {
+  const targets = worktrees.filter(w => w.path !== rootPath && !!w.path).map(w => w.path);
+
+  return useQuery({
+    queryKey: qk.worktreeHealth(gitRepoPath),
+    queryFn: () => api.getWorktreesHealth({ repoPath: gitRepoPath, worktreePaths: targets }) as Promise<Partial<Record<string, WorktreeHealth>>>,
+    enabled: !!gitRepoPath && targets.length > 0,
+    staleTime: 30_000,
+    refetchInterval: 60_000,
   });
 }
 

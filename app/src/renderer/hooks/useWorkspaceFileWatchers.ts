@@ -95,10 +95,12 @@ export function useWorkspaceFileWatchers(params: {
       );
     const offWorktree = api.onWorktreeChanged(() => {
       void qc.invalidateQueries({ queryKey: qk.worktrees(gitRepoPath) });
+      void qc.invalidateQueries({ queryKey: qk.worktreeHealth(gitRepoPath) });
     });
     const offRefs = api.onGitRefsChanged(() => {
       void qc.invalidateQueries({ queryKey: qk.commits(gitRepoPath) });
       void qc.invalidateQueries({ queryKey: qk.refs(gitRepoPath) });
+      void qc.invalidateQueries({ queryKey: qk.worktreeHealth(gitRepoPath) });
     });
     return () => {
       void api.stopWatching(gitRepoPath).catch(() => undefined);
@@ -127,11 +129,11 @@ export function useWorkspaceFileWatchers(params: {
     const offFileChanged = api.onFileChanged((event: FileChangedEvent) => {
       if (event.worktreePath !== worktreePath) return;
       void qc.invalidateQueries({ queryKey: qk.fileTree(worktreePath) });
+      // useWorktreeChangeCounts keys its per-worktree queries by
+      // qk.worktreeStatus(wt.path) (see queries.ts) — qk.worktreeChangeCounts
+      // itself is never used as an actual query key, so invalidating it here
+      // would be a no-op.
       void qc.invalidateQueries({ queryKey: qk.worktreeStatus(worktreePath) });
-      if (gitRepoPath)
-        void qc.invalidateQueries({
-          queryKey: qk.worktreeChangeCounts(gitRepoPath),
-        });
 
       const key = tabKey(worktreePath, event.relativePath);
       if (!useEditorStore.getState().tabs[key]) return;

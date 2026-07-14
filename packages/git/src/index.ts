@@ -35,6 +35,7 @@ export {
   ConversionRollbackFailedError,
 } from './convert.js';
 export { isBareRepoPath } from './bare.js';
+export { getWorktreeHealth, getWorktreesHealth } from './health.js';
 export { createStash, listStashes, applyStash, popStash, dropStash } from './stash.js';
 export { cherryPickCommit, CherryPickConflictError } from './cherry-pick.js';
 export { getConflictFileContent } from './conflicts.js';

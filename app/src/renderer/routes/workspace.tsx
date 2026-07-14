@@ -60,6 +60,7 @@ import {
   useDeleteWorktree,
   useRestoreWorktree,
   useWorktreeChangeCounts,
+  useWorktreeHealth,
   useWorktreeConflictCounts,
   useWorktreeStatus,
   useIssueTrackerPatterns,
@@ -184,6 +185,13 @@ function WorkspaceInner() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeWorktreeStatusFiles, conflictSelectedFile, activeTab]);
+
+  // ── Worktree health: ahead/behind + last-commit age (sidebar badges) ──
+  const { data: worktreeHealth = {} } = useWorktreeHealth(
+    gitRepoPath,
+    worktrees,
+    rootP,
+  );
 
   // ── PR + checks status (sidebar badges) ───────────────────────────────
   const { data: githubAuth } = useGithubAuthStatus();
@@ -568,6 +576,7 @@ function WorkspaceInner() {
             activeWorktree={activeWorktree}
             workspaceStatus={workspaceStatus ?? null}
             worktreeChangeCounts={worktreeChangeCounts}
+            worktreeHealth={worktreeHealth}
             worktreeConflictCounts={worktreeConflictCounts}
             prStatuses={prStatuses}
             githubConnected={githubConnected}

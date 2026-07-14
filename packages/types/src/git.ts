@@ -166,6 +166,32 @@ export type GitOpProgressEvent = {
   percent: number | null;
 };
 
+/**
+ * Snapshot of a worktree's health relative to its comparison ref, for the
+ * sidebar's ahead/behind and last-commit-age badges. Dirty-file count is
+ * intentionally not included here — the sidebar already gets it from the
+ * pre-existing per-worktree status polling (`useWorktreeChangeCounts`),
+ * so computing it again here would just run `git status` twice per refresh.
+ */
+export type WorktreeHealth = {
+  worktreePath: string;
+  /** Commits on HEAD not yet on `compareRef`. */
+  ahead: number;
+  /** Commits on `compareRef` not yet on HEAD. */
+  behind: number;
+  /** ISO-8601 author date of the most recent commit, or null for an unborn branch. */
+  lastCommitAt: string | null;
+  /** Whether the current branch has a configured upstream. */
+  hasUpstream: boolean;
+  /**
+   * The ref ahead/behind was computed against — the upstream when one
+   * exists, otherwise the repo's default remote branch. Null when neither
+   * is available (e.g. no remote configured), in which case ahead/behind
+   * are both 0.
+   */
+  compareRef: string | null;
+};
+
 export type StashEntry = {
   /** 0-based position in `git stash list` — newest first. */
   index: number;

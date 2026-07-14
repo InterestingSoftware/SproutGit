@@ -5,6 +5,7 @@ import type { ConfigDb } from '@sproutgit/database';
 import { getGitInfo, isBareRepoPath } from '@sproutgit/git';
 import { listWorktrees, restoreDeletedWorktree } from '@sproutgit/git/worktrees';
 import { getCommitGraph, countCommits, listRefs } from '@sproutgit/git/commits';
+import { getWorktreesHealth } from '@sproutgit/git/health';
 import {
   getWorktreeStatus,
   stageFiles,
@@ -104,6 +105,16 @@ export function registerGitHandlers(configDb: ConfigDb): void {
 
   handle(IPC.GIT_LIST_REFS, async (_e, repoPath: string) => {
     return listRefs(repoPath);
+  });
+
+  // ── worktree health (sidebar ahead/behind, dirty count, last-commit age) ──
+  handle(IPC.WORKTREE_HEALTH_BATCH, async (_e, args: { repoPath: string; worktreePaths: string[] }) => {
+    // Ahead/behind falls back to the repo's default remote branch for
+    // worktrees whose branch has no upstream configured.
+    const baseRef = await listRefs(args.repoPath)
+      .then(refs => refs.defaultRemoteBranch ?? null)
+      .catch(() => null);
+    return getWorktreesHealth(args.worktreePaths, baseRef);
   });
 
   // ── staging ───────────────────────────────────────────────────────────────

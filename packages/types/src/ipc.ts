@@ -40,6 +40,7 @@ export const IPC = {
   WORKTREE_GET_META: 'worktree:getMeta',
   WORKTREE_SET_META: 'worktree:setMeta',
   WORKTREE_PRUNE_METADATA: 'worktree:pruneMetadata',
+  WORKTREE_HEALTH_BATCH: 'worktree:healthBatch',
   // ── Workspace / recent ───────────────────────────────────────────────────
   WORKSPACE_LIST_RECENT: 'workspace:listRecent',
   WORKSPACE_ADD_RECENT: 'workspace:addRecent',
@@ -226,6 +227,7 @@ import type {
   WorktreePushStatus,
   RefsResult,
   FetchSummary,
+  WorktreeHealth,
   StashListResult,
   WorktreeDeleteResult,
   ConflictFileContentResult,
@@ -328,6 +330,7 @@ export type IpcMap = {
   'worktree:getMeta':    { args: [args: { workspacePath: string; worktreePath: string }]; result: WorktreeMetaRow | null };
   'worktree:setMeta':    { args: [args: { workspacePath: string; worktreePath: string; branch?: string; sourceRef?: string; rootRepoPath?: string; issueRef?: string | null; issueTitle?: string | null }]; result: void };
   'worktree:pruneMetadata': { args: [args: { workspacePath: string; activeWorktreePaths: string[] }]; result: void };
+  'worktree:healthBatch': { args: [args: { repoPath: string; worktreePaths: string[] }]; result: Partial<Record<string, WorktreeHealth>> };
   'worktree:listProvenance': { args: [workspacePath: string]; result: WorktreeProvenance[] };
   'worktree:getProvenance':  { args: [args: { workspacePath: string; worktreePath: string }]; result: WorktreeProvenance | null };
   // ── Workspace ─────────────────────────────────────────────────────────────
