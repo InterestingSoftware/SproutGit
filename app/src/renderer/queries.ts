@@ -8,7 +8,7 @@ import { api } from './api.js';
  */
 
 import { useQuery, useQueries, useMutation, useQueryClient } from '@tanstack/react-query';
-import type { CommitEntry, RefInfo, WorktreeInfo, WorkspaceStatus, WorktreePushStatus, IssueTrackerPattern, FetchSummary, FileTreeNode, WorktreeHealth, GitHubAuthStatus, PullRequestStatus, PullRequestInfo, MergeMethod, MergePullRequestResult, WorktreeDeleteResult } from '@sproutgit/types';
+import type { CommitEntry, RefInfo, WorktreeInfo, WorkspaceStatus, WorktreePushStatus, IssueTrackerPattern, FetchSummary, FileTreeNode, WorktreeHealth, GitHubAuthStatus, PullRequestStatus, PullRequestInfo, MergeMethod, MergePullRequestResult, WorktreeDeleteResult, StatusFileEntry } from '@sproutgit/types';
 
 // ── Query key factory ─────────────────────────────────────────────────────────
 
@@ -118,24 +118,24 @@ export function usePushStatus(worktreePath: string | undefined) {
   });
 }
 
-// ── Worktree change counts (badge numbers in sidebar) ─────────────────────────
+// ── Worktree status (badge numbers in sidebar, conflict detection) ───────────
 
 /**
- * Actively fetches git status for every non-root worktree and returns a map
- * of { [worktreePath]: changedFileCount }.  Uses useQueries so each worktree
- * gets its own TanStack Query entry (shared cache with the staging panel).
+ * Actively fetches git status for every non-root worktree. Uses useQueries so
+ * each worktree gets its own TanStack Query entry (shared cache with the
+ * staging panel and the active worktree's `useWorktreeStatus`/Conflicts tab).
  */
-export function useWorktreeChangeCounts(
+function useWorktreeStatuses(
   worktrees: WorktreeInfo[],
   rootPath?: string,
-) {
+): { path: string; files: StatusFileEntry[] }[] {
   const targets = worktrees.filter(w => w.path !== rootPath && !!w.path);
 
   const results = useQueries({
     queries: targets.map(wt => ({
       queryKey: qk.worktreeStatus(wt.path),
       queryFn: async () => {
-        const result = await api.getStatus(wt.path) as { files: import('@sproutgit/types').StatusFileEntry[] };
+        const result = await api.getStatus(wt.path) as { files: StatusFileEntry[] };
         return result.files;
       },
       staleTime: 5_000,
@@ -145,11 +145,43 @@ export function useWorktreeChangeCounts(
     })),
   });
 
+  return targets.map((wt, i) => ({ path: wt.path, files: results[i]?.data ?? [] }));
+}
+
+/** Map of { [worktreePath]: changedFileCount } for the sidebar's change badges. */
+export function useWorktreeChangeCounts(
+  worktrees: WorktreeInfo[],
+  rootPath?: string,
+): Record<string, number> {
+  const statuses = useWorktreeStatuses(worktrees, rootPath);
   const counts: Record<string, number> = {};
-  for (let i = 0; i < targets.length; i++) {
-    counts[targets[i]!.path] = results[i]?.data?.length ?? 0;
-  }
+  for (const s of statuses) counts[s.path] = s.files.length;
   return counts;
+}
+
+/** Map of { [worktreePath]: conflictedFileCount } for the sidebar's conflict badges. */
+export function useWorktreeConflictCounts(
+  worktrees: WorktreeInfo[],
+  rootPath?: string,
+): Record<string, number> {
+  const statuses = useWorktreeStatuses(worktrees, rootPath);
+  const counts: Record<string, number> = {};
+  for (const s of statuses) counts[s.path] = s.files.filter(f => f.conflicted).length;
+  return counts;
+}
+
+/** Full git status for one worktree — used by the Conflicts tab's file list. */
+export function useWorktreeStatus(worktreePath: string | undefined) {
+  return useQuery({
+    queryKey: qk.worktreeStatus(worktreePath ?? ''),
+    queryFn: async () => {
+      const result = await api.getStatus(worktreePath ?? '') as { files: StatusFileEntry[] };
+      return result.files;
+    },
+    enabled: !!worktreePath,
+    staleTime: 5_000,
+    refetchInterval: 15_000,
+  });
 }
 
 // ── Worktree health (ahead/behind, dirty count, last-commit age) ─────────────

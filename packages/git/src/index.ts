@@ -13,6 +13,8 @@ export {
   getWorktreeStatus,
   stageFiles,
   unstageFiles,
+  stageHunk,
+  unstageHunk,
   createCommit,
   checkoutWorktree,
   resetWorktreeBranch,
@@ -24,7 +26,7 @@ export {
   getWorktreePushStatus,
   getRemoteUrl,
 } from './remote.js';
-export { getDiffFiles, getDiffContent, getWorkingDiff, getStagedDiff } from './diff.js';
+export { getDiffFiles, getDiffContent, getWorkingDiff, getStagedDiff, getUnstagedFileDiff } from './diff.js';
 export { initBareRepo, cloneBareRepo } from './init.js';
 export {
   convertToBareWithWorktree,
@@ -36,5 +38,6 @@ export { isBareRepoPath } from './bare.js';
 export { getWorktreeHealth, getWorktreesHealth } from './health.js';
 export { createStash, listStashes, applyStash, popStash, dropStash } from './stash.js';
 export { cherryPickCommit, CherryPickConflictError } from './cherry-pick.js';
+export { getConflictFileContent } from './conflicts.js';
 export { readIssueTrackerFile } from './issuetracker.js';
 export { waitForIdleRepo } from './pending-ops.js';

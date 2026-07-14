@@ -115,11 +115,30 @@ export type StatusFileEntry = {
   indexStatus: string;
   /** Raw working-tree status character from git porcelain output. */
   workTreeStatus: string;
+  /** True for an unmerged path (e.g. `UU`, `AA`, `DD`) — an active merge/rebase conflict. */
+  conflicted: boolean;
 };
 
 export type WorktreeStatusResult = {
   worktreePath: string;
   files: StatusFileEntry[];
+};
+
+/** Content of one git index stage — absent when that side didn't touch the file (e.g. added on only one side). */
+export type ConflictStageContent = {
+  exists: boolean;
+  content: string;
+};
+
+export type ConflictFileContentResult = {
+  worktreePath: string;
+  path: string;
+  /** Stage 1 — the common ancestor. */
+  base: ConflictStageContent;
+  /** Stage 2 — our side of the conflict. */
+  ours: ConflictStageContent;
+  /** Stage 3 — their side of the conflict. */
+  theirs: ConflictStageContent;
 };
 
 export type DiffFileEntry = {

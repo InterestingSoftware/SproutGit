@@ -10,7 +10,7 @@ import {
   CommandPalette,
   type CommandPaletteItem,
 } from "@sproutgit/ui";
-import { GitBranch, GitMerge, Terminal, Bot, FileCode2, Plus, Trash2, Settings, FolderOpen, RefreshCw, ArrowDownToLine, ArrowUpToLine, SlidersHorizontal, AppWindow } from "lucide-react";
+import { GitBranch, GitMerge, Terminal, Bot, FileCode2, Plus, Trash2, Settings, FolderOpen, RefreshCw, ArrowDownToLine, ArrowUpToLine, SlidersHorizontal, AppWindow, AlertTriangle } from "lucide-react";
 import type { WorktreeInfo, TerminalInfo, SessionAttention } from "@sproutgit/types";
 import { useToast } from "../toast-context.js";
 import { useWorkspaceStore } from "../stores/workspace-store.js";
@@ -26,6 +26,8 @@ import { AgentSessionsPanel } from "../workspace/AgentSessionsPanel.js";
 import { ChatPanel } from "../workspace/ChatPanel.js";
 import { FileTreePanel } from "../workspace/FileTreePanel.js";
 import { FileEditorPanel } from "../workspace/FileEditorPanel.js";
+import { ConflictedFilesPanel } from "../workspace/ConflictedFilesPanel.js";
+import { ConflictResolutionPanel } from "../workspace/ConflictResolutionPanel.js";
 import { WorkspaceHeader } from "../workspace/WorkspaceHeader.js";
 import { GraphTabPanel } from "../workspace/GraphTabPanel.js";
 import { TerminalTabPanel } from "../workspace/TerminalTabPanel.js";
@@ -59,6 +61,8 @@ import {
   useRestoreWorktree,
   useWorktreeChangeCounts,
   useWorktreeHealth,
+  useWorktreeConflictCounts,
+  useWorktreeStatus,
   useIssueTrackerPatterns,
   useFileTree,
   useGithubAuthStatus,
@@ -161,6 +165,26 @@ function WorkspaceInner() {
   // ── Worktree change counts (sidebar badges) ───────────────────────────
   const rootP = workspaceStatus?.rootPath;
   const worktreeChangeCounts = useWorktreeChangeCounts(worktrees, rootP);
+  const worktreeConflictCounts = useWorktreeConflictCounts(worktrees, rootP);
+  const activeConflictCount = activeWorktree ? (worktreeConflictCounts[activeWorktree.path] ?? 0) : 0;
+
+  // ── Merge-conflict resolution (Conflicts tab) ─────────────────────────
+  const { data: activeWorktreeStatusFiles = [] } = useWorktreeStatus(activeWorktree?.path);
+  const [conflictSelectedFile, setConflictSelectedFile] = useState<string | null>(null);
+
+  useEffect(() => {
+    setConflictSelectedFile(null);
+  }, [activeWorktree?.path]);
+
+  useEffect(() => {
+    const conflictedPaths = activeWorktreeStatusFiles.filter(f => f.conflicted).map(f => f.path);
+    if (conflictSelectedFile && !conflictedPaths.includes(conflictSelectedFile)) {
+      setConflictSelectedFile(conflictedPaths[0] ?? null);
+    } else if (!conflictSelectedFile && conflictedPaths.length > 0 && activeTab === 'conflicts') {
+      setConflictSelectedFile(conflictedPaths[0]!);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeWorktreeStatusFiles, conflictSelectedFile, activeTab]);
 
   // ── Worktree health: ahead/behind + last-commit age (sidebar badges) ──
   const { data: worktreeHealth = {} } = useWorktreeHealth(
@@ -334,6 +358,7 @@ function WorkspaceInner() {
     agentConfig,
     sidebarCollapsed,
     setSidebarCollapsed,
+    activeConflictCount,
   });
 
   // ── Cmd/Ctrl+K opens the command palette ────────────────────────────────
@@ -552,6 +577,7 @@ function WorkspaceInner() {
             workspaceStatus={workspaceStatus ?? null}
             worktreeChangeCounts={worktreeChangeCounts}
             worktreeHealth={worktreeHealth}
+            worktreeConflictCounts={worktreeConflictCounts}
             prStatuses={prStatuses}
             githubConnected={githubConnected}
             fetching={fetching}
@@ -666,7 +692,40 @@ function WorkspaceInner() {
               >
                 <FileCode2 size={12} /> Files
               </button>
+              {activeWorktree && activeConflictCount > 0 && (
+                <button
+                  className={tabCls(activeTab === "conflicts")}
+                  onClick={() => useWorkspaceStore.setState({ activeTab: "conflicts" })}
+                  data-testid="tab-conflicts"
+                >
+                  <AlertTriangle size={12} /> Conflicts
+                  <span className="ml-1 rounded-full bg-(--sg-warning)/20 px-1.5 py-0 text-[9px] leading-4 font-semibold text-(--sg-warning)">
+                    {activeConflictCount}
+                  </span>
+                </button>
+              )}
             </div>
+
+            {/* Merge-conflict banner — shown regardless of the active tab */}
+            {activeWorktree && activeConflictCount > 0 && activeTab !== "conflicts" && (
+              <div
+                className="flex shrink-0 items-center gap-2 border-b border-(--sg-warning)/30 bg-(--sg-warning)/10 px-3 py-1.5 text-xs text-(--sg-text)"
+                data-testid="merge-conflict-banner"
+              >
+                <AlertTriangle size={13} className="shrink-0 text-(--sg-warning)" />
+                <span className="flex-1">
+                  {activeConflictCount} file{activeConflictCount === 1 ? "" : "s"} with unresolved merge conflicts.
+                </span>
+                <button
+                  type="button"
+                  data-testid="btn-resolve-conflicts"
+                  className="inline-flex items-center gap-1 rounded border-none bg-(--sg-warning)/20 px-2 py-1 text-[11px] font-medium text-(--sg-text) cursor-pointer hover:bg-(--sg-warning)/30"
+                  onClick={() => useWorkspaceStore.setState({ activeTab: "conflicts" })}
+                >
+                  Resolve Conflicts
+                </button>
+              </div>
+            )}
 
             {/* Tab content */}
             <div className="flex-1 overflow-hidden relative">
@@ -714,11 +773,13 @@ function WorkspaceInner() {
                       getStatus={(p) => api.getStatus(p)}
                       stageFiles={(p, paths) => api.stageFiles(p, paths)}
                       unstageFiles={(p, paths) => api.unstageFiles(p, paths)}
+                      stageHunk={(p, filePath, hunkIndex, lineIndices) => api.stageHunk(p, filePath, hunkIndex, lineIndices)}
+                      unstageHunk={(p, filePath, hunkIndex, lineIndices) => api.unstageHunk(p, filePath, hunkIndex, lineIndices)}
                       createCommit={(p, msg) => api.createCommit(p, msg)}
                       getDiff={(p, staged, file) =>
                         staged
-                          ? api.getDiffContent(p, "HEAD", file)
-                          : api.getWorkingDiff(p, file)
+                          ? api.getStagedFileDiff(p, file)
+                          : api.getUnstagedFileDiff(p, file ?? "")
                       }
                       generateCommitMessage={async (p) => {
                         const settings =
@@ -848,6 +909,36 @@ function WorkspaceInner() {
                           }
                           onKeepMine={(key) => resolveConflictKeepMine(key)}
                         />
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Conflicts tab */}
+                  {activeTab === "conflicts" && activeWorktree && (
+                    <div className="flex h-full">
+                      <div className="w-64 shrink-0 border-r border-(--sg-border)">
+                        <ConflictedFilesPanel
+                          files={activeWorktreeStatusFiles}
+                          activeRelativePath={conflictSelectedFile}
+                          onSelectFile={setConflictSelectedFile}
+                        />
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        {conflictSelectedFile ? (
+                          <ConflictResolutionPanel
+                            key={`${activeWorktree.path}::${conflictSelectedFile}`}
+                            worktreePath={activeWorktree.path}
+                            relativePath={conflictSelectedFile}
+                            onResolved={() => {
+                              void qc.invalidateQueries({ queryKey: qk.worktreeStatus(activeWorktree.path) });
+                            }}
+                            onToast={(msg, v) => toast(msg, v)}
+                          />
+                        ) : (
+                          <div className="flex h-full items-center justify-center text-xs text-(--sg-text-faint)">
+                            Select a conflicted file to resolve.
+                          </div>
+                        )}
                       </div>
                     </div>
                   )}

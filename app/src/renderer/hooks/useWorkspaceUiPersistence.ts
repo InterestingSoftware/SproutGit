@@ -22,6 +22,8 @@ export function useWorkspaceUiPersistence(params: {
   agentConfig: AgentRosterEntry | null;
   sidebarCollapsed: boolean;
   setSidebarCollapsed: (updater: (collapsed: boolean) => boolean) => void;
+  /** Number of unresolved conflicts in the active worktree — the Conflicts tab auto-switches away once this hits 0. */
+  activeConflictCount: number;
 }) {
   const {
     workspacePath,
@@ -31,6 +33,7 @@ export function useWorkspaceUiPersistence(params: {
     agentConfig,
     sidebarCollapsed,
     setSidebarCollapsed,
+    activeConflictCount,
   } = params;
 
   // ── Default shell preference ──────────────────────────────────────────
@@ -57,7 +60,8 @@ export function useWorkspaceUiPersistence(params: {
       (activeTab === "staging" ||
         activeTab === "terminal" ||
         activeTab === "chat" ||
-        activeTab === "files")
+        activeTab === "files" ||
+        activeTab === "conflicts")
     ) {
       useWorkspaceStore.setState({ activeTab: "graph" });
     }
@@ -68,7 +72,10 @@ export function useWorkspaceUiPersistence(params: {
     ) {
       useWorkspaceStore.setState({ activeTab: "graph" });
     }
-  }, [activeWorktree, activeTab, agentConfig]);
+    if (activeTab === "conflicts" && activeWorktree && activeConflictCount === 0) {
+      useWorkspaceStore.setState({ activeTab: "graph" });
+    }
+  }, [activeWorktree, activeTab, agentConfig, activeConflictCount]);
 
   useEffect(() => {
     sessionStorage.setItem("sg_active_tab", activeTab);

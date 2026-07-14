@@ -10,14 +10,17 @@ import {
   getWorktreeStatus,
   stageFiles,
   unstageFiles,
+  stageHunk,
+  unstageHunk,
   createCommit,
   checkoutWorktree,
   resetWorktreeBranch,
 } from '@sproutgit/git/staging';
 import { fetchWorktree, pullWorktree, pushWorktreeBranch, getWorktreePushStatus } from '@sproutgit/git/remote';
-import { getDiffFiles, getDiffContent, getWorkingDiff } from '@sproutgit/git/diff';
+import { getDiffFiles, getDiffContent, getWorkingDiff, getUnstagedFileDiff, getStagedDiff } from '@sproutgit/git/diff';
 import { createStash, listStashes, applyStash, popStash, dropStash } from '@sproutgit/git/stash';
 import { cherryPickCommit } from '@sproutgit/git/cherry-pick';
+import { getConflictFileContent } from '@sproutgit/git/conflicts';
 import { handle } from './handle.js';
 import { createWorktreeWithHooks, removeWorktreeWithHooks } from '../worktree-lifecycle.js';
 
@@ -130,6 +133,26 @@ export function registerGitHandlers(configDb: ConfigDb): void {
     return unstageFiles(args.worktreePath, args.paths);
   });
 
+  handle(IPC.GIT_STAGE_HUNK, async (_e, args: {
+    worktreePath: string;
+    filePath: string;
+    hunkIndex: number;
+    lineIndices?: number[] | null;
+  }) => {
+    assertWorkingTreePath(args.worktreePath);
+    return stageHunk(args.worktreePath, args.filePath, args.hunkIndex, args.lineIndices);
+  });
+
+  handle(IPC.GIT_UNSTAGE_HUNK, async (_e, args: {
+    worktreePath: string;
+    filePath: string;
+    hunkIndex: number;
+    lineIndices?: number[] | null;
+  }) => {
+    assertWorkingTreePath(args.worktreePath);
+    return unstageHunk(args.worktreePath, args.filePath, args.hunkIndex, args.lineIndices);
+  });
+
   handle(IPC.GIT_COMMIT, async (_e, args: { worktreePath: string; message: string }) => {
     assertWorkingTreePath(args.worktreePath);
     return createCommit(args.worktreePath, args.message);
@@ -205,6 +228,18 @@ export function registerGitHandlers(configDb: ConfigDb): void {
     return result.diff;
   });
 
+  handle(IPC.GIT_UNSTAGED_FILE_DIFF, async (_e, args: { worktreePath: string; file: string }) => {
+    if (!args.worktreePath || !existsSync(args.worktreePath)) return '';
+    assertWorkingTreePath(args.worktreePath);
+    return getUnstagedFileDiff(args.worktreePath, args.file);
+  });
+
+  handle(IPC.GIT_STAGED_FILE_DIFF, async (_e, args: { worktreePath: string; file?: string }) => {
+    if (!args.worktreePath || !existsSync(args.worktreePath)) return '';
+    assertWorkingTreePath(args.worktreePath);
+    return getStagedDiff(args.worktreePath, args.file ?? null);
+  });
+
   // ── stash ─────────────────────────────────────────────────────────────────
   handle(IPC.GIT_STASH_CREATE, async (_e, args: { worktreePath: string; message?: string }) => {
     assertWorkingTreePath(args.worktreePath);
@@ -235,5 +270,11 @@ export function registerGitHandlers(configDb: ConfigDb): void {
   handle(IPC.GIT_CHERRY_PICK, async (_e, args: { worktreePath: string; sha: string }) => {
     assertWorkingTreePath(args.worktreePath);
     return cherryPickCommit(args.worktreePath, args.sha);
+  });
+
+  // ── conflicts ─────────────────────────────────────────────────────────────
+  handle(IPC.GIT_CONFLICT_CONTENT, async (_e, args: { worktreePath: string; relativePath: string }) => {
+    assertWorkingTreePath(args.worktreePath);
+    return getConflictFileContent(args.worktreePath, args.relativePath);
   });
 }

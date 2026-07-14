@@ -12,6 +12,7 @@ import type {
   FetchSummary,
   WorktreeHealth,
   StashListResult,
+  ConflictFileContentResult,
   DeviceCodeResponse,
   GitHubPollResult,
   GitHubAuthStatus,
@@ -172,6 +173,12 @@ const api = {
   unstageFiles: (worktreePath: string, paths: string[]): Promise<void> =>
     invoke(IPC.GIT_UNSTAGE, { worktreePath, paths }),
 
+  stageHunk: (worktreePath: string, filePath: string, hunkIndex: number, lineIndices?: number[] | null): Promise<void> =>
+    invoke(IPC.GIT_STAGE_HUNK, lineIndices ? { worktreePath, filePath, hunkIndex, lineIndices } : { worktreePath, filePath, hunkIndex }),
+
+  unstageHunk: (worktreePath: string, filePath: string, hunkIndex: number, lineIndices?: number[] | null): Promise<void> =>
+    invoke(IPC.GIT_UNSTAGE_HUNK, lineIndices ? { worktreePath, filePath, hunkIndex, lineIndices } : { worktreePath, filePath, hunkIndex }),
+
   createCommit: (worktreePath: string, message: string): Promise<void> =>
     invoke(IPC.GIT_COMMIT, { worktreePath, message }),
 
@@ -204,6 +211,12 @@ const api = {
   getWorkingDiff: (worktreePath: string, file?: string): Promise<string> =>
     invoke(IPC.GIT_WORKING_DIFF, file ? { worktreePath, file } : { worktreePath }),
 
+  getUnstagedFileDiff: (worktreePath: string, file: string): Promise<string> =>
+    invoke(IPC.GIT_UNSTAGED_FILE_DIFF, { worktreePath, file }),
+
+  getStagedFileDiff: (worktreePath: string, file?: string): Promise<string> =>
+    invoke(IPC.GIT_STAGED_FILE_DIFF, file ? { worktreePath, file } : { worktreePath }),
+
   // ── Stash ────────────────────────────────────────────────────────────────
   createStash: (worktreePath: string, message?: string): Promise<void> =>
     invoke(IPC.GIT_STASH_CREATE, message ? { worktreePath, message } : { worktreePath }),
@@ -223,6 +236,9 @@ const api = {
   // ── Cherry-pick ──────────────────────────────────────────────────────────
   cherryPick: (worktreePath: string, sha: string): Promise<void> =>
     invoke(IPC.GIT_CHERRY_PICK, { worktreePath, sha }),
+
+  getConflictFileContent: (worktreePath: string, relativePath: string): Promise<ConflictFileContentResult> =>
+    invoke(IPC.GIT_CONFLICT_CONTENT, { worktreePath, relativePath }),
 
   // ── Terminal ──────────────────────────────────────────────────────────────
   createTerminal: (args: {
