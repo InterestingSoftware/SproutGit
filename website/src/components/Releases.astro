@@ -1,4 +1,6 @@
 ---
+import { marked } from 'marked';
+
 const GITHUB = 'https://github.com/InterestingSoftware/SproutGit';
 const RELEASES_API = 'https://api.github.com/repos/InterestingSoftware/SproutGit/releases?per_page=5';
 const RELEASES_PAGE = `${GITHUB}/releases`;
@@ -43,14 +45,21 @@ const dateFormatter = new Intl.DateTimeFormat('en-US', { year: 'numeric', month:
 
 const formatDate = (iso: string | null) => (iso ? dateFormatter.format(new Date(iso)) : '');
 
-const summarize = (body: string | null) => {
-  if (!body) return 'See the full release notes on GitHub.';
-  const firstParagraph = body
-    .split('\n')
-    .map((line) => line.trim())
-    .find((line) => line.length > 0 && !line.startsWith('#'));
-  if (!firstParagraph) return 'See the full release notes on GitHub.';
-  return firstParagraph.length > 220 ? `${firstParagraph.slice(0, 217)}…` : firstParagraph;
+/**
+ * Renders a release body's markdown to HTML at build time. Raw HTML in the
+ * source is stripped before parsing (the notes are auto-generated from our
+ * own PR titles, but there's no reason to pass markup through), and the
+ * long auto-generated GitHub URLs are shortened to readable links: PR URLs
+ * become "#163" and compare URLs become their "vA...vB" range.
+ */
+const renderBody = (body: string | null): string => {
+  if (!body?.trim()) return '<p>See the full release notes on GitHub.</p>';
+  const tidied = body
+    .replace(/<[^>]*>/g, '')
+    .replace(/https:\/\/github\.com\/[\w.-]+\/[\w.-]+\/pull\/(\d+)/g, (url, pr) => `[#${pr}](${url})`)
+    .replace(/https:\/\/github\.com\/[\w.-]+\/[\w.-]+\/compare\/([\w.-]+\.\.\.[\w.-]+)/g, (url, range) => `[${range}](${url})`)
+    .replace(/^## What's Changed\s*$/m, '');
+  return marked.parse(tidied, { gfm: true, breaks: false, async: false });
 };
 ---
 
@@ -92,9 +101,7 @@ const summarize = (body: string | null) => {
               )}
               <span style="font-size:0.8rem;color:var(--sg-text-faint);">{formatDate(release.published_at)}</span>
             </div>
-            <p style="margin:0 0 1rem;font-size:0.9rem;color:var(--sg-text-dim);line-height:1.6;">
-              {summarize(release.body)}
-            </p>
+            <div class="release-body" set:html={renderBody(release.body)} />
             <div style="display:flex;flex-wrap:wrap;gap:1rem;align-items:center;">
               <a href={release.html_url} target="_blank" rel="noopener noreferrer"
                  style="font-size:0.85rem;font-weight:600;color:var(--sg-primary);text-decoration:none;">
@@ -129,3 +136,45 @@ const summarize = (body: string | null) => {
     </div>
   </div>
 </section>
+
+<style>
+  .release-body {
+    margin: 0 0 1rem;
+    font-size: 0.9rem;
+    color: var(--sg-text-dim);
+    line-height: 1.6;
+    overflow-wrap: anywhere;
+    max-height: 14rem;
+    overflow: hidden;
+    mask-image: linear-gradient(to bottom, black calc(100% - 2.5rem), transparent);
+  }
+  .release-body :global(p) { margin: 0 0 0.6rem; }
+  .release-body :global(ul),
+  .release-body :global(ol) { margin: 0 0 0.6rem; padding-left: 1.25rem; }
+  .release-body :global(li) { margin: 0 0 0.3rem; }
+  .release-body :global(li::marker) { color: var(--sg-text-faint); }
+  .release-body :global(h1),
+  .release-body :global(h2),
+  .release-body :global(h3),
+  .release-body :global(h4) {
+    font-size: 0.8rem;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--sg-text-faint);
+    margin: 0.9rem 0 0.5rem;
+  }
+  .release-body :global(a) {
+    color: var(--sg-primary);
+    text-decoration: none;
+  }
+  .release-body :global(a:hover) { text-decoration: underline; }
+  .release-body :global(code) {
+    background: color-mix(in srgb, var(--sg-primary) 10%, transparent);
+    color: var(--sg-primary);
+    padding: 1px 5px;
+    border-radius: 4px;
+    font-size: 0.85em;
+  }
+  .release-body :global(strong) { color: var(--sg-text); }
+</style>

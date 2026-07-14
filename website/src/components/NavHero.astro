@@ -15,8 +15,10 @@ const RELEASES_PAGE = `${GITHUB}/releases/latest`;
 
     <div class="hidden md:flex items-center gap-10">
       <a href="#why" class="text-sm font-medium text-(--sg-text-dim) hover:text-(--sg-text) transition-colors">Why worktrees?</a>
+      <a href="#ai" class="text-sm font-medium text-(--sg-text-dim) hover:text-(--sg-text) transition-colors">Agents</a>
       <a href="#features" class="text-sm font-medium text-(--sg-text-dim) hover:text-(--sg-text) transition-colors">Features</a>
       <a href="#releases" class="text-sm font-medium text-(--sg-text-dim) hover:text-(--sg-text) transition-colors">Releases</a>
+      <a href="/docs/" class="text-sm font-medium text-(--sg-text-dim) hover:text-(--sg-text) transition-colors">Docs</a>
       <a href={GITHUB} target="_blank" rel="noopener noreferrer"
         class="flex items-center gap-2 text-sm font-medium px-4 py-2 rounded-lg border border-(--sg-border) text-(--sg-text-dim) hover:border-(--sg-primary) hover:text-(--sg-primary) transition-all">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
@@ -58,16 +60,17 @@ const RELEASES_PAGE = `${GITHUB}/releases/latest`;
 
       <!-- Headline — Stitch layout with gradient text -->
       <h1 data-animate class="font-bold leading-[0.92] tracking-tighter text-(--sg-text)"
-          style="font-size: clamp(3rem, 7vw, 5.5rem); letter-spacing: -0.045em;">
-        Git built for<br>
+          style="font-size: clamp(2.8rem, 6.5vw, 5rem); letter-spacing: -0.045em;">
+        Mission control for<br>
         <span style="background: linear-gradient(135deg, var(--sg-primary) 0%, var(--sg-mint) 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;">
-          parallel work.
+          AI-driven development.
         </span>
       </h1>
 
       <p data-animate class="text-xl leading-relaxed max-w-xl" style="color: var(--sg-text-dim);">
-        SproutGit makes worktrees the default — so humans and AI agents
-        can build in parallel without context collisions.
+        An open-source Git desktop built worktree-first: every task — yours or an
+        agent's — gets its own isolated checkout. Launch any coding agent, follow
+        every session live, and ship from one place.
       </p>
 
       <!-- CTAs -->
@@ -109,12 +112,6 @@ const RELEASES_PAGE = `${GITHUB}/releases/latest`;
           <span class="download-links-label" data-download-status>Loading latest release…</span>
           <a href={GITHUB} target="_blank" rel="noopener noreferrer">GitHub</a>
           <a href={RELEASES_PAGE} target="_blank" rel="noopener noreferrer">All releases</a>
-          <a href={RELEASES_PAGE} target="_blank" rel="noopener noreferrer" data-inline-platform-link="macos-arm64">Mac (Apple Silicon)</a>
-          <a href={RELEASES_PAGE} target="_blank" rel="noopener noreferrer" data-inline-platform-link="macos-x64">Mac (Intel)</a>
-          <a href={RELEASES_PAGE} target="_blank" rel="noopener noreferrer" data-inline-platform-link="windows-x64">Windows</a>
-          <a href={RELEASES_PAGE} target="_blank" rel="noopener noreferrer" data-inline-platform-link="windows-arm64">Windows (ARM64)</a>
-          <a href={RELEASES_PAGE} target="_blank" rel="noopener noreferrer" data-inline-platform-link="linux-x64">Linux</a>
-          <a href={RELEASES_PAGE} target="_blank" rel="noopener noreferrer" data-inline-platform-link="linux-arm64">Linux (ARM64)</a>
         </div>
       </div>
 
@@ -183,7 +180,7 @@ const RELEASES_PAGE = `${GITHUB}/releases/latest`;
           <span class="w-3 h-3 rounded-full" style="background:#f38ba8;"></span>
           <span class="w-3 h-3 rounded-full" style="background:#f9e2af;"></span>
           <span class="w-3 h-3 rounded-full" style="background:#a6e3a1;"></span>
-          <span class="ml-3 text-xs font-mono" style="color:var(--sg-text-faint);">my-project · 3 worktrees active</span>
+          <span class="ml-3 text-xs font-mono" style="color:var(--sg-text-faint);">my-project · 3 worktrees · 2 agents running</span>
         </div>
 
         <!-- Commit graph SVG — from Stitch baseline, extended -->
@@ -256,10 +253,10 @@ const RELEASES_PAGE = `${GITHUB}/releases/latest`;
            data-animate>
         <div class="flex items-center gap-2 mb-2">
           <span class="w-2.5 h-2.5 rounded-full" style="background: var(--lane-2);"></span>
-          <span class="text-[10px] font-semibold uppercase tracking-widest" style="color:var(--sg-text-faint);">Background Task</span>
+          <span class="text-[10px] font-semibold uppercase tracking-widest" style="color:var(--sg-text-faint);">Agent Session</span>
         </div>
         <div class="text-xs font-semibold mb-0.5" style="color:var(--sg-text);">agent/refactor</div>
-        <div class="text-[10px]" style="color:var(--sg-text-faint);">Running hooks…</div>
+        <div class="text-[10px]" style="color:var(--sg-text-faint);">Claude Code · working…</div>
       </div>
     </div>
   </section>
@@ -285,10 +282,8 @@ const RELEASES_PAGE = `${GITHUB}/releases/latest`;
     ]);
 
     const menuLinks = {};
-    const inlineLinks = {};
     for (const key of platformKeys) {
       menuLinks[key] = root.querySelector(`[data-platform-link="${key}"]`);
-      inlineLinks[key] = root.querySelector(`[data-inline-platform-link="${key}"]`);
     }
 
     const detectOS = () => {
@@ -407,7 +402,6 @@ const RELEASES_PAGE = `${GITHUB}/releases/latest`;
     const syncLinks = () => {
       for (const key of platformKeys) {
         if (menuLinks[key] instanceof HTMLAnchorElement) menuLinks[key].href = links[key];
-        if (inlineLinks[key] instanceof HTMLAnchorElement) inlineLinks[key].href = links[key];
       }
 
       if (macDownloadLink instanceof HTMLAnchorElement) {
