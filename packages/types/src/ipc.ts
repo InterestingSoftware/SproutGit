@@ -28,6 +28,7 @@ export const IPC = {
   GIT_STASH_POP: 'git:stashPop',
   GIT_STASH_DROP: 'git:stashDrop',
   GIT_CHERRY_PICK: 'git:cherryPick',
+  GIT_CONFLICT_CONTENT: 'git:conflictContent',
   // ── Worktrees ────────────────────────────────────────────────────────────
   WORKTREE_CREATE: 'worktree:create',
   WORKTREE_DELETE: 'worktree:delete',
@@ -223,6 +224,7 @@ import type {
   FetchSummary,
   StashListResult,
   WorktreeDeleteResult,
+  ConflictFileContentResult,
 } from './git.js';
 import type { WorkspaceInitResult, WorkspaceStatus, RecentWorkspace, WorktreeProvenance, NestedRepoSyncRule, ImportRepoMode, CreateWorktreeResult } from './workspace.js';
 import type {
@@ -308,6 +310,7 @@ export type IpcMap = {
   'git:stashPop':    { args: [args: { worktreePath: string; ref: string }];                  result: void };
   'git:stashDrop':   { args: [args: { worktreePath: string; ref: string }];                  result: void };
   'git:cherryPick':  { args: [args: { worktreePath: string; sha: string }];                  result: void };
+  'git:conflictContent': { args: [args: { worktreePath: string; relativePath: string }];      result: ConflictFileContentResult };
   'git:getConfig':   { args: [key: string];                                                  result: string | null };
   'git:setConfig':   { args: [args: { key: string; value: string }];                         result: void };
   // ── Worktrees ─────────────────────────────────────────────────────────────

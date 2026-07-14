@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import type { WorktreeInfo } from '@sproutgit/types';
 
-export type Tab = 'graph' | 'staging' | 'terminal' | 'chat' | 'files';
+export type Tab = 'graph' | 'staging' | 'terminal' | 'chat' | 'files' | 'conflicts';
 export type TerminalLayout = 'tabs' | 'split' | 'grid';
 type TerminalSession = {
   id: string;
@@ -40,7 +40,7 @@ interface WorkspaceUiState {
 
 function readInitialTab(): Tab {
   const s = sessionStorage.getItem('sg_active_tab');
-  return s === 'staging' || s === 'terminal' || s === 'chat' || s === 'files' ? s : 'graph';
+  return s === 'staging' || s === 'terminal' || s === 'chat' || s === 'files' || s === 'conflicts' ? s : 'graph';
 }
 
 function readInitialTerminalLayout(): TerminalLayout {
@@ -90,4 +90,3 @@ export function resetWorkspaceStore(workspacePath: string) {
     useWorkspaceStore.setState({ workspacePath, ...baseUiState, activeTab: readInitialTab() });
   }
 }
-

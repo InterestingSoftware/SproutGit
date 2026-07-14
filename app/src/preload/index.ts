@@ -11,6 +11,7 @@ import type {
   WorktreePushStatus,
   FetchSummary,
   StashListResult,
+  ConflictFileContentResult,
   DeviceCodeResponse,
   GitHubPollResult,
   GitHubAuthStatus,
@@ -219,6 +220,9 @@ const api = {
   // ── Cherry-pick ──────────────────────────────────────────────────────────
   cherryPick: (worktreePath: string, sha: string): Promise<void> =>
     invoke(IPC.GIT_CHERRY_PICK, { worktreePath, sha }),
+
+  getConflictFileContent: (worktreePath: string, relativePath: string): Promise<ConflictFileContentResult> =>
+    invoke(IPC.GIT_CONFLICT_CONTENT, { worktreePath, relativePath }),
 
   // ── Terminal ──────────────────────────────────────────────────────────────
   createTerminal: (args: {

@@ -29,6 +29,7 @@ import {
   Rocket,
   PanelLeftClose,
   PanelLeftOpen,
+  AlertTriangle,
   GitPullRequest,
   GitPullRequestDraft,
   GitPullRequestClosed,
@@ -235,6 +236,7 @@ type Props = {
   activeWorktree: WorktreeInfo | null;
   workspaceStatus: WorkspaceStatus | null;
   worktreeChangeCounts: Record<string, number>;
+  worktreeConflictCounts: Record<string, number>;
   fetching: boolean;
   pulling: boolean;
   pushing: boolean;
@@ -342,6 +344,7 @@ export function WorktreeSidebar({
   activeWorktree,
   workspaceStatus,
   worktreeChangeCounts,
+  worktreeConflictCounts,
   fetching,
   pulling,
   pushing,
@@ -504,18 +507,20 @@ export function WorktreeSidebar({
               (row.wt.detached ? "detached" : row.wt.path.split("/").pop()) ??
               row.wt.path;
             const changeCount = worktreeChangeCounts[row.wt.path] ?? 0;
+            const conflictCount = worktreeConflictCounts[row.wt.path] ?? 0;
+            const conflictSuffix = conflictCount > 0 ? ` — ${conflictCount} conflict${conflictCount === 1 ? "" : "s"}` : "";
             return (
               <button
                 key={row.wt.path}
                 className={`relative flex h-7 w-7 shrink-0 items-center justify-center rounded-md border-none cursor-pointer transition-colors ${isActive ? "bg-(--sg-primary)/15 text-(--sg-primary)" : "bg-transparent text-(--sg-text-faint) hover:bg-(--sg-surface-raised) hover:text-(--sg-text)"}`}
-                title={label}
-                aria-label={`Switch to ${label}`}
+                title={`${label}${conflictSuffix}`}
+                aria-label={`Switch to ${label}${conflictSuffix}`}
                 data-testid="worktree-rail-item"
                 data-path={row.wt.path}
                 onClick={() => onWorktreeSwitch(row.wt)}
               >
-                <GitBranch size={14} />
-                {changeCount > 0 && (
+                {conflictCount > 0 ? <AlertTriangle size={14} className="text-(--sg-warning)" /> : <GitBranch size={14} />}
+                {conflictCount === 0 && changeCount > 0 && (
                   <span
                     className="absolute top-0.5 right-0.5 h-1.5 w-1.5 rounded-full bg-(--sg-warning)"
                     aria-hidden="true"
@@ -696,6 +701,7 @@ export function WorktreeSidebar({
             const isPending = row.wt.path === PENDING_PATH;
             const isRowBusy = isPending;
             const changeCount = worktreeChangeCounts[row.wt.path] ?? 0;
+            const conflictCount = worktreeConflictCounts[row.wt.path] ?? 0;
 
             return (
               <div
@@ -792,6 +798,15 @@ export function WorktreeSidebar({
                     {changeCount > 0 && (
                       <span className="shrink-0 rounded-full bg-(--sg-warning)/20 px-1.5 py-0 text-[9px] leading-4 font-semibold text-(--sg-warning)">
                         {changeCount}
+                      </span>
+                    )}
+                    {conflictCount > 0 && (
+                      <span
+                        className="sg-conflict-badge flex shrink-0 items-center gap-0.5 rounded-full bg-(--sg-warning)/20 px-1.5 py-0 text-[9px] leading-4 font-semibold text-(--sg-warning)"
+                        data-testid="worktree-conflict-badge"
+                        title={`${conflictCount} unresolved conflict${conflictCount === 1 ? "" : "s"}`}
+                      >
+                        <AlertTriangle size={9} /> {conflictCount}
                       </span>
                     )}
                     {worktreesWithLiveAgent.has(row.wt.path) && (
