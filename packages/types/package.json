@@ -16,7 +16,7 @@
   "devDependencies": {
     "@sproutgit/ts-config": "workspace:*",
     "typescript": "npm:@typescript/native-preview@7.0.0-dev.20260701.1",
-    "vitest": "^4.1.9"
+    "vitest": "^4.1.10"
   },
   "license": "MIT"
 }
