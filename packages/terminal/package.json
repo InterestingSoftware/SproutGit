@@ -16,13 +16,13 @@
   "dependencies": {
     "@sproutgit/paths": "workspace:*",
     "@sproutgit/types": "workspace:*",
-    "node-pty": "1.2.0-beta.14"
+    "node-pty": "1.2.0-beta.15"
   },
   "devDependencies": {
     "@sproutgit/ts-config": "workspace:*",
-    "@types/node": "^26.1.0",
+    "@types/node": "^26.1.2",
     "typescript": "npm:@typescript/native-preview@7.0.0-dev.20260701.1",
-    "vitest": "^4.1.9"
+    "vitest": "^4.1.10"
   },
   "license": "MIT"
 }
