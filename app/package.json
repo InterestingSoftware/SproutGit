@@ -198,7 +198,7 @@
     "tailwindcss": "^4.3.2",
     "typescript": "npm:@typescript/native-preview@7.0.0-dev.20260630.1",
     "vite": "^8.1.2",
-    "vitest": "^4.1.9"
+    "vitest": "^5.0.0"
   },
   "license": "MIT"
 }
