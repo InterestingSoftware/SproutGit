@@ -16,7 +16,7 @@
     "@wdio/mocha-framework": "^9.29.1",
     "@wdio/spec-reporter": "^9.29.1",
     "@wdio/types": "^9.29.1",
-    "electron": "^43.0.0",
+    "electron": "^43.5.0",
     "typescript": "npm:@typescript/native-preview@7.0.0-dev.20260630.1",
     "wdio-electron-service": "^9.2.1",
     "webdriverio": "^9.29.1"
