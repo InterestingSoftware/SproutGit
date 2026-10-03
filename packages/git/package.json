@@ -27,13 +27,13 @@
   "dependencies": {
     "@sproutgit/paths": "workspace:*",
     "@sproutgit/types": "workspace:*",
-    "simple-git": "^3.36.0"
+    "simple-git": "^4.0.2"
   },
   "devDependencies": {
     "@sproutgit/ts-config": "workspace:*",
-    "@types/node": "^26.1.0",
+    "@types/node": "^26.6.3",
     "typescript": "npm:@typescript/native-preview@7.0.0-dev.20260701.1",
-    "vitest": "^4.1.9"
+    "vitest": "^5.0.2"
   },
   "license": "MIT"
 }
