@@ -17,16 +17,16 @@
   },
   "dependencies": {
     "@sproutgit/types": "workspace:*",
-    "drizzle-orm": "^0.45.2"
+    "drizzle-orm": "^0.45.3"
   },
   "devDependencies": {
     "@sproutgit/ts-config": "workspace:*",
     "@types/better-sqlite3": "^7.6.13",
-    "@types/node": "^26.1.0",
-    "better-sqlite3": "^12.11.1",
-    "drizzle-kit": "^0.31.10",
+    "@types/node": "^26.6.3",
+    "better-sqlite3": "^13.0.3",
+    "drizzle-kit": "^0.31.11",
     "typescript": "npm:@typescript/native-preview@7.0.0-dev.20260630.1",
-    "vitest": "^4.1.9"
+    "vitest": "^5.0.2"
   },
   "license": "MIT"
 }
