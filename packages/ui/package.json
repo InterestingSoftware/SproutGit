@@ -43,7 +43,7 @@
     "babel-plugin-react-compiler": "^1.0.0",
     "jsdom": "^29.1.1",
     "typescript": "npm:@typescript/native-preview@7.0.0-dev.20260701.1",
-    "vitest": "^4.1.9"
+    "vitest": "^5.0.5"
   },
   "peerDependencies": {
     "react": "^19.0.0",
